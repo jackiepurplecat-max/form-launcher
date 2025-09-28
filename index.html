@@ -145,5 +145,13 @@ document.getElementById('filterSelect').addEventListener('change', function(){
 // load on start
 loadSheet();
 </script>
+
+  <button id="refreshBtn" style="padding:6px 12px; margin-bottom:10px;">Refresh</button>
+<script>
+  document.getElementById('refreshBtn').addEventListener('click', function() {
+    location.reload(); // reloads the page
+  });
+</script>
+
 </body>
 </html>
