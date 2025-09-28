@@ -113,9 +113,14 @@
     <img src="favicon.png" alt="Icon" style="height: 32px; margin-right: 10px;">
     Jackie's Helpful Forms
   </h1>
-  <a href="https://forms.gle/Efmbz5brKNyohqQe7" target="_blank" rel="noopener" class="btn-link">Submit Travel Expenses</a>
-
 <h2>View Travel Expenses</h2>
+  <a href="https://forms.gle/Efmbz5brKNyohqQe7" target="_blank" rel="noopener" class="btn-link">Submit Travel Expenses</a>
+ <button id="refreshBtn" class="btn-style">Refresh</button>
+<script>
+  document.getElementById('refreshBtn').addEventListener('click', function() {
+    location.reload(); // reloads the page
+  });
+</script>
   <label>For trip:
     <select id="filterSelect"><option value="">-- All --</option></select>
   </label>
@@ -193,13 +198,6 @@ document.getElementById('filterSelect').addEventListener('change', function(){
 
 // load on start
 loadSheet();
-</script>
-<br>
-  <button id="refreshBtn" class="btn-style">Refresh</button>
-<script>
-  document.getElementById('refreshBtn').addEventListener('click', function() {
-    location.reload(); // reloads the page
-  });
 </script>
 
 </body>
