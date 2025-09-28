@@ -36,13 +36,94 @@
     a:hover {
       text-decoration: underline;
     }
+    select {
+      padding:6px
+    }
+    table {
+      border-collapse:collapse;width:100%;margin-top:12px
+    }
+    th,td {
+      border:1px solid #ddd;padding:8px;text-align:left
+    }
+    th {
+      background:#f3f3f3
+    }
   </style>
 </head>
+  
 <body>
   <h1>
     <img src="apple-touch-icon.png" alt="Icon" style="height: 32px; margin-right: 10px;">
     Jackie's Helpful Forms
   </h1>
   <a href="https://forms.gle/Efmbz5brKNyohqQe7">Travel Claim Receipts</a>
+<h2>Filter table (Google Sheets API)</h2>
+  <label>Filter by:
+    <select id="filterSelect"><option value="">-- All --</option></select>
+  </label>
+
+  <table id="dataTable">
+    <thead></thead>
+    <tbody></tbody>
+  </table>
+  
+  <script>
+/* CONFIG — replace these */
+const SPREADSHEET_ID = '1J4dldGjb3SktoVxQD3BKm-iX6RDAF7YjoLImm7-MIsg';
+const API_KEY = 'AIzaSyCkQIbYsNr6ooub1lJysGoSflG9bka0fbs';
+const SHEET_NAME = 'Form Responses 1';            // change to your sheet name
+const FILTER_COLUMN_INDEX = 0;          // zero-based index of column to populate the dropdown from
+/* END CONFIG */
+
+const endpoint = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(SHEET_NAME)}?key=${API_KEY}&majorDimension=ROWS`;
+
+let allRows = []; // array of arrays (rows)
+
+async function loadSheet(){
+  const res = await fetch(endpoint);
+  if(!res.ok){ console.error('Sheets API error', await res.text()); return; }
+  const j = await res.json();
+  const rows = j.values || [];
+  if(rows.length === 0) return;
+  const headers = rows[0];
+  allRows = rows.slice(1);
+
+  // build headers
+  document.querySelector('#dataTable thead').innerHTML =
+    '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+
+  // populate dropdown with unique values from FILTER_COLUMN_INDEX
+  const set = new Set(allRows.map(r => (r[FILTER_COLUMN_INDEX]||'').trim()).filter(x=>x!==''));
+  const select = document.getElementById('filterSelect');
+  Array.from(set).sort().forEach(val=>{
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = val;
+    select.appendChild(opt);
+  });
+
+  renderTable(allRows);
+}
+
+function renderTable(rows){
+  const tbody = document.querySelector('#dataTable tbody');
+  tbody.innerHTML = '';
+  rows.forEach(r=>{
+    const tr = document.createElement('tr');
+    // ensure number of cells matches header count
+    const cells = r.map(c => `<td>${c}</td>`).join('');
+    tr.innerHTML = cells;
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById('filterSelect').addEventListener('change', function(){
+  const v = this.value;
+  const filtered = v ? allRows.filter(r => (r[FILTER_COLUMN_INDEX]||'') === v) : allRows;
+  renderTable(filtered);
+});
+
+// load on start
+loadSheet();
+</script>
 </body>
 </html>
