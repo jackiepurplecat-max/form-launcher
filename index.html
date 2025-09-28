@@ -77,35 +77,18 @@
       display: inline-block;
       vertical-align: middle;
     }
-    #dataTable {
-  width: auto;            
-  table-layout: auto;     
-  border-collapse: collapse;
-}
-
-#dataTable th {
-  border: 1px solid #ddd;
-  background: #f3f3f3;
-  padding: 8px;
-  text-align: left;
-  font-size: 12px;
-}
-
-#dataTable td {
-  border: 1px solid #ddd;
-  padding: 8px;
-  display: flex;
-  align-items: center;  /* vertical center */
-  justify-content: flex-start;
-  font-size: 12px;
-}
-
-#dataTable td a {
-  /* no need for display or vertical-align now */
-  color: #007bff;
-  text-decoration: none;
-}
-
+    #dataTable td {
+      vertical-align: middle; /* center content vertically */
+      padding: 8px;
+      font-size: 12px;
+    }
+    #dataTable td a {
+      margin: 0;               /* remove any default margin */
+      padding: 0;              /* optional, ensure no extra space */
+      line-height: 1.2;        /* helps vertical centering */
+      color: #007bff;
+      text-decoration: none;
+    }
     #refreshBtn {
       background-color: white;
       color: #007bff;       /* light blue text */
