@@ -134,6 +134,7 @@ async function loadSheet(){
   const rows = j.values || [];
   if(rows.length === 0) return;
   const headers = rows[0];
+  headers[6] = "Link to File"; // force column 7 header text
   allRows = rows.slice(1);
 
   // build headers
@@ -170,6 +171,7 @@ function renderTable(rows){
 
     tr.innerHTML = cells;
     tbody.appendChild(tr);
+    
   });
 }
 
