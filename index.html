@@ -41,6 +41,12 @@
     a:hover {
       text-decoration: underline;
     }
+    .controls {
+      display: flex;
+      align-items: center;   /* vertical alignment */
+      gap: 12px;             /* space between items */
+      margin-top: 12px;
+    }
     .btn-style, .btn-link {
       display: inline-block;
       background-color: white;
@@ -104,6 +110,24 @@
     Jackie's Helpful Forms
   </h1>
 <h2>Travel Expenses</h2>
+  <div class="controls">
+  <a href="https://forms.gle/Efmbz5brKNyohqQe7" target="_blank" rel="noopener" class="btn-link">New Expense</a>
+  <button id="refreshBtn" class="btn-style">Refresh</button>
+
+  <label for="filterSelect" class="filter-label">
+    Filter by trip:
+    <select id="filterSelect">
+      <option value="">-- All --</option>
+    </select>
+  </label>
+</div>
+
+<script>
+  document.getElementById('refreshBtn').addEventListener('click', function() {
+    location.reload();
+  });
+</script>
+
   <a href="https://forms.gle/Efmbz5brKNyohqQe7" target="_blank" rel="noopener" class="btn-link">New Expense</a>
   <button id="refreshBtn" class="btn-style">Refresh</button>
 <script>
