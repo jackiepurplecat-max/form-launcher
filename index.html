@@ -205,5 +205,34 @@ document.getElementById('filterSelect').addEventListener('change', function(){
 loadSheet();
 </script>
 
+<h2>Receipts for IVA Claim</h2>
+  <div class="controls">
+  <a href="https://forms.gle/Efmbz5brKNyohqQe7" target="_blank" rel="noopener" class="btn-link">New Receipt</a>
+  <button id="refreshBtn" class="btn-style">Refresh</button>
+
+<button class="btn-style refresh-btn">Refresh</button>
+<a href="#" class="btn-style refresh-btn">Refresh</a>
+
+    <script>
+    document.querySelectorAll('.refresh-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    location.reload();
+  });
+});
+    </script>
+    
+  <label for="filterSelect" class="filter-label">
+    Filter by trip:
+    <select id="filterSelect">
+      <option value="">-- All --</option>
+    </select>
+  </label>
+</div>
+
+<script>
+  document.getElementById('refreshBtn').addEventListener('click', function() {
+    location.reload();
+  });
+</script>
 </body>
 </html>
