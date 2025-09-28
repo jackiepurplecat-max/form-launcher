@@ -102,23 +102,23 @@ async function loadSheet(){
     select.appendChild(opt);
   });
 
-  renderTable(allRows);
-}
+renderTable(allRows, headers);
 
-function renderTable(rows){
+function renderTable(rows, headers){
   const tbody = document.querySelector('#dataTable tbody');
   tbody.innerHTML = '';
+
   rows.forEach(r => {
     const tr = document.createElement('tr');
 
-    // Make sure row has the same length as headers
+    // Ensure row has same length as headers
     const fullRow = [];
     for (let i = 0; i < headers.length; i++) {
-      fullRow[i] = r[i] || ''; // fill missing cells with empty string
+      fullRow[i] = r[i] || '';
     }
 
     tr.innerHTML = fullRow.map((cell, i) => {
-      if (i === 6 && cell) {  // column 6
+      if (i === 5 && cell) {  // column 6 (index 5)
         const safeUrl = cell.startsWith('http') ? cell : 'https://' + cell;
         return `<td><a href="${safeUrl}" target="_blank" rel="noopener">${cell}</a></td>`;
       }
@@ -128,6 +128,7 @@ function renderTable(rows){
     tbody.appendChild(tr);
   });
 }
+
 
 
 
