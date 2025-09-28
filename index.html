@@ -108,31 +108,20 @@ async function loadSheet(){
 function renderTable(rows){
   const tbody = document.querySelector('#dataTable tbody');
   tbody.innerHTML = '';
-  rows.forEach(r=>{
+  rows.forEach(r => {
     const tr = document.createElement('tr');
-
-    // Build cells while skipping the hidden column (A) and hyperlinking column 6
-    const cells = r
-      .filter((_, i) => i !== FILTER_COLUMN_INDEX)          // hide column A
-      .map((cell, i) => {
-        // Figure out the *original* column index before hiding
-        const originalIndex = r.findIndex((_, origIdx) =>
-            r.filter((_, j) => j !== FILTER_COLUMN_INDEX).indexOf(r[origIdx]) === i);
-
-        // If this is the original column 6 (index 5), wrap in <a>
-        if (originalIndex === 6 && cell) {
-          // Make sure it starts with http/https to avoid broken links
-          const safeUrl = cell.startsWith('http') ? cell : 'https://' + cell;
-          return `<td><a href="${safeUrl}" target="_blank" rel="noopener">${cell}</a></td>`;
-        }
-        return `<td>${cell}</td>`;
-      })
-      .join('');
-
-    tr.innerHTML = cells;
+    tr.innerHTML = r.map((cell, i) => {
+      // Turn column 6 (zero-based index 5) into a hyperlink if it has a value
+      if (i === 5 && cell) {
+        const safeUrl = cell.startsWith('http') ? cell : 'https://' + cell;
+        return `<td><a href="${safeUrl}" target="_blank" rel="noopener">${cell}</a></td>`;
+      }
+      return `<td>${cell}</td>`;
+    }).join('');
     tbody.appendChild(tr);
   });
 }
+
 
 document.getElementById('filterSelect').addEventListener('change', function(){
   const v = this.value;
