@@ -42,24 +42,25 @@
     a:hover {
       text-decoration: underline;
     }
-  .btn-style, .btn-link {
+    .btn-style, .btn-link {
       display: inline-block;
-      background-color: #5932a6;
-      color: white;
-      border: none;
+      background-color: white;
+      color: #007bff;               /* light blue text */
+      border: 0.5px solid #007bff;
       border-radius: 4px;
-      text-decoration: none;
+      padding: 5px 5px;             /* adjust padding to your preference */
       cursor: pointer;
       text-align: center;
-      padding: 10px 20px;
+      text-decoration: none;         /* no underline */
+      font-weight: bold;
+      margin-top: 4px;               /* optional small gap from heading */
     }
-  .btn-style:hover, .btn-link:hover {
-      background-color: #ab55fa; 
-      text-decoration: none;
+    .btn-style:hover, .btn-link:hover {
+      background-color: #e6f0ff;    /* very light blue hover */
+      color: #0056b3;               /* slightly darker text on hover */
+      text-decoration: none;        /* keep no underline */
     }
-  .btn-link {
-      margin-top: 4px;
-    }
+
    select {
       padding:6px
     }
@@ -92,19 +93,6 @@
       text-decoration: none;
       vertical-align: middle;   /* ensures inline text is centered */
     }
-    #refreshBtn {
-      background-color: white;
-      color: #007bff;       /* light blue text */
-      border: 0.5px solid #007bff;
-      border-radius: 4px;
-      padding: 5px 5px;
-      cursor: pointer;
-      text-align: center;
-    }
-    #refreshBtn:hover {
-      background-color: #e6f0ff; /* very light blue hover effect */
-      color: #0056b3;            /* slightly darker text on hover */
-    }
   </style>
 </head>
   
@@ -115,7 +103,7 @@
   </h1>
 <h2>View Travel Expenses</h2>
   <a href="https://forms.gle/Efmbz5brKNyohqQe7" target="_blank" rel="noopener" class="btn-link">Add New</a>
- <button id="refreshBtn" class="btn-style">Refresh</button>
+  <button id="refreshBtn" class="btn-style">Refresh</button>
 <script>
   document.getElementById('refreshBtn').addEventListener('click', function() {
     location.reload(); // reloads the page
