@@ -130,24 +130,12 @@
   });
 </script>
 
-  <a href="https://forms.gle/Efmbz5brKNyohqQe7" target="_blank" rel="noopener" class="btn-link">New Expense</a>
-  <button id="refreshBtn" class="btn-style">Refresh</button>
-<script>
-  document.getElementById('refreshBtn').addEventListener('click', function() {
-    location.reload(); // reloads the page
-  });
-</script>
-  <br>
-  <label> Filter by trip:
-    <select id="filterSelect"><option value="">-- All --</option></select>
-  </label>
-
-  <table id="dataTable">
-    <thead></thead>
-    <tbody></tbody>
-  </table>
+<table id="dataTable">
+  <thead></thead>
+  <tbody></tbody>
+</table>
   
-  <script>
+<script>
 /* CONFIG — replace these */
 const SPREADSHEET_ID = '1J4dldGjb3SktoVxQD3BKm-iX6RDAF7YjoLImm7-MIsg';
 const API_KEY = 'AIzaSyCkQIbYsNr6ooub1lJysGoSflG9bka0fbs';
