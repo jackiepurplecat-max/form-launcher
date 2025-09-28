@@ -78,18 +78,20 @@
       vertical-align: middle;
     }
     #dataTable th,
-    #dataTable td,
     #dataTable td a {
       font-size: 12px; /* smaller text for all cells, including links */
-      display: flex;
-      align-items: center;   /* vertical centering */
-      justify-content: flex-start; /* keep left-aligned text */
     }
     #dataTable {
       width: auto;            /* shrink table to fit content */
       table-layout: auto;     /* default, lets columns size to content */
       border-collapse: collapse;
       vertical-align: middle;
+    }
+    #dataTable td {
+      font-size: 12px; /* smaller text for all cells, including links */
+      display: flex;
+      align-items: center;   /* vertical centering */
+      justify-content: flex-start; /* keep left-aligned text */
     }
     #refreshBtn {
       background-color: white;
