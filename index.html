@@ -81,8 +81,9 @@
     #dataTable td,
     #dataTable td a {
       font-size: 12px; /* smaller text for all cells, including links */
-      display: inline-block;
-      vertical-align: middle;
+      display: flex;
+      align-items: center;   /* vertical centering */
+      justify-content: flex-start; /* keep left-aligned text */
     }
     #dataTable {
       width: auto;            /* shrink table to fit content */
