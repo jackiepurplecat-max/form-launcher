@@ -71,7 +71,7 @@
 /* CONFIG — replace these */
 const SPREADSHEET_ID = '1J4dldGjb3SktoVxQD3BKm-iX6RDAF7YjoLImm7-MIsg';
 const API_KEY = 'AIzaSyCkQIbYsNr6ooub1lJysGoSflG9bka0fbs';
-const SHEET_NAME = 'Form Responses 1!A:F';            // change to your sheet name
+const SHEET_NAME = 'Form Responses 1!A:G';            // change to your sheet name
 const FILTER_COLUMN_INDEX = 0;          // zero-based index of column to populate the dropdown from
 /* END CONFIG */
 
@@ -120,7 +120,7 @@ function renderTable(rows){
             r.filter((_, j) => j !== FILTER_COLUMN_INDEX).indexOf(r[origIdx]) === i);
 
         // If this is the original column 6 (index 5), wrap in <a>
-        if (originalIndex === 5 && cell) {
+        if (originalIndex === 6 && cell) {
           // Make sure it starts with http/https to avoid broken links
           const safeUrl = cell.startsWith('http') ? cell : 'https://' + cell;
           return `<td><a href="${safeUrl}" target="_blank" rel="noopener">${cell}</a></td>`;
