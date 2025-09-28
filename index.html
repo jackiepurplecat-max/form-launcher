@@ -104,23 +104,30 @@ async function loadSheet(){
 function renderTable(rows){
   const tbody = document.querySelector('#dataTable tbody');
   tbody.innerHTML = '';
-  
-  rows.forEach(r=>{
+
+  rows.forEach(r => {
     const tr = document.createElement('tr');
 
-    const cells = r.map((c, i) => {
-      // Only for column 7 (index 6)
-      if (i === 6 && c) {
-        const safeUrl = c.startsWith('http') ? c : 'https://' + c;
-        return `<td><a href="${safeUrl}" target="_blank" rel="noopener">${c}</a></td>`;
+    // Ensure row has same length as headers
+    const fullRow = [];
+    for (let i = 0; i < headers.length; i++) {
+      fullRow[i] = r[i] || '';
+    }
+
+    // Build table cells, hyperlinking column 7
+    tr.innerHTML = fullRow.map((cell, i) => {
+      // Turn column 7 (index 6) into a hyperlink if it has a value
+      if (i === 6 && cell) {
+        const safeUrl = cell.startsWith('http') ? cell : 'https://' + cell;
+        return `<td><a href="${safeUrl}" target="_blank" rel="noopener">${cell}</a></td>`;
       }
-      return `<td>${c}</td>`;
+      return `<td>${cell}</td>`;
     }).join('');
 
-    tr.innerHTML = cells;
     tbody.appendChild(tr);
   });
 }
+
 
 
 
