@@ -71,7 +71,7 @@
 /* CONFIG — replace these */
 const SPREADSHEET_ID = '1J4dldGjb3SktoVxQD3BKm-iX6RDAF7YjoLImm7-MIsg';
 const API_KEY = 'AIzaSyCkQIbYsNr6ooub1lJysGoSflG9bka0fbs';
-const SHEET_NAME = 'Form Responses 1!B:F';            // change to your sheet name
+const SHEET_NAME = 'Form Responses 1!A:F';            // change to your sheet name
 const FILTER_COLUMN_INDEX = 0;          // zero-based index of column to populate the dropdown from
 /* END CONFIG */
 
@@ -88,10 +88,18 @@ async function loadSheet(){
   const headers = rows[0];
   allRows = rows.slice(1);
 
-  // build headers
+  
+  // build headers (skip column A)
   document.querySelector('#dataTable thead').innerHTML =
-    '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+    '<tr>' +
+      headers
+        .filter((_, i) => i !== FILTER_COLUMN_INDEX)     // skip filter column
+        .map(h => `<th>${h}</th>`)
+        .join('') +
+    '</tr>';
 
+
+  
   // populate dropdown with unique values from FILTER_COLUMN_INDEX
   const set = new Set(allRows.map(r => (r[FILTER_COLUMN_INDEX]||'').trim()).filter(x=>x!==''));
   const select = document.getElementById('filterSelect');
@@ -109,9 +117,11 @@ function renderTable(rows){
   tbody.innerHTML = '';
   rows.forEach(r=>{
     const tr = document.createElement('tr');
-    // ensure number of cells matches header count
-    const cells = r.map(c => `<td>${c}</td>`).join('');
-    tr.innerHTML = cells;
+    // skip the filter column when rendering
+    tr.innerHTML = r
+      .filter((_, i) => i !== FILTER_COLUMN_INDEX)
+      .map(cell => `<td>${cell}</td>`)
+      .join('');
     tbody.appendChild(tr);
   });
 }
