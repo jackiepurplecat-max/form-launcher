@@ -110,8 +110,25 @@ function renderTable(rows){
   tbody.innerHTML = '';
   rows.forEach(r=>{
     const tr = document.createElement('tr');
-    // ensure number of cells matches header count
-    const cells = r.map(c => `<td>${c}</td>`).join('');
+
+    // Build cells while skipping the hidden column (A) and hyperlinking column 6
+    const cells = r
+      .filter((_, i) => i !== FILTER_COLUMN_INDEX)          // hide column A
+      .map((cell, i) => {
+        // Figure out the *original* column index before hiding
+        const originalIndex = r.findIndex((_, origIdx) =>
+            r.filter((_, j) => j !== FILTER_COLUMN_INDEX).indexOf(r[origIdx]) === i);
+
+        // If this is the original column 6 (index 5), wrap in <a>
+        if (originalIndex === 5 && cell) {
+          // Make sure it starts with http/https to avoid broken links
+          const safeUrl = cell.startsWith('http') ? cell : 'https://' + cell;
+          return `<td><a href="${safeUrl}" target="_blank" rel="noopener">${cell}</a></td>`;
+        }
+        return `<td>${cell}</td>`;
+      })
+      .join('');
+
     tr.innerHTML = cells;
     tbody.appendChild(tr);
   });
