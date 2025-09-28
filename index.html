@@ -114,7 +114,7 @@ function renderTable(rows){
       // Make column 7 (index 6) a hyperlink if it has a value
       if(i === 6 && c){
         const safeUrl = c.startsWith('http') ? c : 'https://' + c;
-        return `<td><a href="${safeUrl}" target="_blank" rel="noopener">${c}</a></td>`;
+        return `<td><a href="${safeUrl}" target="_blank" rel="noopener">Link</a></td>`;
       }
       return `<td>${c}</td>`;
     }).join('');
