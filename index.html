@@ -101,20 +101,27 @@ async function loadSheet(){
     select.appendChild(opt);
   });
 
-  renderTable(allRows);
-}
-
 function renderTable(rows){
   const tbody = document.querySelector('#dataTable tbody');
   tbody.innerHTML = '';
+  
   rows.forEach(r=>{
     const tr = document.createElement('tr');
-    // ensure number of cells matches header count
-    const cells = r.map(c => `<td>${c}</td>`).join('');
+
+    const cells = r.map((c, i) => {
+      // Only for column 7 (index 6)
+      if (i === 6 && c) {
+        const safeUrl = c.startsWith('http') ? c : 'https://' + c;
+        return `<td><a href="${safeUrl}" target="_blank" rel="noopener">${c}</a></td>`;
+      }
+      return `<td>${c}</td>`;
+    }).join('');
+
     tr.innerHTML = cells;
     tbody.appendChild(tr);
   });
 }
+
 
 
 document.getElementById('filterSelect').addEventListener('change', function(){
