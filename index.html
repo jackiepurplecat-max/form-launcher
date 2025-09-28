@@ -88,51 +88,33 @@ async function loadSheet(){
   const headers = rows[0];
   allRows = rows.slice(1);
 
-  
-// build headers
-document.querySelector('#dataTable thead').innerHTML =
-  '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+  // build headers
+  document.querySelector('#dataTable thead').innerHTML =
+    '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
 
-// populate dropdown with unique values from FILTER_COLUMN_INDEX
-const set = new Set(allRows.map(r => (r[FILTER_COLUMN_INDEX]||'').trim()).filter(x=>x!==''));
-const select = document.getElementById('filterSelect');
-Array.from(set).sort().forEach(val=>{
-  const opt = document.createElement('option');
-  opt.value = val; opt.textContent = val;
-  select.appendChild(opt);
-});
+  // populate dropdown with unique values from FILTER_COLUMN_INDEX
+  const set = new Set(allRows.map(r => (r[FILTER_COLUMN_INDEX]||'').trim()).filter(x=>x!==''));
+  const select = document.getElementById('filterSelect');
+  Array.from(set).sort().forEach(val=>{
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = val;
+    select.appendChild(opt);
+  });
 
-renderTable(allRows);
+  renderTable(allRows);
+}
 
 function renderTable(rows){
   const tbody = document.querySelector('#dataTable tbody');
   tbody.innerHTML = '';
-
-  rows.forEach(r => {
+  rows.forEach(r=>{
     const tr = document.createElement('tr');
-
-    // ensure row has same length as headers
-    const fullRow = [];
-    for (let i = 0; i < headers.length; i++) {
-      fullRow[i] = r[i] || '';
-    }
-
-    tr.innerHTML = fullRow.map((cell, i) => {
-      // Turn column 7 (index 6) into a hyperlink if it has a value
-      if (i === 6 && cell) {
-        const safeUrl = cell.startsWith('http') ? cell : 'https://' + cell;
-        return `<td><a href="${safeUrl}" target="_blank" rel="noopener">${cell}</a></td>`;
-      }
-      return `<td>${cell}</td>`;
-    }).join('');
-
+    // ensure number of cells matches header count
+    const cells = r.map(c => `<td>${c}</td>`).join('');
+    tr.innerHTML = cells;
     tbody.appendChild(tr);
   });
 }
-
-
-
-
 
 document.getElementById('filterSelect').addEventListener('change', function(){
   const v = this.value;
