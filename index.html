@@ -77,22 +77,35 @@
       display: inline-block;
       vertical-align: middle;
     }
-    #dataTable th,
-    #dataTable td a {
-      font-size: 12px; /* smaller text for all cells, including links */
-    }
     #dataTable {
-      width: auto;            /* shrink table to fit content */
-      table-layout: auto;     /* default, lets columns size to content */
-      border-collapse: collapse;
-      vertical-align: middle;
-    }
-    #dataTable td {
-      font-size: 12px; /* smaller text for all cells, including links */
-      display: flex;
-      align-items: center;   /* vertical centering */
-      justify-content: flex-start; /* keep left-aligned text */
-    }
+  width: auto;            
+  table-layout: auto;     
+  border-collapse: collapse;
+}
+
+#dataTable th {
+  border: 1px solid #ddd;
+  background: #f3f3f3;
+  padding: 8px;
+  text-align: left;
+  font-size: 12px;
+}
+
+#dataTable td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  display: flex;
+  align-items: center;  /* vertical center */
+  justify-content: flex-start;
+  font-size: 12px;
+}
+
+#dataTable td a {
+  /* no need for display or vertical-align now */
+  color: #007bff;
+  text-decoration: none;
+}
+
     #refreshBtn {
       background-color: white;
       color: #007bff;       /* light blue text */
