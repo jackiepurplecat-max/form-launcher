@@ -89,17 +89,10 @@ async function loadSheet(){
   allRows = rows.slice(1);
 
   
-  // build headers (skip column A)
+   // build headers
   document.querySelector('#dataTable thead').innerHTML =
-    '<tr>' +
-      headers
-        .filter((_, i) => i !== FILTER_COLUMN_INDEX)     // skip filter column
-        .map(h => `<th>${h}</th>`)
-        .join('') +
-    '</tr>';
+    '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
 
-
-  
   // populate dropdown with unique values from FILTER_COLUMN_INDEX
   const set = new Set(allRows.map(r => (r[FILTER_COLUMN_INDEX]||'').trim()).filter(x=>x!==''));
   const select = document.getElementById('filterSelect');
@@ -117,11 +110,9 @@ function renderTable(rows){
   tbody.innerHTML = '';
   rows.forEach(r=>{
     const tr = document.createElement('tr');
-    // skip the filter column when rendering
-    tr.innerHTML = r
-      .filter((_, i) => i !== FILTER_COLUMN_INDEX)
-      .map(cell => `<td>${cell}</td>`)
-      .join('');
+    // ensure number of cells matches header count
+    const cells = r.map(c => `<td>${c}</td>`).join('');
+    tr.innerHTML = cells;
     tbody.appendChild(tr);
   });
 }
