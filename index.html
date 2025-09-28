@@ -118,7 +118,7 @@ function renderTable(rows){
     }
 
     tr.innerHTML = fullRow.map((cell, i) => {
-      if (i === 5 && cell) {  // column 6
+      if (i === 6 && cell) {  // column 6
         const safeUrl = cell.startsWith('http') ? cell : 'https://' + cell;
         return `<td><a href="${safeUrl}" target="_blank" rel="noopener">${cell}</a></td>`;
       }
