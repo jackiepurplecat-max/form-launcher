@@ -110,17 +110,25 @@ function renderTable(rows){
   tbody.innerHTML = '';
   rows.forEach(r => {
     const tr = document.createElement('tr');
-    tr.innerHTML = r.map((cell, i) => {
-      // Turn column 6 (zero-based index 5) into a hyperlink if it has a value
-      if (i === 5 && cell) {
+
+    // Make sure row has the same length as headers
+    const fullRow = [];
+    for (let i = 0; i < headers.length; i++) {
+      fullRow[i] = r[i] || ''; // fill missing cells with empty string
+    }
+
+    tr.innerHTML = fullRow.map((cell, i) => {
+      if (i === 5 && cell) {  // column 6
         const safeUrl = cell.startsWith('http') ? cell : 'https://' + cell;
         return `<td><a href="${safeUrl}" target="_blank" rel="noopener">${cell}</a></td>`;
       }
       return `<td>${cell}</td>`;
     }).join('');
+
     tbody.appendChild(tr);
   });
 }
+
 
 
 document.getElementById('filterSelect').addEventListener('change', function(){
