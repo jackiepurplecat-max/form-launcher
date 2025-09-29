@@ -81,7 +81,8 @@ select {
   font-size: 12px;
   margin-top: 4px;
   white-space: nowrap;     /* keep text on one line */
-  box-sizing: border-box;  /* include border in width */ }
+  box-sizing: border-box;  /* include border in width */ 
+}
 
 .btn:hover {
   background-color: #e6f0ff;
@@ -89,7 +90,8 @@ select {
   text-decoration: none;
 }
 
-/* Reset default button element styles so <button class="btn"> matches <a class="btn"> */ button.btn {
+/* Reset default button element styles so <button class="btn"> matches <a class="btn"> */ 
+button.btn {
   background: none;
   border: none;
   padding: 0;
@@ -146,11 +148,7 @@ td a,
   <div class="controls">
   <a href="https://forms.gle/Efmbz5brKNyohqQe7" target="_blank" rel="noopener" class="btn-link">New Expense</a>
 
-  <button class="btn" type="button" onclick="location.reload()">
-    Refresh
-  </button>
-  
-  <button class="btn-style refresh-btn">Refresh</button>
+  <button class="btn refresh-btn" type="button">Refresh</button>
 
   <label for="filterSelect" class="filter-label">
     Filter by trip:
@@ -171,11 +169,7 @@ td a,
   <div class="controls">
   <a href="https://forms.gle/Efmbz5brKNyohqQe7" target="_blank" rel="noopener" class="btn-link">New Receipt</a>
   
-  <button class="btn" type="button" onclick="location.reload()">
-    Refresh
-  </button>
-
-    <button class="btn-style refresh-btn">Refresh</button>
+  <button class="btn refresh-btn" type="button">Refresh</button>
     
   <label for="filterSelect" class="filter-label">
     Filter by claim:
@@ -261,7 +255,7 @@ document.querySelectorAll('.refresh-btn').forEach(btn => {
     location.reload();
     });
   });
-  
+
 // load on start
 loadSheet();
 </script>
