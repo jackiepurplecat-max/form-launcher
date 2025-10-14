@@ -47,6 +47,50 @@ function setupScriptProperties() {
   Logger.log('   - FORM_ID: ' + props.getProperty('FORM_ID'));
 }
 
+/**
+ * Install trigger for IVA form submissions
+ * Run this once to set up automatic status setting
+ */
+function installIVATrigger() {
+  // Remove existing triggers for handleIVA to avoid duplicates
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(trigger => {
+    if (trigger.getHandlerFunction() === 'handleIVA') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+
+  // Create new trigger
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ScriptApp.newTrigger('handleIVA')
+    .forSpreadsheet(ss)
+    .onFormSubmit()
+    .create();
+
+  Logger.log('✅ Form submit trigger installed for handleIVA()');
+}
+
+/**
+ * Handle IVA form submissions - set default status to "to do"
+ */
+function handleIVA(e) {
+  const sheetName = "IVA";
+  const statusCol = 10;  // Column J (Status)
+
+  const row = e.range.getRow();
+  const sheet = e.source.getSheetByName(sheetName);
+  if (row === 1) return; // Skip header
+
+  // Set default status to "to do" if empty
+  const statusCell = sheet.getRange(row, statusCol);
+  const currentStatus = statusCell.getValue();
+
+  if (!currentStatus || currentStatus === "") {
+    statusCell.setValue("to do");
+    Logger.log(`Row ${row}: Set default status to "to do"`);
+  }
+}
+
 function handleTravel(e) {
   const sheetName = "Travel";
   const emailSentCol = 9;               // "Email sent?" column (I)
@@ -93,8 +137,8 @@ function handleTravel(e) {
     // Build Drive file link
     const fileLink = `https://drive.google.com/file/d/${fileId}/view`;
 
-    // Subject: travel claim receipt <trip> <description>
-    const subject = `travel claim receipt ${trip || ""} ${description || ""}`.trim();
+    // Subject: travel claim <trip> <description>
+    const subject = `travel claim ${trip || ""} ${description || ""}`.trim();
 
     // Body with file link
     const body = [
