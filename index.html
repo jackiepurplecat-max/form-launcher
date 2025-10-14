@@ -61,40 +61,160 @@ a:hover {
 }
 
 label,
-.filter-label,
+.filter-label {
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 29px;
+  margin: 0;
+  margin-top: 4px;
+  vertical-align: middle;
+}
+
 #filterSelect {
   font-size: 12px;
 }
 
 select {
-  padding: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  line-height: 13px;
+  box-sizing: border-box;
+  vertical-align: middle;
+  min-height: 29px;
+  height: 29px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  margin: 0;
+  margin-top: 4px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-color: #fff;
+  background-image: url('data:image/svg+xml;charset=UTF-8,%3csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"%3e%3cpolyline points="6 9 12 15 18 9"%3e%3c/polyline%3e%3c/svg%3e');
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+  background-size: 16px;
+  padding-right: 24px;
+}
+
+/* Style input fields to align with buttons and dropdowns */
+input[type="text"] {
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 12px;
+  line-height: 13px;
+  padding: 3px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-sizing: border-box;
+  vertical-align: middle;
+  min-height: 29px;
+  height: 29px;
+  margin: 0;
+  margin-top: 4px;
 }
 
 /* ========== Buttons (shared) ========== */
 .btn {
-  display: inline-block;
-  background-color: #fff;
-  color: #007bff;
-  border: 0.5px solid #007bff;
-  border-radius: 4px;
-  padding: 5px 21px;
-  cursor: pointer;
-  text-align: center;
-  text-decoration: none;  /* removes underline on <a> */
-  font-size: 12px;
-  font-family: inherit;   /* or pick a specific font */
-  font-weight: normal;    /* ensures no bolding */
+  /* Display & Box Model */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  margin: 0;
   margin-top: 4px;
-  white-space: nowrap;     /* keep text on one line */
-  box-sizing: border-box;  /* include border in width */
-  line-height: 1.2;   /* or whatever looks right */
-flex-shrink: 0;          /* no flex squeez */
+  padding: 3px 8px;
+  min-height: 29px;
+  height: 29px;
+
+  /* Typography */
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 12px;
+  font-weight: normal;
+  line-height: 13px;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+
+  /* Colors & Borders */
+  color: #007bff;
+  background-color: #fff;
+  border: 0.8px solid #007bff;
+  border-radius: 4px;
+
+  /* Layout */
+  vertical-align: middle;
+  flex-shrink: 0;
+
+  /* Interaction */
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+
+  /* Remove default button styling - Safari/iOS specific */
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
+
+/* Force exact same styles for button elements */
+button.btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border: 0.8px solid #007bff !important;
+  padding: 3px 8px !important;
+  min-height: 29px !important;
+  height: 29px !important;
+  background-color: #fff !important;
+  color: #007bff !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  line-height: 13px !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  font-synthesis: none !important;
+}
+
+/* Force exact same styles for link elements */
+a.btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border: 0.8px solid #007bff !important;
+  padding: 3px 8px !important;
+  min-height: 29px !important;
+  height: 29px !important;
+  background-color: #fff !important;
+  color: #007bff !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  line-height: 13px !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  font-synthesis: none !important;
 }
 
 .btn:hover {
   background-color: #e6f0ff;
   color: #0056b3;
   text-decoration: none;
+}
+
+/* Active state for better mobile feedback */
+.btn:active {
+  background-color: #cce5ff;
+  transform: scale(0.98);
+}
+
+/* Focus state for accessibility */
+.btn:focus {
+  outline: 2px solid #80bdff;
+  outline-offset: 2px;
 }
 
 /* ========== Tables ========== */
@@ -116,14 +236,17 @@ th {
 }
 
 #dataTable th,
-#dataTable td {
+#dataTable td,
+#ivaTable th,
+#ivaTable td {
   vertical-align: middle;
   padding: 8px;
   font-size: 12px;
 }
 
 td a,
-#dataTable td a {
+#dataTable td a,
+#ivaTable td a {
   display: inline-block;
   margin: 0;
   padding: 0;
@@ -167,8 +290,9 @@ td a,
       ➕ Add trip:
     </label>
     <input id="newTripName"
+           type="text"
            placeholder="e.g. 20251025 Paris"
-           style="width:10rem; padding:0.25rem;" />
+           style="width:10rem;" />
     <button class="btn" type="button" onclick="addTrip()">Add</button>
   </div>
 
@@ -198,13 +322,13 @@ td a,
 <!-- START of IVA Claims Section -->
 <h2>Receipts for IVA Claim</h2>
   <div class="controls">
-  <a href="https://forms.gle/Efmbz5brKNyohqQe7" target="_blank" rel="noopener" class="btn">New Receipt</a>
+  <a href="https://docs.google.com/forms/d/e/1FAIpQLSeY6ioVXE1a7HMWxTYi4xbnEVZhL1qZGSqCRuH72dXLIQy0AQ/viewform" target="_blank" rel="noopener" class="btn">New Receipt</a>
 
   <button class="btn refresh-btn" type="button">Refresh</button>
 
-  <label for="filterSelect" class="filter-label">
-    Filter by claim:
-    <select id="filterSelect">
+  <label for="ivaFilterSelect" class="filter-label">
+    Filter by Status:
+    <select id="ivaFilterSelect">
       <option value="">-- All --</option>
     </select>
   </label>
@@ -213,13 +337,20 @@ td a,
   <p class="filter-label"><b>My NIF:</b> 256120803</p>
 
 </div>
+
+<table id="ivaTable">
+  <thead></thead>
+  <tbody></tbody>
+</table>
 <!-- END of IVA Claims Section -->
 
 <script>
 /* ========= CONFIG - Injected from .env via build script ========= */
 const SPREADSHEET_ID = '1J4dldGjb3SktoVxQD3BKm-iX6RDAF7YjoLImm7-MIsg';
-const SHEET_NAME = 'Travel!A:G';
-const FILTER_COLUMN_INDEX = 0; // "Trip" column
+const TRAVEL_SHEET_NAME = 'Travel!A:G';
+const IVA_SHEET_NAME = 'IVA!A:J';
+const TRAVEL_FILTER_COLUMN_INDEX = 0; // "Trip" column
+const IVA_FILTER_COLUMN_INDEX = 1; // "Número (Fatura Ref Number)" column (B in sheet, index 1)
 const SHEETS_API_KEY = 'AIzaSyCkQIbYsNr6ooub1lJysGoSflG9bka0fbs';
 
 /* --- DELETE endpoint config --- */
@@ -228,14 +359,14 @@ const DELETE_API_KEY = 'K9mP2xR7nQ4vL8wT6hY3jF5bN1cZ9sD4';
 /* ============================ */
 
 
-/* ---------- Load Sheet Data ---------- */
-const endpoint = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(SHEET_NAME)}?key=${SHEETS_API_KEY}&majorDimension=ROWS`;
-let allRows = [];
+/* ---------- Load Travel Sheet Data ---------- */
+const travelEndpoint = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(TRAVEL_SHEET_NAME)}?key=${SHEETS_API_KEY}&majorDimension=ROWS`;
+let allTravelRows = [];
 
-async function loadSheet() {
-  const res = await fetch(endpoint);
+async function loadTravelSheet() {
+  const res = await fetch(travelEndpoint);
   if (!res.ok) {
-    console.error('Sheets API error', await res.text());
+    console.error('Sheets API error (Travel)', await res.text());
     return;
   }
   const j = await res.json();
@@ -244,14 +375,14 @@ async function loadSheet() {
 
   const headers = rows[0];
   headers[6] = "Link to File"; // rename column 7 header
-  allRows = rows.slice(1);
+  allTravelRows = rows.slice(1);
 
   // build header row
   document.querySelector('#dataTable thead').innerHTML =
     '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
 
   // populate filter dropdown and delete dropdown with unique Trip names
-  const set = new Set(allRows.map(r => (r[FILTER_COLUMN_INDEX] || '').trim()).filter(x => x !== ''));
+  const set = new Set(allTravelRows.map(r => (r[TRAVEL_FILTER_COLUMN_INDEX] || '').trim()).filter(x => x !== ''));
   const sortedTrips = Array.from(set).sort();
 
   // Populate filter dropdown
@@ -272,10 +403,73 @@ async function loadSheet() {
     deleteSelect.appendChild(opt);
   });
 
-  renderTable(allRows);
+  renderTravelTable(allTravelRows);
 }
 
-function renderTable(rows) {
+/* ---------- Load IVA Sheet Data ---------- */
+const ivaEndpoint = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(IVA_SHEET_NAME)}?key=${SHEETS_API_KEY}&majorDimension=ROWS`;
+let allIvaRows = [];
+
+async function loadIvaSheet() {
+  const res = await fetch(ivaEndpoint);
+  if (!res.ok) {
+    console.error('Sheets API error (IVA)', await res.text());
+    return;
+  }
+  const j = await res.json();
+  const rows = j.values || [];
+  if (rows.length === 0) return;
+
+  const headers = rows[0];
+  // Exclude Timestamp (column A, index 0) and reorder columns
+  // Original: A=Timestamp, B=Número, C=Data, D=Emitente NIF, E=Tipo, F=Importados, G=Valor do IVA, H=Valor Total, I=Ficheiro, J=Status
+  // Display: J, B, C, D, E, F, G, H, (Link to File from I)
+  const reorderedHeaders = [
+    headers[9], // J: Status
+    headers[1], // B: Número
+    headers[2], // C: Data
+    headers[3], // D: Emitente NIF
+    headers[4], // E: Tipo
+    headers[5], // F: Importados
+    headers[6], // G: Valor do IVA
+    headers[7], // H: Valor Total
+    'Link to File' // Link from I
+  ];
+
+  // Reorder data rows (exclude column A, reorder remaining)
+  allIvaRows = rows.slice(1).map(row => [
+    row[9], // J: Status
+    row[1], // B: Número
+    row[2], // C: Data
+    row[3], // D: Emitente NIF
+    row[4], // E: Tipo
+    row[5], // F: Importados
+    row[6], // G: Valor do IVA
+    row[7], // H: Valor Total
+    row[8]  // I: Ficheiro (will be converted to link)
+  ]);
+
+  // build header row
+  document.querySelector('#ivaTable thead').innerHTML =
+    '<tr>' + reorderedHeaders.map(h => `<th>${h}</th>`).join('') + '</tr>';
+
+  // populate filter dropdown with unique Status values
+  const set = new Set(allIvaRows.map(r => (r[0] || '').trim()).filter(x => x !== ''));
+  const sortedStatuses = Array.from(set).sort();
+
+  // Populate IVA filter dropdown
+  const ivaFilterSelect = document.getElementById('ivaFilterSelect');
+  ivaFilterSelect.innerHTML = '<option value="">-- All --</option>';
+  sortedStatuses.forEach(val => {
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = val;
+    ivaFilterSelect.appendChild(opt);
+  });
+
+  renderIvaTable(allIvaRows);
+}
+
+function renderTravelTable(rows) {
   const tbody = document.querySelector('#dataTable tbody');
   tbody.innerHTML = '';
   rows.forEach(r => {
@@ -292,10 +486,33 @@ function renderTable(rows) {
   });
 }
 
+function renderIvaTable(rows) {
+  const tbody = document.querySelector('#ivaTable tbody');
+  tbody.innerHTML = '';
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+    const cells = r.map((c, i) => {
+      if (i === 8 && c) { // column 9 in display (index 8) = Link to File from Ficheiro
+        const safeUrl = c.startsWith('http') ? c : 'https://' + c;
+        return `<td><a href="${safeUrl}" target="_blank" rel="noopener">Link</a></td>`;
+      }
+      return `<td>${c || ''}</td>`;
+    }).join('');
+    tr.innerHTML = cells;
+    tbody.appendChild(tr);
+  });
+}
+
 document.getElementById('filterSelect').addEventListener('change', function() {
   const v = this.value;
-  const filtered = v ? allRows.filter(r => (r[FILTER_COLUMN_INDEX] || '') === v) : allRows;
-  renderTable(filtered);
+  const filtered = v ? allTravelRows.filter(r => (r[TRAVEL_FILTER_COLUMN_INDEX] || '') === v) : allTravelRows;
+  renderTravelTable(filtered);
+});
+
+document.getElementById('ivaFilterSelect').addEventListener('change', function() {
+  const v = this.value;
+  const filtered = v ? allIvaRows.filter(r => (r[0] || '') === v) : allIvaRows; // Filter by Status (first column)
+  renderIvaTable(filtered);
 });
 
 document.querySelectorAll('.refresh-btn').forEach(btn => {
@@ -329,7 +546,7 @@ async function addTrip() {
       resultEl.textContent = `Trip "${data.tripName}" added to form dropdown.`;
       resultEl.style.color = '#2d7a2d';
       document.getElementById("newTripName").value = ''; // clear input
-      loadSheet(); // refresh dropdowns
+      loadTravelSheet(); // refresh dropdowns
     } else {
       resultEl.textContent = `Error: ${data.error || "unknown"}`;
       resultEl.style.color = '#c72e2e';
@@ -366,7 +583,7 @@ async function deleteTrip() {
         `Deleted ${data.deletedRows} expense row(s) for "${data.trip}". `
         + `${data.remainingTrips} trip(s) remain in list.`;
       resultEl.style.color = '#2d7a2d'; // green for success
-      loadSheet(); // refresh table after deletion
+      loadTravelSheet(); // refresh table after deletion
     } else {
       resultEl.textContent = `Error: ${data.error || "unknown"}`;
       resultEl.style.color = '#c72e2e'; // red for error
@@ -378,7 +595,8 @@ async function deleteTrip() {
 }
 
 /* ---------- Load data on page start ---------- */
-loadSheet();
+loadTravelSheet();
+loadIvaSheet();
 </script>
 
 
