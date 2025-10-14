@@ -54,19 +54,26 @@ HelpfulForms/
 
 ### Configuration
 
-**index.html (lines 208-215):**
-```javascript
-SPREADSHEET_ID = '1J4dldGjb3SktoVxQD3BKm-iX6RDAF7YjoLImm7-MIsg'
-SHEET_NAME = 'Travel!A:G'
-SHEETS_API_KEY = 'AIzaSyCkQIbYsNr6ooub1lJysGoSflG9bka0fbs'
-DELETE_WEBAPP_URL = 'YOUR_WEB_APP_URL_HERE'   // Apps Script web app URL
-DELETE_API_KEY = 'YOUR_SUPER_SECRET_KEY_HERE' // Must match Code.js
+This project uses environment variables for security. All secrets are stored in `.env` file (gitignored).
+
+**`.env` file:**
+```env
+DELETE_API_KEY=your-secret-key-here
+DELETE_WEBAPP_URL=your-web-app-url-here
+SHEETS_API_KEY=your-sheets-api-key-here
+SPREADSHEET_ID=your-spreadsheet-id-here
+RECIPIENT_EMAIL=your-email@example.com
 ```
 
-**Code.js (line 9):**
-```javascript
-recipient = "you@example.com"  // Email recipient for expense notifications
-```
+**Build process:**
+- Run `npm run build` to inject .env values into index.html
+- Template file: `index.template.html` (with {{placeholders}})
+- Built file: `index.html` (with actual values, gitignored)
+
+**Apps Script configuration:**
+- Secrets stored in Script Properties (not in code)
+- Run `setupScriptProperties()` once in Apps Script editor to configure
+- See README.md for detailed setup instructions
 
 ### Development Setup
 

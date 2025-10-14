@@ -7,8 +7,8 @@ function getDeleteApiKey() {
 
   // Fallback for initial setup - remove after setting Script Properties
   if (!apiKey) {
-    apiKey = 'K9mP2xR7nQ4vL8wT6hY3jF5bN1cZ9sD4';
-    Logger.log('⚠️ Using hardcoded API key. Run setupScriptProperties() to store securely.');
+    Logger.log('⚠️ DELETE_API_KEY not found in Script Properties. Run setupScriptProperties() to configure.');
+    throw new Error('DELETE_API_KEY not configured in Script Properties');
   }
 
   return apiKey;
@@ -20,8 +20,8 @@ function getRecipientEmail() {
 
   // Fallback for initial setup
   if (!email) {
-    email = 'you@example.com';
-    Logger.log('⚠️ Using placeholder email. Run setupScriptProperties() to set your email.');
+    Logger.log('⚠️ RECIPIENT_EMAIL not found in Script Properties. Run setupScriptProperties() to configure.');
+    throw new Error('RECIPIENT_EMAIL not configured in Script Properties');
   }
 
   return email;
@@ -31,15 +31,15 @@ function getRecipientEmail() {
  * One-time setup function to store secrets in Script Properties
  * Run this once from the Apps Script editor, then delete or comment out
  *
- * IMPORTANT: Update these values before running!
+ * IMPORTANT: Update these values from your .env file before running!
  */
 function setupScriptProperties() {
   const props = PropertiesService.getScriptProperties();
 
-  // Update these values!
-  props.setProperty('DELETE_API_KEY', 'K9mP2xR7nQ4vL8wT6hY3jF5bN1cZ9sD4');
-  props.setProperty('RECIPIENT_EMAIL', 'jacqueline.eaton@nato.int');
-  props.setProperty('FORM_ID', '1Ug8DFOA2lKhrSJZ58ctjCXQMTwkw7UU-DfkNBVpaEpw');
+  // Update these values from your .env file!
+  props.setProperty('DELETE_API_KEY', 'YOUR_DELETE_API_KEY_HERE');
+  props.setProperty('RECIPIENT_EMAIL', 'your-email@example.com');
+  props.setProperty('FORM_ID', 'YOUR_FORM_ID_HERE');
 
   Logger.log('✅ Configuration stored in Script Properties');
   Logger.log('   - DELETE_API_KEY: Set');
@@ -323,8 +323,8 @@ function getFormId() {
 
   // Fallback for initial setup
   if (!formId) {
-    formId = 'YOUR_FORM_ID_HERE';
-    Logger.log('⚠️ Using placeholder form ID. Run setupScriptProperties() to set your form ID.');
+    Logger.log('⚠️ FORM_ID not found in Script Properties. Run setupScriptProperties() to configure.');
+    throw new Error('FORM_ID not configured in Script Properties');
   }
 
   return formId;
