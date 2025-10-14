@@ -38,10 +38,10 @@ npm run clasp:push
 Contains all your secrets - **NEVER commit to git!**
 
 ```env
-DELETE_API_KEY=K9mP2xR7nQ4vL8wT6hY3jF5bN1cZ9sD4
-DELETE_WEBAPP_URL=YOUR_WEB_APP_URL_HERE
-SHEETS_API_KEY=AIzaSyCkQIbYsNr6ooub1lJysGoSflG9bka0fbs
-SPREADSHEET_ID=1J4dldGjb3SktoVxQD3BKm-iX6RDAF7YjoLImm7-MIsg
+DELETE_API_KEY=your-secret-key-here
+DELETE_WEBAPP_URL=your-web-app-url-here
+SHEETS_API_KEY=your-sheets-api-key-here
+SPREADSHEET_ID=your-spreadsheet-id-here
 RECIPIENT_EMAIL=your-email@example.com
 ```
 
