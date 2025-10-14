@@ -664,7 +664,15 @@ document.getElementById('ivaFilterSelect').addEventListener('change', function()
 });
 
 document.querySelectorAll('.refresh-btn').forEach(btn => {
-  btn.addEventListener('click', () => location.reload());
+  btn.addEventListener('click', () => {
+    // Save expanded state before reload
+    const expandedSections = [];
+    document.querySelectorAll('.service-content.expanded').forEach(content => {
+      expandedSections.push(content.id);
+    });
+    sessionStorage.setItem('expandedSections', JSON.stringify(expandedSections));
+    location.reload();
+  });
 });
 
 /* ---------- Add Trip Function ---------- */
@@ -742,9 +750,31 @@ async function deleteTrip() {
   }
 }
 
+/* ---------- Restore expanded sections after refresh ---------- */
+function restoreExpandedSections() {
+  const expandedSections = sessionStorage.getItem('expandedSections');
+  if (expandedSections) {
+    const sections = JSON.parse(expandedSections);
+    sections.forEach(sectionId => {
+      const content = document.getElementById(sectionId);
+      if (content) {
+        content.classList.add('expanded');
+        // Find and expand the corresponding header
+        const header = content.previousElementSibling;
+        if (header && header.classList.contains('service-header')) {
+          header.classList.add('expanded');
+        }
+      }
+    });
+    // Clear the stored state
+    sessionStorage.removeItem('expandedSections');
+  }
+}
+
 /* ---------- Load data on page start ---------- */
 loadTravelSheet();
 loadIvaSheet();
+restoreExpandedSections();
 
 /* ---------- Toggle Functions for Collapsible Sections ---------- */
 function toggleService(serviceId) {
