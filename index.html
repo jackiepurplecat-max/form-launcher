@@ -17,12 +17,15 @@ body {
   padding: 20px;
   background-color: #f9f9f9;
   color: #333;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
 h1 {
   font-size: 24px;
   display: flex;
   align-items: center;
+  margin-bottom: 20px;
 }
 
 h1 img {
@@ -35,6 +38,102 @@ h2 {
   display: flex;
   align-items: center;
   margin-bottom: 0;
+}
+
+/* ========== Collapsible Sections ========== */
+.service-section {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.service-header {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  cursor: pointer;
+  background: #fff;
+  border: none;
+  width: 100%;
+  text-align: left;
+  font-size: 18px;
+  font-weight: 600;
+  transition: background-color 0.2s;
+}
+
+.service-header:hover {
+  background-color: #f5f5f5;
+}
+
+.service-header.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  background-color: #fafafa;
+}
+
+.collapse-icon {
+  margin-left: auto;
+  font-size: 20px;
+  transition: transform 0.3s;
+}
+
+.service-header.expanded .collapse-icon {
+  transform: rotate(90deg);
+}
+
+.service-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease-out;
+  padding: 0 16px;
+}
+
+.service-content.expanded {
+  max-height: 5000px;
+  padding: 16px;
+  transition: max-height 0.5s ease-in;
+}
+
+/* Nested collapsible for admin functions */
+.admin-section {
+  margin-top: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background: #fafafa;
+}
+
+.admin-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  background: #fafafa;
+  border: none;
+  width: 100%;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+  transition: background-color 0.2s;
+}
+
+.admin-header:hover {
+  background-color: #f0f0f0;
+}
+
+.admin-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease-out;
+  padding: 0 12px;
+}
+
+.admin-content.expanded {
+  max-height: 1000px;
+  padding: 12px;
+  transition: max-height 0.5s ease-in;
 }
 
 a {
@@ -267,8 +366,13 @@ td a,
     Jackie's Helpful Forms
   </h1>
 
-  <!--  START of Travel Expenses Section -->
-  <h2>Travel Expenses</h2>
+  <!-- Travel Expenses Section -->
+  <div class="service-section">
+    <button class="service-header" onclick="toggleService('travel')">
+      <span>Travel Expenses</span>
+      <span class="collapse-icon">▶</span>
+    </button>
+    <div class="service-content" id="travel-content">
 <div class="controls">
   <a href="https://forms.gle/Efmbz5brKNyohqQe7"
      target="_blank"
@@ -283,32 +387,43 @@ td a,
       <option value="">-- All --</option>
     </select>
   </label>
+</div>
 
-  <!-- Add Trip controls -->
-  <div class="add-trip" style="display:inline-block; margin-left:1rem;">
-    <label for="newTripName" style="margin-right:0.5rem;">
-      ➕ Add trip:
-    </label>
-    <input id="newTripName"
-           type="text"
-           placeholder="e.g. 20251025 Paris"
-           style="width:10rem;" />
-    <button class="btn" type="button" onclick="addTrip()">Add</button>
-  </div>
+<!-- Manage Trips Admin Section -->
+<div class="admin-section">
+  <button class="admin-header" onclick="toggleAdmin('travel-admin')">
+    <span>Manage Trips</span>
+    <span class="collapse-icon" style="margin-left: auto;">▼</span>
+  </button>
+  <div class="admin-content" id="travel-admin">
+    <!-- Add Trip controls -->
+    <div class="add-trip" style="margin-bottom:8px;">
+      <label for="newTripName" style="margin-right:0.5rem; display:block; margin-bottom:4px;">
+        ➕ Add trip:
+      </label>
+      <input id="newTripName"
+             type="text"
+             placeholder="e.g. 20251025 Paris"
+             style="width:calc(100% - 60px); margin-right:4px;" />
+      <button class="btn" type="button" onclick="addTrip()">Add</button>
+    </div>
 
-  <!-- Delete Trip controls -->
-  <div class="delete-trip" style="display:inline-block; margin-left:1rem;">
-    <label for="deleteTripSelect" style="margin-right:0.5rem;">
-      🗑️ Delete trip:
-    </label>
-    <select id="deleteTripSelect" style="padding:0.25rem;">
-      <option value="">-- Select trip --</option>
-    </select>
-    <button class="btn" type="button" onclick="deleteTrip()">Delete</button>
+    <!-- Delete Trip controls -->
+    <div class="delete-trip">
+      <label for="deleteTripSelect" style="margin-right:0.5rem; display:block; margin-bottom:4px;">
+        🗑️ Delete trip:
+      </label>
+      <select id="deleteTripSelect" style="width:calc(100% - 80px); margin-right:4px;">
+        <option value="">-- Select trip --</option>
+      </select>
+      <button class="btn" type="button" onclick="deleteTrip()">Delete</button>
+    </div>
   </div>
 </div>
 
-<!-- Status messages below the controls -->
+</div><!-- end admin-section -->
+
+<!-- Status messages below the admin section -->
 <p id="addTripResult" style="margin-top:0.5rem; margin-bottom:0; font-size:12px; color:#333;"></p>
 <p id="deleteResult" style="margin-top:0; margin-bottom:0.5rem; font-size:12px; color:#333;"></p>
 
@@ -317,10 +432,17 @@ td a,
   <thead></thead>
   <tbody></tbody>
 </table>
-<!--  END of Travel Expenses Section -->
 
-<!-- START of IVA Claims Section -->
-<h2>Receipts for IVA Claim</h2>
+    </div><!-- end travel-content -->
+  </div><!-- end service-section -->
+
+  <!-- IVA Claims Section -->
+  <div class="service-section">
+    <button class="service-header" onclick="toggleService('iva')">
+      <span>IVA Claim Receipts</span>
+      <span class="collapse-icon">▶</span>
+    </button>
+    <div class="service-content" id="iva-content">
   <div class="controls">
   <a href="https://docs.google.com/forms/d/e/1FAIpQLSeY6ioVXE1a7HMWxTYi4xbnEVZhL1qZGSqCRuH72dXLIQy0AQ/viewform" target="_blank" rel="noopener" class="btn">New Receipt</a>
 
@@ -342,7 +464,25 @@ td a,
   <thead></thead>
   <tbody></tbody>
 </table>
-<!-- END of IVA Claims Section -->
+
+    </div><!-- end iva-content -->
+  </div><!-- end service-section -->
+
+  <!-- Log Income Section (Coming Soon) -->
+  <div class="service-section">
+    <button class="service-header disabled" disabled>
+      <span>Log Income</span>
+      <span style="margin-left: auto; font-size: 12px; color: #999;">(Coming soon)</span>
+    </button>
+  </div>
+
+  <!-- Health Claim Section (Coming Soon) -->
+  <div class="service-section">
+    <button class="service-header disabled" disabled>
+      <span>Health Claim</span>
+      <span style="margin-left: auto; font-size: 12px; color: #999;">(Coming soon)</span>
+    </button>
+  </div>
 
 <script>
 /* ========= CONFIG - Injected from .env via build script ========= */
@@ -597,6 +737,34 @@ async function deleteTrip() {
 /* ---------- Load data on page start ---------- */
 loadTravelSheet();
 loadIvaSheet();
+
+/* ---------- Toggle Functions for Collapsible Sections ---------- */
+function toggleService(serviceId) {
+  const content = document.getElementById(serviceId + '-content');
+  const header = event.currentTarget;
+
+  if (content.classList.contains('expanded')) {
+    content.classList.remove('expanded');
+    header.classList.remove('expanded');
+  } else {
+    content.classList.add('expanded');
+    header.classList.add('expanded');
+  }
+}
+
+function toggleAdmin(adminId) {
+  const content = document.getElementById(adminId);
+  const header = event.currentTarget;
+  const icon = header.querySelector('.collapse-icon');
+
+  if (content.classList.contains('expanded')) {
+    content.classList.remove('expanded');
+    icon.textContent = '▼';
+  } else {
+    content.classList.add('expanded');
+    icon.textContent = '▲';
+  }
+}
 </script>
 
 
