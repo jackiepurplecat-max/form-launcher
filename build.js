@@ -9,12 +9,12 @@ const fs = require('fs');
 const path = require('path');
 
 // Read .env file
-const envPath = path.join(__dirname, 'form-launcher', '.env');
-const templatePath = path.join(__dirname, 'form-launcher', 'index.template.html');
-const outputPath = path.join(__dirname, 'form-launcher', 'index.html');
+const envPath = path.join(__dirname, '.env');
+const templatePath = path.join(__dirname, 'index.template.html');
+const outputPath = path.join(__dirname, 'index.html');
 
 if (!fs.existsSync(envPath)) {
-  console.error('❌ Error: .env file not found at form-launcher/.env');
+  console.error('❌ Error: .env file not found at .env');
   process.exit(1);
 }
 

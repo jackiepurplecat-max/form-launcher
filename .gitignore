@@ -1,9 +1,15 @@
 # Environment variables - contains secrets!
-form-launcher/.env
+.env
+
+# Template file with placeholder instructions - keep local only
+index.template.html
 
 # Test files (not for production)
-form-launcher/test.html
-form-launcher/test-delete.html
+test.html
+test-delete.html
+
+# Old form-launcher directory (if it still exists)
+form-launcher/
 
 # Node modules
 node_modules/
