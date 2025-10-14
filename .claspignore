@@ -1,0 +1,4 @@
+# Ignore everything except Apps Script files
+**/**
+!Code.js
+!appsscript.json

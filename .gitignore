@@ -1,0 +1,27 @@
+# Environment variables - contains secrets!
+form-launcher/.env
+
+# Generated file - will be rebuilt from template
+form-launcher/index.html
+
+# Test files (not for production)
+form-launcher/test.html
+form-launcher/test-delete.html
+
+# Node modules
+node_modules/
+
+# Clasp credentials and config
+.clasprc.json
+.clasp.json
+
+# OS files
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*

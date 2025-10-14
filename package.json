@@ -1,0 +1,29 @@
+{
+  "name": "helpfulforms",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "node build.js",
+    "build:watch": "nodemon --watch form-launcher/.env --watch form-launcher/index.template.html --exec npm run build",
+    "start": "python3 -m http.server 8000 --directory form-launcher",
+    "dev": "npm run build && npm start",
+    "clasp:login": "clasp login",
+    "clasp:logout": "clasp logout",
+    "clasp:create": "clasp create",
+    "clasp:clone": "clasp clone",
+    "clasp:push": "clasp push",
+    "clasp:pull": "clasp pull",
+    "clasp:open": "clasp open-script",
+    "clasp:status": "clasp status",
+    "clasp:deploy": "clasp deploy",
+    "clasp:version": "clasp version"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@google/clasp": "^3.0.6-alpha"
+  }
+}
