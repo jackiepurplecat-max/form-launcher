@@ -373,10 +373,10 @@ td a,
     Jackie's Helpful Forms
   </h1>
 
-  <!-- Travel Expenses Section -->
+  <!-- Work Expenses Section -->
   <div class="service-section">
     <button class="service-header" onclick="toggleService('travel')">
-      <span>Travel Expenses</span>
+      <span>Work Expenses</span>
       <span class="collapse-icon">▶</span>
     </button>
     <div class="service-content" id="travel-content">
@@ -389,24 +389,24 @@ td a,
   <button class="btn refresh-btn" type="button">Refresh</button>
 
   <label for="filterSelect" class="filter-label">
-    Filter by trip:
+    Filter by expense reason:
     <select id="filterSelect">
       <option value="">-- All --</option>
     </select>
   </label>
 </div>
 
-<!-- Manage Trips Admin Section -->
+<!-- Manage Expense Reasons Admin Section -->
 <div class="admin-section">
   <button class="admin-header" onclick="toggleAdmin('travel-admin')">
-    <span>Manage Trips</span>
+    <span>Manage Expense Reasons</span>
     <span class="collapse-icon" style="margin-left: auto;">▼</span>
   </button>
   <div class="admin-content" id="travel-admin">
-    <!-- Add Trip controls -->
+    <!-- Add Expense Reason controls -->
     <div class="add-trip" style="margin-bottom:8px;">
       <label for="newTripName" style="margin-right:0.5rem; display:block; margin-bottom:4px;">
-        ➕ Add trip:
+        ➕ Add expense reason:
       </label>
       <input id="newTripName"
              type="text"
@@ -415,13 +415,13 @@ td a,
       <button class="btn" type="button" onclick="addTrip()">Add</button>
     </div>
 
-    <!-- Delete Trip controls -->
+    <!-- Delete Expense Reason controls -->
     <div class="delete-trip">
       <label for="deleteTripSelect" style="margin-right:0.5rem; display:block; margin-bottom:4px;">
-        🗑️ Delete trip:
+        🗑️ Delete expense reason:
       </label>
       <select id="deleteTripSelect" style="width:calc(100% - 80px); margin-right:4px;">
-        <option value="">-- Select trip --</option>
+        <option value="">-- Select expense reason --</option>
       </select>
       <button class="btn" type="button" onclick="deleteTrip()">Delete</button>
     </div>
@@ -535,7 +535,7 @@ async function loadTravelSheet() {
 
   // Populate filter dropdown
   const filterSelect = document.getElementById('filterSelect');
-  filterSelect.innerHTML = '<option value="">Show all trips</option>';
+  filterSelect.innerHTML = '<option value="">Show all expense reasons</option>';
   sortedTrips.forEach(val => {
     const opt = document.createElement('option');
     opt.value = val; opt.textContent = val;
@@ -544,7 +544,7 @@ async function loadTravelSheet() {
 
   // Populate delete dropdown
   const deleteSelect = document.getElementById('deleteTripSelect');
-  deleteSelect.innerHTML = '<option value="">-- Select trip --</option>';
+  deleteSelect.innerHTML = '<option value="">-- Select expense reason --</option>';
   sortedTrips.forEach(val => {
     const opt = document.createElement('option');
     opt.value = val; opt.textContent = val;

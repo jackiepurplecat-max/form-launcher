@@ -227,66 +227,85 @@ function createCORSResponse(data) {
 }
 
 /**
- * Delete all rows from Travel sheet matching the given trip name
+ * Delete all rows from Travel sheet matching the given expense reason
  */
 function deleteTripRows(tripName) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("Travel");
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName("Travel");
 
-  if (!sheet) {
-    return { success: false, error: "Travel sheet not found" };
-  }
-
-  const data = sheet.getDataRange().getValues();
-  let deletedCount = 0;
-
-  // Start from bottom to avoid index shifting issues when deleting
-  for (let i = data.length - 1; i > 0; i--) {  // Skip header row (i > 0)
-    const rowTripName = data[i][0]; // Column A (Trip name)
-
-    if (rowTripName === tripName) {
-      sheet.deleteRow(i + 1); // +1 because sheet rows are 1-indexed
-      deletedCount++;
+    if (!sheet) {
+      return { success: false, error: "Travel sheet not found" };
     }
-  }
 
-  // Get remaining unique trips for the response
-  const remainingData = sheet.getDataRange().getValues();
-  const uniqueTrips = new Set();
-  for (let i = 1; i < remainingData.length; i++) {
-    const trip = remainingData[i][0];
-    if (trip && trip.trim() !== "") {
-      uniqueTrips.add(trip);
+    const data = sheet.getDataRange().getValues();
+    let deletedCount = 0;
+
+    // Start from bottom to avoid index shifting issues when deleting
+    for (let i = data.length - 1; i > 0; i--) {  // Skip header row (i > 0)
+      const rowTripName = data[i][0]; // Column A (Trip name)
+
+      // Convert both to strings for comparison (handles numbers like 202511)
+      const rowTripStr = rowTripName ? rowTripName.toString() : "";
+      const tripNameStr = tripName ? tripName.toString() : "";
+
+      if (rowTripStr === tripNameStr) {
+        sheet.deleteRow(i + 1); // +1 because sheet rows are 1-indexed
+        deletedCount++;
+      }
     }
+
+    Logger.log(`Deleted ${deletedCount} rows for expense reason: ${tripName}`);
+
+    // Get remaining unique trips from spreadsheet for the response
+    const remainingData = sheet.getDataRange().getValues();
+    const uniqueTrips = new Set();
+    for (let i = 1; i < remainingData.length; i++) {
+      const trip = remainingData[i][0];
+      // Convert to string safely
+      if (trip != null && trip !== "") {
+        const tripStr = String(trip);  // Use String() instead of toString()
+        if (tripStr.trim() !== "") {
+          uniqueTrips.add(tripStr);
+        }
+      }
+    }
+
+    Logger.log(`Remaining unique expense reasons: ${Array.from(uniqueTrips).join(', ')}`);
+
+    // Remove only the deleted trip from form dropdown (not all trips)
+    const removeResult = removeTripFromForm(tripName);
+    Logger.log(`Remove from form result: ${JSON.stringify(removeResult)}`);
+
+    return {
+      success: true,
+      trip: tripName,
+      deletedRows: deletedCount,
+      remainingTrips: uniqueTrips.size
+    };
+  } catch (error) {
+    Logger.log(`Error in deleteTripRows: ${error.toString()}`);
+    return { success: false, error: error.toString() };
   }
-
-  // Update form dropdown after deletion
-  updateFormDropdown(Array.from(uniqueTrips));
-
-  return {
-    success: true,
-    trip: tripName,
-    deletedRows: deletedCount,
-    remainingTrips: uniqueTrips.size
-  };
 }
 
 /**
- * Add a new trip to the Google Form dropdown
+ * Remove an expense reason from the Google Form dropdown
  */
-function addTripToForm(tripName) {
+function removeTripFromForm(tripName) {
   try {
     const formId = getFormId();
     const form = FormApp.openById(formId);
 
-    // Find the Trip dropdown question
+    // Find the Expense Reason dropdown question (searches for "trip" or "expense" in title)
     const items = form.getItems();
     let tripQuestion = null;
 
     for (let item of items) {
       if (item.getType() === FormApp.ItemType.LIST) {
         const listItem = item.asListItem();
-        if (listItem.getTitle().toLowerCase().includes('trip')) {
+        const title = listItem.getTitle().toLowerCase();
+        if (title.includes('trip') || title.includes('expense') || title.includes('reason')) {
           tripQuestion = listItem;
           break;
         }
@@ -294,18 +313,72 @@ function addTripToForm(tripName) {
     }
 
     if (!tripQuestion) {
-      return { success: false, error: "Trip dropdown not found in form" };
+      Logger.log("Warning: Expense reason dropdown not found in form");
+      return { success: false, error: "Expense reason dropdown not found in form" };
+    }
+
+    // Get existing choices and remove the specified expense reason
+    const existingChoices = tripQuestion.getChoices().map(c => c.getValue());
+    // Convert both to strings for comparison (handles numbers like 202511)
+    const tripNameStr = tripName ? tripName.toString() : "";
+    const updatedChoices = existingChoices.filter(t => {
+      const tStr = t ? t.toString() : "";
+      return tStr !== tripNameStr;
+    });
+
+    // Update form with filtered list
+    tripQuestion.setChoices(updatedChoices.map(c => tripQuestion.createChoice(c)));
+
+    Logger.log(`Removed "${tripName}" from form dropdown. ${updatedChoices.length} expense reasons remain.`);
+
+    return {
+      success: true,
+      tripName: tripName,
+      totalTrips: updatedChoices.length
+    };
+
+  } catch (error) {
+    Logger.log("Error removing expense reason from form: " + error.toString());
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Add a new expense reason to the Google Form dropdown
+ */
+function addTripToForm(tripName) {
+  try {
+    const formId = getFormId();
+    const form = FormApp.openById(formId);
+
+    // Find the Expense Reason dropdown question (searches for "trip" or "expense" in title)
+    const items = form.getItems();
+    let tripQuestion = null;
+
+    for (let item of items) {
+      if (item.getType() === FormApp.ItemType.LIST) {
+        const listItem = item.asListItem();
+        const title = listItem.getTitle().toLowerCase();
+        if (title.includes('trip') || title.includes('expense') || title.includes('reason')) {
+          tripQuestion = listItem;
+          break;
+        }
+      }
+    }
+
+    if (!tripQuestion) {
+      return { success: false, error: "Expense reason dropdown not found in form" };
     }
 
     // Get existing choices
     const existingChoices = tripQuestion.getChoices().map(c => c.getValue());
 
-    // Check if trip already exists
+    // Check if expense reason already exists
     if (existingChoices.includes(tripName)) {
-      return { success: false, error: `Trip "${tripName}" already exists in form` };
+      return { success: false, error: `Expense reason "${tripName}" already exists in form` };
     }
 
-    // Add new trip and sort
+    // Add new expense reason and sort
     const newChoices = [...existingChoices, tripName].sort();
     tripQuestion.setChoices(newChoices.map(c => tripQuestion.createChoice(c)));
 
@@ -321,21 +394,22 @@ function addTripToForm(tripName) {
 }
 
 /**
- * Update the Google Form dropdown with current trips from sheet
+ * Update the Google Form dropdown with current expense reasons from sheet
  */
 function updateFormDropdown(trips) {
   try {
     const formId = getFormId();
     const form = FormApp.openById(formId);
 
-    // Find the Trip dropdown question
+    // Find the Expense Reason dropdown question (searches for "trip" or "expense" in title)
     const items = form.getItems();
     let tripQuestion = null;
 
     for (let item of items) {
       if (item.getType() === FormApp.ItemType.LIST) {
         const listItem = item.asListItem();
-        if (listItem.getTitle().toLowerCase().includes('trip')) {
+        const title = listItem.getTitle().toLowerCase();
+        if (title.includes('trip') || title.includes('expense') || title.includes('reason')) {
           tripQuestion = listItem;
           break;
         }
@@ -343,15 +417,15 @@ function updateFormDropdown(trips) {
     }
 
     if (!tripQuestion) {
-      Logger.log("Warning: Trip dropdown not found in form");
+      Logger.log("Warning: Expense reason dropdown not found in form");
       return;
     }
 
-    // Update choices with sorted trip list
+    // Update choices with sorted expense reason list
     const sortedTrips = trips.sort();
     tripQuestion.setChoices(sortedTrips.map(t => tripQuestion.createChoice(t)));
 
-    Logger.log(`Form dropdown updated with ${sortedTrips.length} trips`);
+    Logger.log(`Form dropdown updated with ${sortedTrips.length} expense reasons`);
 
   } catch (error) {
     Logger.log("Error updating form dropdown: " + error.toString());
