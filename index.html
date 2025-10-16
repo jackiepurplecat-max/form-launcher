@@ -33,6 +33,24 @@ h1 img {
   margin-right: 10px;
 }
 
+.refresh-icon {
+  margin-left: 12px;
+  font-size: 20px;
+  cursor: pointer;
+  color: #666;
+  transition: transform 0.3s, color 0.2s;
+  user-select: none;
+}
+
+.refresh-icon:hover {
+  color: #007bff;
+  transform: rotate(180deg);
+}
+
+.refresh-icon:active {
+  transform: rotate(180deg) scale(0.95);
+}
+
 h2 {
   font-size: 20px;
   display: flex;
@@ -371,6 +389,7 @@ td a,
   <h1>
     <img src="favicon.png" alt="Icon" style="height: 32px; margin-right: 10px;">
     Jackie's Helpful Forms
+    <span class="refresh-icon" onclick="refreshPage()" title="Refresh page">🔄</span>
   </h1>
 
   <!-- Work Expenses Section -->
@@ -911,6 +930,14 @@ function toggleAdmin(adminId) {
     content.classList.add('expanded');
     icon.textContent = '▲';
   }
+}
+
+/* ---------- Refresh Page Function ---------- */
+function refreshPage() {
+  // Clear any saved expanded sections state
+  sessionStorage.removeItem('expandedSections');
+  // Reload the page
+  location.reload();
 }
 </script>
 
