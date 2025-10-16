@@ -497,7 +497,7 @@ td a,
 const SPREADSHEET_ID = '1J4dldGjb3SktoVxQD3BKm-iX6RDAF7YjoLImm7-MIsg';
 const TRAVEL_SHEET_NAME = 'Travel!A:G';
 const IVA_SHEET_NAME = 'IVA!A:J';
-const TRAVEL_FILTER_COLUMN_INDEX = 0; // "Trip" column
+const TRAVEL_FILTER_COLUMN_INDEX = 0; // "Expense Reason" column
 const IVA_FILTER_COLUMN_INDEX = 1; // "Número (Fatura Ref Number)" column (B in sheet, index 1)
 const SHEETS_API_KEY = 'AIzaSyCkQIbYsNr6ooub1lJysGoSflG9bka0fbs';
 
@@ -529,14 +529,14 @@ async function loadTravelSheet() {
   document.querySelector('#dataTable thead').innerHTML =
     '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
 
-  // populate filter dropdown and delete dropdown with unique Trip names
+  // populate filter dropdown and delete dropdown with unique expense reasons
   const set = new Set(allTravelRows.map(r => (r[TRAVEL_FILTER_COLUMN_INDEX] || '').trim()).filter(x => x !== ''));
-  const sortedTrips = Array.from(set).sort();
+  const sortedReasons = Array.from(set).sort();
 
   // Populate filter dropdown
   const filterSelect = document.getElementById('filterSelect');
   filterSelect.innerHTML = '<option value="">Show all expense reasons</option>';
-  sortedTrips.forEach(val => {
+  sortedReasons.forEach(val => {
     const opt = document.createElement('option');
     opt.value = val; opt.textContent = val;
     filterSelect.appendChild(opt);
@@ -545,7 +545,7 @@ async function loadTravelSheet() {
   // Populate delete dropdown
   const deleteSelect = document.getElementById('deleteTripSelect');
   deleteSelect.innerHTML = '<option value="">-- Select expense reason --</option>';
-  sortedTrips.forEach(val => {
+  sortedReasons.forEach(val => {
     const opt = document.createElement('option');
     opt.value = val; opt.textContent = val;
     deleteSelect.appendChild(opt);
@@ -675,16 +675,16 @@ document.querySelectorAll('.refresh-btn').forEach(btn => {
   });
 });
 
-/* ---------- Add Trip Function ---------- */
+/* ---------- Add Expense Reason Function ---------- */
 async function addTrip() {
   const tripName = document.getElementById("newTripName").value.trim();
   if (!tripName) {
-    alert("Please enter a trip name");
+    alert("Please enter an expense reason");
     return;
   }
 
   const resultEl = document.getElementById("addTripResult");
-  resultEl.textContent = "Adding trip...";
+  resultEl.textContent = "Adding expense reason...";
   resultEl.style.color = '#333';
 
   try {
@@ -699,7 +699,7 @@ async function addTrip() {
 
     const data = await res.json();
     if (data.success) {
-      resultEl.textContent = `Trip "${data.tripName}" added to form dropdown.`;
+      resultEl.textContent = `Expense reason "${data.tripName}" added to form dropdown.`;
       resultEl.style.color = '#2d7a2d';
       document.getElementById("newTripName").value = ''; // clear input
       loadTravelSheet(); // refresh dropdowns
@@ -713,11 +713,11 @@ async function addTrip() {
   }
 }
 
-/* ---------- Delete Trip Function ---------- */
+/* ---------- Delete Expense Reason Function ---------- */
 async function deleteTrip() {
   const trip = document.getElementById("deleteTripSelect").value.trim();
   if (!trip) {
-    alert("Please select a trip to delete");
+    alert("Please select an expense reason to delete");
     return;
   }
 
@@ -737,7 +737,7 @@ async function deleteTrip() {
     if (data.success) {
       resultEl.textContent =
         `Deleted ${data.deletedRows} expense row(s) for "${data.trip}". `
-        + `${data.remainingTrips} trip(s) remain in list.`;
+        + `${data.remainingTrips} expense reason(s) remain in list.`;
       resultEl.style.color = '#2d7a2d'; // green for success
       loadTravelSheet(); // refresh table after deletion
     } else {

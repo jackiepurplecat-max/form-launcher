@@ -165,7 +165,7 @@ function handleTravel(e) {
 }
 
 /**
- * Web App endpoint for handling POST requests (delete trip, add trip)
+ * Web App endpoint for handling POST requests (delete expense reason, add expense reason)
  * Supports CORS for localhost and GitHub Pages
  */
 function doPost(e) {
@@ -184,22 +184,22 @@ function doPost(e) {
 
     // Handle different actions
     if (action === "addTrip") {
-      // Add trip to form dropdown
+      // Add expense reason to form dropdown
       if (!tripName || tripName.trim() === "") {
         return createCORSResponse({
           success: false,
-          error: "Trip name is required"
+          error: "Expense reason is required"
         });
       }
       const result = addTripToForm(tripName.trim());
       return createCORSResponse(result);
 
     } else {
-      // Default action: delete trip (backwards compatibility)
+      // Default action: delete expense reason (backwards compatibility)
       if (!tripName || tripName.trim() === "") {
         return createCORSResponse({
           success: false,
-          error: "Trip name is required"
+          error: "Expense reason is required"
         });
       }
       const result = deleteTripRows(tripName.trim());
@@ -243,7 +243,7 @@ function deleteTripRows(tripName) {
 
     // Start from bottom to avoid index shifting issues when deleting
     for (let i = data.length - 1; i > 0; i--) {  // Skip header row (i > 0)
-      const rowTripName = data[i][0]; // Column A (Trip name)
+      const rowTripName = data[i][0]; // Column A (Expense Reason)
 
       // Convert both to strings for comparison (handles numbers like 202511)
       const rowTripStr = rowTripName ? rowTripName.toString() : "";
@@ -257,23 +257,23 @@ function deleteTripRows(tripName) {
 
     Logger.log(`Deleted ${deletedCount} rows for expense reason: ${tripName}`);
 
-    // Get remaining unique trips from spreadsheet for the response
+    // Get remaining unique expense reasons from spreadsheet for the response
     const remainingData = sheet.getDataRange().getValues();
-    const uniqueTrips = new Set();
+    const uniqueReasons = new Set();
     for (let i = 1; i < remainingData.length; i++) {
-      const trip = remainingData[i][0];
+      const reason = remainingData[i][0];
       // Convert to string safely
-      if (trip != null && trip !== "") {
-        const tripStr = String(trip);  // Use String() instead of toString()
-        if (tripStr.trim() !== "") {
-          uniqueTrips.add(tripStr);
+      if (reason != null && reason !== "") {
+        const reasonStr = String(reason);  // Use String() instead of toString()
+        if (reasonStr.trim() !== "") {
+          uniqueReasons.add(reasonStr);
         }
       }
     }
 
-    Logger.log(`Remaining unique expense reasons: ${Array.from(uniqueTrips).join(', ')}`);
+    Logger.log(`Remaining unique expense reasons: ${Array.from(uniqueReasons).join(', ')}`);
 
-    // Remove only the deleted trip from form dropdown (not all trips)
+    // Remove only the deleted expense reason from form dropdown
     const removeResult = removeTripFromForm(tripName);
     Logger.log(`Remove from form result: ${JSON.stringify(removeResult)}`);
 
@@ -281,7 +281,7 @@ function deleteTripRows(tripName) {
       success: true,
       trip: tripName,
       deletedRows: deletedCount,
-      remainingTrips: uniqueTrips.size
+      remainingTrips: uniqueReasons.size
     };
   } catch (error) {
     Logger.log(`Error in deleteTripRows: ${error.toString()}`);
