@@ -484,21 +484,45 @@ td a,
     </button>
   </div>
 
-  <!-- Health Claim Section (Coming Soon) -->
+  <!-- Health Claim Section -->
   <div class="service-section">
-    <button class="service-header disabled" disabled>
+    <button class="service-header" onclick="toggleService('health')">
       <span>Health Claim</span>
-      <span style="margin-left: auto; font-size: 12px; color: #999;">(Coming soon)</span>
+      <span class="collapse-icon">▶</span>
     </button>
-  </div>
+    <div class="service-content" id="health-content">
+  <div class="controls">
+  <a href="https://docs.google.com/forms/d/1p1ajhtU8BXu05Qlc6WGIT-UrxNbyhpeJVzsOa-9t-f4/viewform" target="_blank" rel="noopener" class="btn">New Claim</a>
+
+  <button class="btn refresh-btn" type="button">Refresh</button>
+
+  <label for="healthFilterSelect" class="filter-label">
+    Filter by Status:
+    <select id="healthFilterSelect">
+      <option value="">-- All --</option>
+    </select>
+  </label>
+</div>
+
+<div class="table-wrapper">
+  <table id="healthTable">
+    <thead></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+    </div><!-- end health-content -->
+  </div><!-- end service-section -->
 
 <script>
 /* ========= CONFIG - Injected from .env via build script ========= */
 const SPREADSHEET_ID = '1J4dldGjb3SktoVxQD3BKm-iX6RDAF7YjoLImm7-MIsg';
 const TRAVEL_SHEET_NAME = 'Claims Form (Responses)!A:G';
 const IVA_SHEET_NAME = 'IVA!A:J';
+const HEALTH_SHEET_NAME = 'Health!B:L';
 const TRAVEL_FILTER_COLUMN_INDEX = 0; // "Expense Reason" column
 const IVA_FILTER_COLUMN_INDEX = 1; // "Número (Fatura Ref Number)" column (B in sheet, index 1)
+const HEALTH_FILTER_COLUMN_INDEX = 10; // "Status" column (L in sheet, but index 10 in B:L range)
 const SHEETS_API_KEY = 'AIzaSyCkQIbYsNr6ooub1lJysGoSflG9bka0fbs';
 
 /* --- DELETE endpoint config --- */
@@ -617,6 +641,58 @@ async function loadIvaSheet() {
   renderIvaTable(allIvaRows);
 }
 
+/* ---------- Load Health Sheet Data ---------- */
+const healthEndpoint = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(HEALTH_SHEET_NAME)}?key=${SHEETS_API_KEY}&majorDimension=ROWS`;
+let allHealthRows = [];
+
+async function loadHealthSheet() {
+  const res = await fetch(healthEndpoint);
+  if (!res.ok) {
+    console.error('Sheets API error (Health)', await res.text());
+    return;
+  }
+  const j = await res.json();
+  const rows = j.values || [];
+  if (rows.length === 0) return;
+
+  const headers = rows[0];
+  // Original: B=col0, C=col1, D=col2, E=col3, F=col4, G=col5, H=col6, I=col7, J=col8, K=col9, L=col10
+  // Display: L (Status), then B through I, then links from J and K
+  const reorderedHeaders = [
+    headers[10], // L: Status (first)
+    ...headers.slice(0, 8), // B through I
+    'Link to Receipt', // Link from J
+    'Link to Invoice' // Link from K
+  ];
+
+  // Reorder data rows: Status first, then B-I, then J and K as links
+  allHealthRows = rows.slice(1).map(row => [
+    row[10], // L: Status
+    ...row.slice(0, 8), // B through I
+    row[8],  // J: Receipt (will be converted to link)
+    row[9]   // K: Invoice (will be converted to link, may be empty)
+  ]);
+
+  // build header row
+  document.querySelector('#healthTable thead').innerHTML =
+    '<tr>' + reorderedHeaders.map(h => `<th>${h}</th>`).join('') + '</tr>';
+
+  // populate filter dropdown with unique Status values (now at index 0 in reordered data)
+  const set = new Set(allHealthRows.map(r => (r[0] || '').trim()).filter(x => x !== ''));
+  const sortedStatuses = Array.from(set).sort();
+
+  // Populate Health filter dropdown
+  const healthFilterSelect = document.getElementById('healthFilterSelect');
+  healthFilterSelect.innerHTML = '<option value="">-- All --</option>';
+  sortedStatuses.forEach(val => {
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = val;
+    healthFilterSelect.appendChild(opt);
+  });
+
+  renderHealthTable(allHealthRows);
+}
+
 function renderTravelTable(rows) {
   const tbody = document.querySelector('#dataTable tbody');
   tbody.innerHTML = '';
@@ -651,6 +727,32 @@ function renderIvaTable(rows) {
   });
 }
 
+function renderHealthTable(rows) {
+  const tbody = document.querySelector('#healthTable tbody');
+  tbody.innerHTML = '';
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+    const cells = r.map((c, i) => {
+      // Index 9 = Link to Receipt (from J)
+      if (i === 9 && c) {
+        const safeUrl = c.startsWith('http') ? c : 'https://' + c;
+        return `<td><a href="${safeUrl}" target="_blank" rel="noopener">Link</a></td>`;
+      }
+      // Index 10 = Link to Invoice (from K) - may be empty
+      if (i === 10) {
+        if (c && c.trim() !== '') {
+          const safeUrl = c.startsWith('http') ? c : 'https://' + c;
+          return `<td><a href="${safeUrl}" target="_blank" rel="noopener">Link</a></td>`;
+        }
+        return `<td></td>`; // Empty cell if no invoice
+      }
+      return `<td>${c || ''}</td>`;
+    }).join('');
+    tr.innerHTML = cells;
+    tbody.appendChild(tr);
+  });
+}
+
 document.getElementById('filterSelect').addEventListener('change', function() {
   const v = this.value;
   const filtered = v ? allTravelRows.filter(r => (r[TRAVEL_FILTER_COLUMN_INDEX] || '') === v) : allTravelRows;
@@ -661,6 +763,12 @@ document.getElementById('ivaFilterSelect').addEventListener('change', function()
   const v = this.value;
   const filtered = v ? allIvaRows.filter(r => (r[0] || '') === v) : allIvaRows; // Filter by Status (first column)
   renderIvaTable(filtered);
+});
+
+document.getElementById('healthFilterSelect').addEventListener('change', function() {
+  const v = this.value;
+  const filtered = v ? allHealthRows.filter(r => (r[0] || '') === v) : allHealthRows; // Filter by Status (first column in reordered data)
+  renderHealthTable(filtered);
 });
 
 document.querySelectorAll('.refresh-btn').forEach(btn => {
@@ -774,6 +882,7 @@ function restoreExpandedSections() {
 /* ---------- Load data on page start ---------- */
 loadTravelSheet();
 loadIvaSheet();
+loadHealthSheet();
 restoreExpandedSections();
 
 /* ---------- Toggle Functions for Collapsible Sections ---------- */

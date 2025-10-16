@@ -71,11 +71,55 @@ function installIVATrigger() {
 }
 
 /**
+ * Install trigger for Health form submissions
+ * Run this once to set up automatic status setting
+ */
+function installHealthTrigger() {
+  // Remove existing triggers for handleHealth to avoid duplicates
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(trigger => {
+    if (trigger.getHandlerFunction() === 'handleHealth') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+
+  // Create new trigger
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ScriptApp.newTrigger('handleHealth')
+    .forSpreadsheet(ss)
+    .onFormSubmit()
+    .create();
+
+  Logger.log('✅ Form submit trigger installed for handleHealth()');
+}
+
+/**
  * Handle IVA form submissions - set default status to "to do"
  */
 function handleIVA(e) {
   const sheetName = "IVA";
   const statusCol = 10;  // Column J (Status)
+
+  const row = e.range.getRow();
+  const sheet = e.source.getSheetByName(sheetName);
+  if (row === 1) return; // Skip header
+
+  // Set default status to "to do" if empty
+  const statusCell = sheet.getRange(row, statusCol);
+  const currentStatus = statusCell.getValue();
+
+  if (!currentStatus || currentStatus === "") {
+    statusCell.setValue("to do");
+    Logger.log(`Row ${row}: Set default status to "to do"`);
+  }
+}
+
+/**
+ * Handle Health form submissions - set default status to "to do"
+ */
+function handleHealth(e) {
+  const sheetName = "Health";
+  const statusCol = 12;  // Column L (Status)
 
   const row = e.range.getRow();
   const sheet = e.source.getSheetByName(sheetName);
