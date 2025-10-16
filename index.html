@@ -364,7 +364,9 @@ th {
 #ivaTable th,
 #ivaTable td,
 #healthTable th,
-#healthTable td {
+#healthTable td,
+#incomeTable th,
+#incomeTable td {
   vertical-align: middle;
   padding: 8px;
   font-size: 12px;
@@ -373,7 +375,8 @@ th {
 td a,
 #dataTable td a,
 #ivaTable td a,
-#healthTable td a {
+#healthTable td a,
+#incomeTable td a {
   display: inline-block;
   margin: 0;
   padding: 0;
@@ -528,13 +531,35 @@ td a,
     </div><!-- end health-content -->
   </div><!-- end service-section -->
 
-  <!-- Log Income Section (Coming Soon) -->
+  <!-- Log Income Section -->
   <div class="service-section">
-    <button class="service-header disabled" disabled>
+    <button class="service-header" onclick="toggleService('income')">
       <span>Log Income</span>
-      <span style="margin-left: auto; font-size: 12px; color: #999;">(Coming soon)</span>
+      <span class="collapse-icon">▶</span>
     </button>
-  </div>
+    <div class="service-content" id="income-content">
+  <div class="controls">
+  <a href="https://docs.google.com/forms/d/1ZV81p4SPWxuz-7sQtoOYYsz7xxSkiUiAOQgIcHBbK5A/viewform" target="_blank" rel="noopener" class="btn">New Income</a>
+
+  <button class="btn refresh-btn" type="button">Refresh</button>
+
+  <label for="incomeFilterSelect" class="filter-label">
+    Filter by Status:
+    <select id="incomeFilterSelect">
+      <option value="">-- All --</option>
+    </select>
+  </label>
+</div>
+
+<div class="table-wrapper">
+  <table id="incomeTable">
+    <thead></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+    </div><!-- end income-content -->
+  </div><!-- end service-section -->
 
 <script>
 /* ========= CONFIG - Injected from .env via build script ========= */
@@ -542,9 +567,11 @@ const SPREADSHEET_ID = '1J4dldGjb3SktoVxQD3BKm-iX6RDAF7YjoLImm7-MIsg';
 const TRAVEL_SHEET_NAME = 'Claims Form (Responses)!A:G';
 const IVA_SHEET_NAME = 'IVA!A:J';
 const HEALTH_SHEET_NAME = 'Health!B:L';
+const INCOME_SHEET_NAME = 'Income!B:H';
 const TRAVEL_FILTER_COLUMN_INDEX = 0; // "Expense Reason" column
 const IVA_FILTER_COLUMN_INDEX = 1; // "Número (Fatura Ref Number)" column (B in sheet, index 1)
 const HEALTH_FILTER_COLUMN_INDEX = 10; // "Status" column (L in sheet, but index 10 in B:L range)
+const INCOME_FILTER_COLUMN_INDEX = 6; // "Status" column (H in sheet, but index 6 in B:H range)
 const SHEETS_API_KEY = 'AIzaSyCkQIbYsNr6ooub1lJysGoSflG9bka0fbs';
 
 /* --- DELETE endpoint config --- */
@@ -715,6 +742,54 @@ async function loadHealthSheet() {
   renderHealthTable(allHealthRows);
 }
 
+/* ---------- Load Income Sheet Data ---------- */
+const incomeEndpoint = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(INCOME_SHEET_NAME)}?key=${SHEETS_API_KEY}&majorDimension=ROWS`;
+let allIncomeRows = [];
+
+async function loadIncomeSheet() {
+  const res = await fetch(incomeEndpoint);
+  if (!res.ok) {
+    console.error('Sheets API error (Income)', await res.text());
+    return;
+  }
+  const j = await res.json();
+  const rows = j.values || [];
+  if (rows.length === 0) return;
+
+  const headers = rows[0];
+  // Original: B=col0, C=col1, D=col2, E=col3, F=col4, G=col5, H=col6
+  // Display: H (Status), then B through G
+  const reorderedHeaders = [
+    headers[6], // H: Status (first)
+    ...headers.slice(0, 6) // B through G
+  ];
+
+  // Reorder data rows: Status first, then B-G
+  allIncomeRows = rows.slice(1).map(row => [
+    row[6], // H: Status
+    ...row.slice(0, 6) // B through G
+  ]);
+
+  // build header row
+  document.querySelector('#incomeTable thead').innerHTML =
+    '<tr>' + reorderedHeaders.map(h => `<th>${h}</th>`).join('') + '</tr>';
+
+  // populate filter dropdown with unique Status values (now at index 0 in reordered data)
+  const set = new Set(allIncomeRows.map(r => (r[0] || '').trim()).filter(x => x !== ''));
+  const sortedStatuses = Array.from(set).sort();
+
+  // Populate Income filter dropdown
+  const incomeFilterSelect = document.getElementById('incomeFilterSelect');
+  incomeFilterSelect.innerHTML = '<option value="">-- All --</option>';
+  sortedStatuses.forEach(val => {
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = val;
+    incomeFilterSelect.appendChild(opt);
+  });
+
+  renderIncomeTable(allIncomeRows);
+}
+
 function renderTravelTable(rows) {
   const tbody = document.querySelector('#dataTable tbody');
   tbody.innerHTML = '';
@@ -775,6 +850,19 @@ function renderHealthTable(rows) {
   });
 }
 
+function renderIncomeTable(rows) {
+  const tbody = document.querySelector('#incomeTable tbody');
+  tbody.innerHTML = '';
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+    const cells = r.map((c, i) => {
+      return `<td>${c || ''}</td>`;
+    }).join('');
+    tr.innerHTML = cells;
+    tbody.appendChild(tr);
+  });
+}
+
 document.getElementById('filterSelect').addEventListener('change', function() {
   const v = this.value;
   const filtered = v ? allTravelRows.filter(r => (r[TRAVEL_FILTER_COLUMN_INDEX] || '') === v) : allTravelRows;
@@ -791,6 +879,12 @@ document.getElementById('healthFilterSelect').addEventListener('change', functio
   const v = this.value;
   const filtered = v ? allHealthRows.filter(r => (r[0] || '') === v) : allHealthRows; // Filter by Status (first column in reordered data)
   renderHealthTable(filtered);
+});
+
+document.getElementById('incomeFilterSelect').addEventListener('change', function() {
+  const v = this.value;
+  const filtered = v ? allIncomeRows.filter(r => (r[0] || '') === v) : allIncomeRows; // Filter by Status (first column in reordered data)
+  renderIncomeTable(filtered);
 });
 
 document.querySelectorAll('.refresh-btn').forEach(btn => {
@@ -905,6 +999,7 @@ function restoreExpandedSections() {
 loadTravelSheet();
 loadIvaSheet();
 loadHealthSheet();
+loadIncomeSheet();
 restoreExpandedSections();
 
 /* ---------- Toggle Functions for Collapsible Sections ---------- */
