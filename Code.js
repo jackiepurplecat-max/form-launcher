@@ -92,7 +92,7 @@ function handleIVA(e) {
 }
 
 function handleTravel(e) {
-  const sheetName = "Travel";
+  const sheetName = "Work";
   const emailSentCol = 9;               // "Email sent?" column (I)
   const fileLinkCol = 7;                // File link or ID column (G)
   const dateCol = 2;                    // Expense Date column (B)
@@ -227,15 +227,15 @@ function createCORSResponse(data) {
 }
 
 /**
- * Delete all rows from Travel sheet matching the given expense reason
+ * Delete all rows from Work sheet matching the given expense reason
  */
 function deleteTripRows(tripName) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName("Travel");
+    const sheet = ss.getSheetByName("Work");
 
     if (!sheet) {
-      return { success: false, error: "Travel sheet not found" };
+      return { success: false, error: "Work sheet not found" };
     }
 
     const data = sheet.getDataRange().getValues();
