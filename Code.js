@@ -48,82 +48,57 @@ function setupScriptProperties() {
 }
 
 /**
- * Install trigger for IVA form submissions
- * Run this once to set up automatic status setting
+ * Install unified trigger for all form submissions
+ * Run this once to set up automatic status setting for all forms
  */
-function installIVATrigger() {
-  // Remove existing triggers for handleIVA to avoid duplicates
+function installFormTrigger() {
+  // Remove existing triggers to avoid duplicates
   const triggers = ScriptApp.getProjectTriggers();
   triggers.forEach(trigger => {
-    if (trigger.getHandlerFunction() === 'handleIVA') {
+    const funcName = trigger.getHandlerFunction();
+    if (funcName === 'handleFormSubmit' || funcName === 'handleIVA' ||
+        funcName === 'handleHealth' || funcName === 'handleIncome') {
       ScriptApp.deleteTrigger(trigger);
     }
   });
 
-  // Create new trigger
+  // Create new unified trigger
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  ScriptApp.newTrigger('handleIVA')
+  ScriptApp.newTrigger('handleFormSubmit')
     .forSpreadsheet(ss)
     .onFormSubmit()
     .create();
 
-  Logger.log('✅ Form submit trigger installed for handleIVA()');
+  Logger.log('✅ Unified form submit trigger installed for handleFormSubmit()');
 }
 
 /**
- * Install trigger for Health form submissions
- * Run this once to set up automatic status setting
+ * Unified handler for all form submissions
+ * Automatically sets default status to "to do" based on which sheet received the submission
  */
-function installHealthTrigger() {
-  // Remove existing triggers for handleHealth to avoid duplicates
-  const triggers = ScriptApp.getProjectTriggers();
-  triggers.forEach(trigger => {
-    if (trigger.getHandlerFunction() === 'handleHealth') {
-      ScriptApp.deleteTrigger(trigger);
-    }
-  });
-
-  // Create new trigger
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  ScriptApp.newTrigger('handleHealth')
-    .forSpreadsheet(ss)
-    .onFormSubmit()
-    .create();
-
-  Logger.log('✅ Form submit trigger installed for handleHealth()');
-}
-
-/**
- * Handle IVA form submissions - set default status to "to do"
- */
-function handleIVA(e) {
-  const sheetName = "IVA";
-  const statusCol = 10;  // Column J (Status)
-
+function handleFormSubmit(e) {
   const row = e.range.getRow();
-  const sheet = e.source.getSheetByName(sheetName);
   if (row === 1) return; // Skip header
 
-  // Set default status to "to do" if empty
-  const statusCell = sheet.getRange(row, statusCol);
-  const currentStatus = statusCell.getValue();
+  const sheet = e.range.getSheet();
+  const sheetName = sheet.getName();
 
-  if (!currentStatus || currentStatus === "") {
-    statusCell.setValue("to do");
-    Logger.log(`Row ${row}: Set default status to "to do"`);
+  Logger.log(`Form submitted to sheet: ${sheetName}, row: ${row}`);
+
+  // Determine status column based on sheet name
+  let statusCol;
+
+  // Check for exact match or "(Responses)" suffix
+  if (sheetName === "IVA" || sheetName === "IVA (Responses)") {
+    statusCol = 10;  // Column J
+  } else if (sheetName === "Health" || sheetName === "Health (Responses)") {
+    statusCol = 12;  // Column L
+  } else if (sheetName === "Income" || sheetName === "Income (Responses)") {
+    statusCol = 8;   // Column H
+  } else {
+    Logger.log(`No status column configured for sheet: ${sheetName}`);
+    return;
   }
-}
-
-/**
- * Handle Health form submissions - set default status to "to do"
- */
-function handleHealth(e) {
-  const sheetName = "Health";
-  const statusCol = 12;  // Column L (Status)
-
-  const row = e.range.getRow();
-  const sheet = e.source.getSheetByName(sheetName);
-  if (row === 1) return; // Skip header
 
   // Set default status to "to do" if empty
   const statusCell = sheet.getRange(row, statusCol);
@@ -131,12 +106,14 @@ function handleHealth(e) {
 
   if (!currentStatus || currentStatus === "") {
     statusCell.setValue("to do");
-    Logger.log(`Row ${row}: Set default status to "to do"`);
+    Logger.log(`${sheetName} Row ${row}: Set default status to "to do"`);
+  } else {
+    Logger.log(`${sheetName} Row ${row}: Status already set to "${currentStatus}"`);
   }
 }
 
 function handleTravel(e) {
-  const sheetName = "Claims Form (Responses)";
+  const sheetName = "Work";
   const emailSentCol = 9;               // "Email sent?" column (I)
   const fileLinkCol = 7;                // File link or ID column (G)
   const dateCol = 2;                    // Expense Date column (B)
@@ -271,15 +248,15 @@ function createCORSResponse(data) {
 }
 
 /**
- * Delete all rows from Claims Form (Responses) sheet matching the given expense reason
+ * Delete all rows from Work sheet matching the given expense reason
  */
 function deleteTripRows(tripName) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName("Claims Form (Responses)");
+    const sheet = ss.getSheetByName("Work");
 
     if (!sheet) {
-      return { success: false, error: "Claims Form (Responses) sheet not found" };
+      return { success: false, error: "Work sheet not found" };
     }
 
     const data = sheet.getDataRange().getValues();
