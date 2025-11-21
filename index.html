@@ -923,7 +923,7 @@ async function addTrip() {
 
     const data = await res.json();
     if (data.success) {
-      resultEl.textContent = `Expense reason "${data.tripName}" added to form dropdown.`;
+      resultEl.textContent = `Expense reason "${data.expenseReason || data.tripName}" added to form dropdown.`;
       resultEl.style.color = '#2d7a2d';
       document.getElementById("newTripName").value = ''; // clear input
       loadTravelSheet(); // refresh dropdowns
@@ -960,8 +960,8 @@ async function deleteTrip() {
     const data = await res.json();
     if (data.success) {
       resultEl.textContent =
-        `Deleted ${data.deletedRows} expense row(s) for "${data.trip}". `
-        + `${data.remainingTrips} expense reason(s) remain in list.`;
+        `Deleted ${data.deletedRows} expense row(s) for "${data.expenseReason || data.trip}". `
+        + `${data.remainingReasons || data.remainingTrips} expense reason(s) remain in list.`;
       resultEl.style.color = '#2d7a2d'; // green for success
       loadTravelSheet(); // refresh table after deletion
     } else {
