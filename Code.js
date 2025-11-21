@@ -48,19 +48,72 @@ function setupScriptProperties() {
 }
 
 /**
+ * Manually process existing rows that haven't been emailed
+ * Run this once to process old entries retrospectively
+ */
+function processExistingWorkExpenses() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Work");
+
+  if (!sheet) {
+    Logger.log("❌ Work sheet not found");
+    return;
+  }
+
+  const data = sheet.getDataRange().getValues();
+  let processedCount = 0;
+
+  // Start from row 2 (skip header)
+  for (let i = 1; i < data.length; i++) {
+    const row = i + 1; // Sheet rows are 1-indexed
+    const rowValues = data[i];
+    const emailSent = rowValues[8]; // Column I (0-indexed = 8)
+
+    // Only process if email hasn't been sent
+    if (!emailSent || emailSent === "") {
+      Logger.log(`Processing row ${row}...`);
+
+      // Config for Work expenses
+      const config = {
+        statusCol: null,
+        dateCol: 2,       // Column B
+        descriptionCol: 6, // Column F
+        fileCol: 7,       // Column G
+        emailSentCol: 9,  // Column I
+        sendEmail: true
+      };
+
+      // Rename file
+      renameFile(sheet, row, "Work", rowValues, config);
+
+      // Send email
+      sendWorkExpenseEmail(sheet, row, "Work", rowValues, config);
+
+      processedCount++;
+    }
+  }
+
+  Logger.log(`✅ Processed ${processedCount} existing Work expense(s)`);
+}
+
+/**
  * Install unified trigger for all form submissions
  * Run this once to set up automatic status setting for all forms
  */
 function installFormTrigger() {
-  // Remove existing triggers to avoid duplicates
+  // Remove ALL existing form submit triggers to avoid duplicates and conflicts
   const triggers = ScriptApp.getProjectTriggers();
+  let removedCount = 0;
   triggers.forEach(trigger => {
-    const funcName = trigger.getHandlerFunction();
-    if (funcName === 'handleFormSubmit' || funcName === 'handleIVA' ||
-        funcName === 'handleHealth' || funcName === 'handleIncome') {
+    if (trigger.getEventType() === ScriptApp.EventType.ON_FORM_SUBMIT) {
+      const funcName = trigger.getHandlerFunction();
+      Logger.log(`Removing trigger: ${funcName}`);
       ScriptApp.deleteTrigger(trigger);
+      removedCount++;
     }
   });
+
+  Logger.log(`✅ Removed ${removedCount} old form submit trigger(s)`);
 
   // Create new unified trigger
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -74,7 +127,9 @@ function installFormTrigger() {
 
 /**
  * Unified handler for all form submissions
- * Automatically sets default status to "to do" based on which sheet received the submission
+ * - Renames files for all forms
+ * - Sets status to "to do" for IVA, Health, Income
+ * - Sends email for Work expenses only
  */
 function handleFormSubmit(e) {
   const row = e.range.getRow();
@@ -85,30 +140,195 @@ function handleFormSubmit(e) {
 
   Logger.log(`Form submitted to sheet: ${sheetName}, row: ${row}`);
 
-  // Determine status column based on sheet name
-  let statusCol;
+  // Configuration for each sheet type
+  let config = null;
 
-  // Check for exact match or "(Responses)" suffix
-  if (sheetName === "IVA" || sheetName === "IVA (Responses)") {
-    statusCol = 10;  // Column J
+  if (sheetName === "Work" || sheetName === "Work (Responses)") {
+    config = {
+      statusCol: null,  // Work doesn't use status
+      dateCol: 2,       // Column B
+      descriptionCol: 6, // Column F
+      fileCol: 7,       // Column G
+      emailSentCol: 9,  // Column I
+      sendEmail: true
+    };
+  } else if (sheetName === "IVA" || sheetName === "IVA (Responses)") {
+    config = {
+      statusCol: 10,    // Column J
+      dateCol: 3,       // Column C (Data)
+      descriptionCol: 2, // Column B (Número)
+      fileCol: 9,       // Column I (Ficheiro)
+      emailSentCol: null,
+      sendEmail: false
+    };
   } else if (sheetName === "Health" || sheetName === "Health (Responses)") {
-    statusCol = 12;  // Column L
+    config = {
+      statusCol: 12,    // Column L
+      dateCol: 6,       // Column F (Date)
+      descriptionCol: 13, // Column M (calculated: first letter of B + D + I)
+      calculateDescription: true,
+      calcMethod: 'firstLetters', // Special calculation method
+      calcCols: [2, 4, 9], // Columns B, D, I
+      fileCol: 10,      // Column J (Receipt)
+      emailSentCol: null,
+      sendEmail: false
+    };
   } else if (sheetName === "Income" || sheetName === "Income (Responses)") {
-    statusCol = 8;   // Column H
+    config = {
+      statusCol: 8,     // Column H
+      dateCol: null,    // No date needed (no file to rename)
+      descriptionCol: 9, // Column I (calculated: G + C)
+      calculateDescription: true,
+      calcCol1: 7,      // Column G (prefix)
+      calcCol2: 3,      // Column C (suffix)
+      fileCol: null,    // No file upload for Income
+      emailSentCol: null,
+      sendEmail: false
+    };
   } else {
-    Logger.log(`No status column configured for sheet: ${sheetName}`);
+    Logger.log(`No configuration for sheet: ${sheetName}`);
     return;
   }
 
-  // Set default status to "to do" if empty
-  const statusCell = sheet.getRange(row, statusCol);
-  const currentStatus = statusCell.getValue();
+  // Get row data
+  let rowValues = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getValues()[0];
 
-  if (!currentStatus || currentStatus === "") {
-    statusCell.setValue("to do");
-    Logger.log(`${sheetName} Row ${row}: Set default status to "to do"`);
-  } else {
-    Logger.log(`${sheetName} Row ${row}: Status already set to "${currentStatus}"`);
+  // Calculate and set description if needed (Income and Health)
+  if (config.calculateDescription) {
+    let calculatedDesc;
+
+    if (config.calcMethod === 'firstLetters') {
+      // Health: First letter of columns B, D, I
+      const letters = config.calcCols.map(colNum => {
+        const value = (rowValues[colNum - 1] || "").toString().trim();
+        return value.charAt(0).toUpperCase();
+      }).join('');
+      calculatedDesc = letters;
+      Logger.log(`${sheetName} Row ${row}: Calculated description "${calculatedDesc}" from first letters and wrote to column M`);
+    } else {
+      // Income: Column G + "-" + Column C
+      const col1Value = (rowValues[config.calcCol1 - 1] || "").toString().trim();
+      const col2Value = (rowValues[config.calcCol2 - 1] || "").toString().trim();
+      calculatedDesc = `${col1Value}-${col2Value}`;
+      Logger.log(`${sheetName} Row ${row}: Calculated description "${calculatedDesc}" and wrote to column I`);
+    }
+
+    // Write calculated description to the appropriate column
+    sheet.getRange(row, config.descriptionCol).setValue(calculatedDesc);
+
+    // Refresh row values to include the calculated description
+    rowValues = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getValues()[0];
+  }
+
+  // Set status to "to do" if applicable
+  if (config.statusCol) {
+    const statusCell = sheet.getRange(row, config.statusCol);
+    const currentStatus = statusCell.getValue();
+    if (!currentStatus || currentStatus === "") {
+      statusCell.setValue("to do");
+      Logger.log(`${sheetName} Row ${row}: Set status to "to do"`);
+    }
+  }
+
+  // Rename file (if applicable)
+  if (config.fileCol) {
+    renameFile(sheet, row, sheetName, rowValues, config);
+  }
+
+  // Send email if applicable (Work expenses only)
+  if (config.sendEmail && config.emailSentCol) {
+    const emailSent = rowValues[config.emailSentCol - 1];
+    if (!emailSent) {
+      sendWorkExpenseEmail(sheet, row, sheetName, rowValues, config);
+    }
+  }
+}
+
+/**
+ * Rename uploaded file with yyyymmdd_description format
+ */
+function renameFile(sheet, row, sheetName, rowValues, config) {
+  try {
+    const fileRef = (rowValues[config.fileCol - 1] || "").toString().trim();
+    if (!fileRef) {
+      Logger.log(`${sheetName} Row ${row}: No file to rename`);
+      return;
+    }
+
+    const date = new Date(rowValues[config.dateCol - 1]);
+    const description = (rowValues[config.descriptionCol - 1] || "").toString().trim().replace(/\s+/g, "_");
+    const formattedDate = Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyyMMdd");
+
+    // Extract file ID from URL
+    let fileId;
+    const idMatch = fileRef.match(/[-\w]{25,}/);
+    if (idMatch) fileId = idMatch[0];
+
+    if (!fileId) {
+      Logger.log(`${sheetName} Row ${row}: Could not extract file ID`);
+      return;
+    }
+
+    const file = DriveApp.getFileById(fileId);
+    const originalName = file.getName();
+    const extMatch = originalName.match(/(\.[^.\s]+)$/);
+    const extension = extMatch ? extMatch[0] : "";
+    const newFileName = `${formattedDate}_${description}${extension}`;
+
+    file.setName(newFileName);
+    Logger.log(`${sheetName} Row ${row}: ✅ Renamed file to "${newFileName}"`);
+
+  } catch (error) {
+    Logger.log(`${sheetName} Row ${row}: ❌ File rename error - ${error.toString()}`);
+  }
+}
+
+/**
+ * Send email for Work expense (with file attachment)
+ */
+function sendWorkExpenseEmail(sheet, row, sheetName, rowValues, config) {
+  try {
+    const recipient = getRecipientEmail();
+    const trip = rowValues[0]; // Expense Reason
+    const amount = rowValues[3]; // Column D
+    const currency = rowValues[4]; // Column E
+    const description = (rowValues[config.descriptionCol - 1] || "").toString().trim();
+    const fileRef = (rowValues[config.fileCol - 1] || "").toString().trim();
+
+    // Extract file ID
+    let fileId;
+    const idMatch = fileRef.match(/[-\w]{25,}/);
+    if (idMatch) fileId = idMatch[0];
+
+    if (!fileId) {
+      Logger.log(`${sheetName} Row ${row}: No file to attach to email`);
+      return;
+    }
+
+    const file = DriveApp.getFileById(fileId);
+    const fileLink = `https://drive.google.com/file/d/${fileId}/view`;
+    const subject = `expense ${trip || ""} ${description || ""}`.trim();
+
+    const body = [
+      `Hi,`,
+      ``,
+      `Here is the expense receipt for ${trip} (${description}).`,
+      ``,
+      `Amount: ${amount} ${currency}`,
+      ``,
+      `You can also access the file here:`,
+      `${fileLink}`,
+      ``,
+      `Regards,`,
+      `Automated System`
+    ].join("\n");
+
+    GmailApp.sendEmail(recipient, subject, body, { attachments: [file.getBlob()] });
+    sheet.getRange(row, config.emailSentCol).setValue("Yes");
+    Logger.log(`${sheetName} Row ${row}: ✅ Email sent to ${recipient}`);
+
+  } catch (error) {
+    Logger.log(`${sheetName} Row ${row}: ❌ Email error - ${error.toString()}`);
   }
 }
 
@@ -186,13 +406,29 @@ function handleTravel(e) {
 }
 
 /**
+ * Web App endpoint for handling GET requests (for testing)
+ */
+function doGet(e) {
+  return ContentService.createTextOutput(
+    JSON.stringify({
+      status: "Web app is running",
+      message: "Use POST requests to add or delete expense reasons",
+      version: "7"
+    })
+  ).setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
  * Web App endpoint for handling POST requests (delete expense reason, add expense reason)
  * Supports CORS for localhost and GitHub Pages
  */
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
-    const { action, tripName, apiKey } = data;
+    const { action, tripName, expenseReason, apiKey } = data;
+
+    // Support both old 'tripName' and new 'expenseReason' parameter names for backwards compatibility
+    const reasonName = expenseReason || tripName;
 
     // Verify API key
     const expectedKey = getDeleteApiKey();
@@ -204,26 +440,26 @@ function doPost(e) {
     }
 
     // Handle different actions
-    if (action === "addTrip") {
+    if (action === "addTrip" || action === "addExpenseReason") {
       // Add expense reason to form dropdown
-      if (!tripName || tripName.trim() === "") {
+      if (!reasonName || reasonName.trim() === "") {
         return createCORSResponse({
           success: false,
           error: "Expense reason is required"
         });
       }
-      const result = addTripToForm(tripName.trim());
+      const result = addExpenseReasonToForm(reasonName.trim());
       return createCORSResponse(result);
 
     } else {
       // Default action: delete expense reason (backwards compatibility)
-      if (!tripName || tripName.trim() === "") {
+      if (!reasonName || reasonName.trim() === "") {
         return createCORSResponse({
           success: false,
           error: "Expense reason is required"
         });
       }
-      const result = deleteTripRows(tripName.trim());
+      const result = deleteExpenseReasonRows(reasonName.trim());
       return createCORSResponse(result);
     }
 
@@ -250,7 +486,7 @@ function createCORSResponse(data) {
 /**
  * Delete all rows from Work sheet matching the given expense reason
  */
-function deleteTripRows(tripName) {
+function deleteExpenseReasonRows(expenseReason) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName("Work");
@@ -264,19 +500,19 @@ function deleteTripRows(tripName) {
 
     // Start from bottom to avoid index shifting issues when deleting
     for (let i = data.length - 1; i > 0; i--) {  // Skip header row (i > 0)
-      const rowTripName = data[i][0]; // Column A (Expense Reason)
+      const rowExpenseReason = data[i][0]; // Column A (Expense Reason)
 
       // Convert both to strings for comparison (handles numbers like 202511)
-      const rowTripStr = rowTripName ? rowTripName.toString() : "";
-      const tripNameStr = tripName ? tripName.toString() : "";
+      const rowReasonStr = rowExpenseReason ? rowExpenseReason.toString() : "";
+      const reasonStr = expenseReason ? expenseReason.toString() : "";
 
-      if (rowTripStr === tripNameStr) {
+      if (rowReasonStr === reasonStr) {
         sheet.deleteRow(i + 1); // +1 because sheet rows are 1-indexed
         deletedCount++;
       }
     }
 
-    Logger.log(`Deleted ${deletedCount} rows for expense reason: ${tripName}`);
+    Logger.log(`Deleted ${deletedCount} rows for expense reason: ${expenseReason}`);
 
     // Get remaining unique expense reasons from spreadsheet for the response
     const remainingData = sheet.getDataRange().getValues();
@@ -295,17 +531,17 @@ function deleteTripRows(tripName) {
     Logger.log(`Remaining unique expense reasons: ${Array.from(uniqueReasons).join(', ')}`);
 
     // Remove only the deleted expense reason from form dropdown
-    const removeResult = removeTripFromForm(tripName);
+    const removeResult = removeExpenseReasonFromForm(expenseReason);
     Logger.log(`Remove from form result: ${JSON.stringify(removeResult)}`);
 
     return {
       success: true,
-      trip: tripName,
+      expenseReason: expenseReason,
       deletedRows: deletedCount,
-      remainingTrips: uniqueReasons.size
+      remainingReasons: uniqueReasons.size
     };
   } catch (error) {
-    Logger.log(`Error in deleteTripRows: ${error.toString()}`);
+    Logger.log(`Error in deleteExpenseReasonRows: ${error.toString()}`);
     return { success: false, error: error.toString() };
   }
 }
@@ -313,49 +549,57 @@ function deleteTripRows(tripName) {
 /**
  * Remove an expense reason from the Google Form dropdown
  */
-function removeTripFromForm(tripName) {
+function removeExpenseReasonFromForm(expenseReason) {
   try {
     const formId = getFormId();
     const form = FormApp.openById(formId);
 
-    // Find the Expense Reason dropdown question (searches for "trip" or "expense" in title)
+    // Find the Expense Reason dropdown question (searches for "expense" or "reason" in title)
     const items = form.getItems();
-    let tripQuestion = null;
+    let expenseReasonQuestion = null;
 
     for (let item of items) {
       if (item.getType() === FormApp.ItemType.LIST) {
         const listItem = item.asListItem();
         const title = listItem.getTitle().toLowerCase();
-        if (title.includes('trip') || title.includes('expense') || title.includes('reason')) {
-          tripQuestion = listItem;
+        if (title.includes('expense') || title.includes('reason')) {
+          expenseReasonQuestion = listItem;
+          Logger.log(`Found form question with title: "${listItem.getTitle()}"`);
           break;
         }
       }
     }
 
-    if (!tripQuestion) {
+    if (!expenseReasonQuestion) {
       Logger.log("Warning: Expense reason dropdown not found in form");
+      // Log all LIST items for debugging
+      Logger.log("Available LIST items in form:");
+      items.forEach(item => {
+        if (item.getType() === FormApp.ItemType.LIST) {
+          Logger.log(`  - "${item.getTitle()}" (type: LIST)`);
+        }
+      });
       return { success: false, error: "Expense reason dropdown not found in form" };
     }
 
     // Get existing choices and remove the specified expense reason
-    const existingChoices = tripQuestion.getChoices().map(c => c.getValue());
+    const existingChoices = expenseReasonQuestion.getChoices().map(c => c.getValue());
     // Convert both to strings for comparison (handles numbers like 202511)
-    const tripNameStr = tripName ? tripName.toString() : "";
-    const updatedChoices = existingChoices.filter(t => {
-      const tStr = t ? t.toString() : "";
-      return tStr !== tripNameStr;
+    const reasonStr = expenseReason ? expenseReason.toString() : "";
+    const updatedChoices = existingChoices.filter(choice => {
+      const choiceStr = choice ? choice.toString() : "";
+      return choiceStr !== reasonStr;
     });
 
     // Update form with filtered list
-    tripQuestion.setChoices(updatedChoices.map(c => tripQuestion.createChoice(c)));
+    expenseReasonQuestion.setChoices(updatedChoices.map(c => expenseReasonQuestion.createChoice(c)));
 
-    Logger.log(`Removed "${tripName}" from form dropdown. ${updatedChoices.length} expense reasons remain.`);
+    Logger.log(`Removed "${expenseReason}" from form dropdown. ${updatedChoices.length} expense reasons remain.`);
 
     return {
       success: true,
-      tripName: tripName,
-      totalTrips: updatedChoices.length
+      expenseReason: expenseReason,
+      totalReasons: updatedChoices.length
     };
 
   } catch (error) {
@@ -367,49 +611,61 @@ function removeTripFromForm(tripName) {
 /**
  * Add a new expense reason to the Google Form dropdown
  */
-function addTripToForm(tripName) {
+function addExpenseReasonToForm(expenseReason) {
   try {
     const formId = getFormId();
     const form = FormApp.openById(formId);
 
-    // Find the Expense Reason dropdown question (searches for "trip" or "expense" in title)
+    // Find the Expense Reason dropdown question (searches for "expense" or "reason" in title)
     const items = form.getItems();
-    let tripQuestion = null;
+    let expenseReasonQuestion = null;
 
     for (let item of items) {
       if (item.getType() === FormApp.ItemType.LIST) {
         const listItem = item.asListItem();
         const title = listItem.getTitle().toLowerCase();
-        if (title.includes('trip') || title.includes('expense') || title.includes('reason')) {
-          tripQuestion = listItem;
+        if (title.includes('expense') || title.includes('reason')) {
+          expenseReasonQuestion = listItem;
+          Logger.log(`Found form question with title: "${listItem.getTitle()}"`);
           break;
         }
       }
     }
 
-    if (!tripQuestion) {
+    if (!expenseReasonQuestion) {
+      Logger.log("Warning: Expense reason dropdown not found in form");
+      // Log all LIST items for debugging
+      Logger.log("Available LIST items in form:");
+      items.forEach(item => {
+        if (item.getType() === FormApp.ItemType.LIST) {
+          Logger.log(`  - "${item.getTitle()}" (type: LIST)`);
+        }
+      });
       return { success: false, error: "Expense reason dropdown not found in form" };
     }
 
     // Get existing choices
-    const existingChoices = tripQuestion.getChoices().map(c => c.getValue());
+    const existingChoices = expenseReasonQuestion.getChoices().map(c => c.getValue());
 
     // Check if expense reason already exists
-    if (existingChoices.includes(tripName)) {
-      return { success: false, error: `Expense reason "${tripName}" already exists in form` };
+    if (existingChoices.includes(expenseReason)) {
+      return { success: false, error: `Expense reason "${expenseReason}" already exists in form` };
     }
 
     // Add new expense reason and sort
-    const newChoices = [...existingChoices, tripName].sort();
-    tripQuestion.setChoices(newChoices.map(c => tripQuestion.createChoice(c)));
+    const newChoices = [...existingChoices, expenseReason].sort();
+    expenseReasonQuestion.setChoices(newChoices.map(c => expenseReasonQuestion.createChoice(c)));
+
+    Logger.log(`Added "${expenseReason}" to form dropdown. Total: ${newChoices.length} expense reasons.`);
 
     return {
       success: true,
-      tripName: tripName,
-      totalTrips: newChoices.length
+      expenseReason: expenseReason,
+      totalReasons: newChoices.length
     };
 
   } catch (error) {
+    Logger.log("Error adding expense reason to form: " + error.toString());
     return { success: false, error: error.toString() };
   }
 }
@@ -417,36 +673,36 @@ function addTripToForm(tripName) {
 /**
  * Update the Google Form dropdown with current expense reasons from sheet
  */
-function updateFormDropdown(trips) {
+function updateFormDropdown(expenseReasons) {
   try {
     const formId = getFormId();
     const form = FormApp.openById(formId);
 
-    // Find the Expense Reason dropdown question (searches for "trip" or "expense" in title)
+    // Find the Expense Reason dropdown question (searches for "expense" or "reason" in title)
     const items = form.getItems();
-    let tripQuestion = null;
+    let expenseReasonQuestion = null;
 
     for (let item of items) {
       if (item.getType() === FormApp.ItemType.LIST) {
         const listItem = item.asListItem();
         const title = listItem.getTitle().toLowerCase();
-        if (title.includes('trip') || title.includes('expense') || title.includes('reason')) {
-          tripQuestion = listItem;
+        if (title.includes('expense') || title.includes('reason')) {
+          expenseReasonQuestion = listItem;
           break;
         }
       }
     }
 
-    if (!tripQuestion) {
+    if (!expenseReasonQuestion) {
       Logger.log("Warning: Expense reason dropdown not found in form");
       return;
     }
 
     // Update choices with sorted expense reason list
-    const sortedTrips = trips.sort();
-    tripQuestion.setChoices(sortedTrips.map(t => tripQuestion.createChoice(t)));
+    const sortedReasons = expenseReasons.sort();
+    expenseReasonQuestion.setChoices(sortedReasons.map(r => expenseReasonQuestion.createChoice(r)));
 
-    Logger.log(`Form dropdown updated with ${sortedTrips.length} expense reasons`);
+    Logger.log(`Form dropdown updated with ${sortedReasons.length} expense reasons`);
 
   } catch (error) {
     Logger.log("Error updating form dropdown: " + error.toString());
