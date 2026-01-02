@@ -372,6 +372,43 @@ th {
   font-size: 12px;
 }
 
+/* Hide Importados column (6th column, index 5) on mobile for IVA table */
+@media (max-width: 768px) {
+  #ivaTable th:nth-child(6),
+  #ivaTable td:nth-child(6) {
+    display: none;
+  }
+}
+
+/* IVA Done/Undo button styles */
+.iva-done-btn {
+  background-color: #e8f5e9 !important;
+  border-color: #4caf50 !important;
+  color: #2e7d32 !important;
+  margin-left: 8px;
+}
+
+.iva-done-btn:hover {
+  background-color: #c8e6c9 !important;
+}
+
+.iva-undo-btn {
+  background-color: #fff3e0 !important;
+  border-color: #ff9800 !important;
+  color: #e65100 !important;
+  margin-left: 8px;
+}
+
+.iva-undo-btn:hover {
+  background-color: #ffe0b2 !important;
+}
+
+.iva-done-btn:disabled,
+.iva-undo-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 td a,
 #dataTable td a,
 #ivaTable td a,
@@ -658,7 +695,8 @@ async function loadIvaSheet() {
   ];
 
   // Reorder data rows (exclude column A, reorder remaining)
-  allIvaRows = rows.slice(1).map(row => [
+  // Store original sheet row number (index + 2: +1 for 0-indexing, +1 for header)
+  allIvaRows = rows.slice(1).map((row, index) => [
     row[9], // J: Status
     row[1], // B: Número
     row[2], // C: Data
@@ -667,7 +705,8 @@ async function loadIvaSheet() {
     row[5], // F: Importados
     row[6], // G: Valor do IVA
     row[7], // H: Valor Total
-    row[8]  // I: Ficheiro (will be converted to link)
+    row[8], // I: Ficheiro (will be converted to link)
+    index + 2 // Original sheet row number (for API calls)
   ]);
 
   // build header row
@@ -810,9 +849,16 @@ function renderTravelTable(rows) {
 function renderIvaTable(rows) {
   const tbody = document.querySelector('#ivaTable tbody');
   tbody.innerHTML = '';
-  rows.forEach(r => {
+  rows.forEach((r, rowIndex) => {
     const tr = document.createElement('tr');
     const cells = r.map((c, i) => {
+      if (i === 0) { // Status column - add Done/Undo button
+        const status = (c || '').trim();
+        const isDone = status.toLowerCase().startsWith('done');
+        const buttonText = isDone ? '↩ Undo' : '✓ Done';
+        const buttonClass = isDone ? 'btn iva-undo-btn' : 'btn iva-done-btn';
+        return `<td>${c || ''} <button class="${buttonClass}" data-row-index="${rowIndex}" onclick="toggleIvaStatus(${rowIndex})">${buttonText}</button></td>`;
+      }
       if (i === 8 && c) { // column 9 in display (index 8) = Link to File from Ficheiro
         const safeUrl = c.startsWith('http') ? c : 'https://' + c;
         return `<td><a href="${safeUrl}" target="_blank" rel="noopener">Link</a></td>`;
@@ -874,6 +920,68 @@ document.getElementById('ivaFilterSelect').addEventListener('change', function()
   const filtered = v ? allIvaRows.filter(r => (r[0] || '') === v) : allIvaRows; // Filter by Status (first column)
   renderIvaTable(filtered);
 });
+
+/* ---------- Toggle IVA Status (Done/Undo) ---------- */
+async function toggleIvaStatus(displayRowIndex) {
+  // Get the row data from the currently displayed/filtered rows
+  const filterValue = document.getElementById('ivaFilterSelect').value;
+  const displayedRows = filterValue ? allIvaRows.filter(r => (r[0] || '') === filterValue) : allIvaRows;
+  const rowData = displayedRows[displayRowIndex];
+
+  if (!rowData) {
+    alert('Error: Could not find row data');
+    return;
+  }
+
+  const sheetRow = rowData[9]; // Original sheet row number (stored at index 9)
+  const currentStatus = (rowData[0] || '').trim();
+  const isDone = currentStatus.toLowerCase().startsWith('done');
+  const numero = rowData[1]; // Número for file rename
+  const data = rowData[2]; // Data (invoice date) for file rename on undo
+  const fileUrl = rowData[8]; // File URL
+
+  // Disable the button while processing
+  const button = document.querySelector(`button[data-row-index="${displayRowIndex}"]`);
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Working...';
+  }
+
+  try {
+    const res = await fetch(DELETE_WEBAPP_URL, {
+      method: "POST",
+      body: JSON.stringify({
+        action: "toggleIvaStatus",
+        sheetRow: sheetRow,
+        currentStatus: currentStatus,
+        numero: numero,
+        data: data,
+        fileUrl: fileUrl,
+        apiKey: DELETE_API_KEY
+      })
+    });
+
+    const result = await res.json();
+    if (result.success) {
+      // Reload the IVA sheet to reflect changes
+      await loadIvaSheet();
+    } else {
+      alert('Error: ' + (result.error || 'Unknown error'));
+      // Re-enable button on error
+      if (button) {
+        button.disabled = false;
+        button.textContent = isDone ? '↩ Undo' : '✓ Done';
+      }
+    }
+  } catch (err) {
+    alert('Network error: ' + err);
+    // Re-enable button on error
+    if (button) {
+      button.disabled = false;
+      button.textContent = isDone ? '↩ Undo' : '✓ Done';
+    }
+  }
+}
 
 document.getElementById('healthFilterSelect').addEventListener('change', function() {
   const v = this.value;

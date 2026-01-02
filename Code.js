@@ -245,7 +245,9 @@ function handleFormSubmit(e) {
 }
 
 /**
- * Rename uploaded file with yyyymmdd_description format
+ * Rename uploaded file with appropriate format based on sheet type
+ * - IVA: "Número Data.ext" (e.g., "INV-123 15-01-2025.pdf")
+ * - Others: "yyyymmdd_description.ext"
  */
 function renameFile(sheet, row, sheetName, rowValues, config) {
   try {
@@ -256,8 +258,7 @@ function renameFile(sheet, row, sheetName, rowValues, config) {
     }
 
     const date = new Date(rowValues[config.dateCol - 1]);
-    const description = (rowValues[config.descriptionCol - 1] || "").toString().trim().replace(/\s+/g, "_");
-    const formattedDate = Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyyMMdd");
+    const description = (rowValues[config.descriptionCol - 1] || "").toString().trim();
 
     // Extract file ID from URL
     let fileId;
@@ -273,7 +274,18 @@ function renameFile(sheet, row, sheetName, rowValues, config) {
     const originalName = file.getName();
     const extMatch = originalName.match(/(\.[^.\s]+)$/);
     const extension = extMatch ? extMatch[0] : "";
-    const newFileName = `${formattedDate}_${description}${extension}`;
+
+    let newFileName;
+    if (sheetName === "IVA" || sheetName === "IVA (Responses)") {
+      // IVA format: "Número Data.ext" (e.g., "INV-123 15-01-2025.pdf")
+      const formattedDate = Utilities.formatDate(date, Session.getScriptTimeZone(), "dd-MM-yyyy");
+      newFileName = `${description} ${formattedDate}${extension}`;
+    } else {
+      // Default format: "yyyymmdd_description.ext"
+      const formattedDate = Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyyMMdd");
+      const safeDescription = description.replace(/\s+/g, "_");
+      newFileName = `${formattedDate}_${safeDescription}${extension}`;
+    }
 
     file.setName(newFileName);
     Logger.log(`${sheetName} Row ${row}: ✅ Renamed file to "${newFileName}"`);
@@ -440,7 +452,18 @@ function doPost(e) {
     }
 
     // Handle different actions
-    if (action === "addTrip" || action === "addExpenseReason") {
+    if (action === "toggleIvaStatus") {
+      // Toggle IVA claim status (done/undo)
+      const result = toggleIvaClaimStatus(
+        data.sheetRow,
+        data.currentStatus,
+        data.numero,
+        data.data,  // Invoice date (Data field)
+        data.fileUrl
+      );
+      return createCORSResponse(result);
+
+    } else if (action === "addTrip" || action === "addExpenseReason") {
       // Add expense reason to form dropdown
       if (!reasonName || reasonName.trim() === "") {
         return createCORSResponse({
@@ -725,4 +748,122 @@ function getFormId() {
   return formId;
 }
 
+/**
+ * Toggle IVA claim status between "to do" and "done - DD-MM-YYYY"
+ * - When marking done: Rename file to "IVA Claim (DD-MM-YYYY) Número.ext" and send email
+ * - When undoing: Revert file name to "Número DD-MM-YYYY.ext"
+ */
+function toggleIvaClaimStatus(sheetRow, currentStatus, numero, invoiceDate, fileUrl) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName("IVA");
 
+    if (!sheet) {
+      return { success: false, error: "IVA sheet not found" };
+    }
+
+    const isDone = (currentStatus || '').toLowerCase().startsWith('done');
+    const today = new Date();
+    const formattedToday = Utilities.formatDate(today, Session.getScriptTimeZone(), "dd-MM-yyyy");
+
+    // Determine new status
+    let newStatus;
+    if (isDone) {
+      // Undo: set back to "to do"
+      newStatus = "to do";
+    } else {
+      // Mark as done with today's date
+      newStatus = `done - ${formattedToday}`;
+    }
+
+    // Update status in sheet (column J = column 10)
+    sheet.getRange(sheetRow, 10).setValue(newStatus);
+    Logger.log(`IVA Row ${sheetRow}: Status changed from "${currentStatus}" to "${newStatus}"`);
+
+    // Handle file rename
+    if (fileUrl) {
+      const fileId = extractFileId(fileUrl);
+      if (fileId) {
+        try {
+          const file = DriveApp.getFileById(fileId);
+          const originalName = file.getName();
+          const extMatch = originalName.match(/(\.[^.\s]+)$/);
+          const extension = extMatch ? extMatch[0] : "";
+
+          let newFileName;
+          if (isDone) {
+            // Undo: Revert to "Número DD-MM-YYYY.ext"
+            // Parse the invoice date (could be in various formats)
+            const parsedDate = new Date(invoiceDate);
+            const formattedInvoiceDate = Utilities.formatDate(parsedDate, Session.getScriptTimeZone(), "dd-MM-yyyy");
+            newFileName = `${numero} ${formattedInvoiceDate}${extension}`;
+          } else {
+            // Mark done: Rename to "IVA Claim (DD-MM-YYYY) Número.ext"
+            newFileName = `IVA Claim (${formattedToday}) ${numero}${extension}`;
+          }
+
+          file.setName(newFileName);
+          Logger.log(`IVA Row ${sheetRow}: ✅ Renamed file to "${newFileName}"`);
+
+        } catch (fileError) {
+          Logger.log(`IVA Row ${sheetRow}: ⚠️ Could not rename file - ${fileError.toString()}`);
+          // Don't fail the whole operation if file rename fails
+        }
+      }
+    }
+
+    // Send email only when marking as done (not on undo)
+    if (!isDone && fileUrl) {
+      try {
+        const fileId = extractFileId(fileUrl);
+        if (fileId) {
+          const file = DriveApp.getFileById(fileId);
+          const fileName = file.getName();
+          const recipient = "jacqueline.eaton@nato.int";
+          const subject = fileName.replace(/\.[^.]+$/, ""); // Remove extension for subject
+          const fileLink = `https://drive.google.com/file/d/${fileId}/view`;
+
+          const body = [
+            `Hi,`,
+            ``,
+            `Here is an IVA claim receipt.`,
+            ``,
+            `Número: ${numero}`,
+            ``,
+            `You can also access the file here:`,
+            `${fileLink}`,
+            ``,
+            `Regards,`,
+            `Automated System`
+          ].join("\n");
+
+          GmailApp.sendEmail(recipient, subject, body, { attachments: [file.getBlob()] });
+          Logger.log(`IVA Row ${sheetRow}: ✅ Email sent to ${recipient}`);
+        }
+      } catch (emailError) {
+        Logger.log(`IVA Row ${sheetRow}: ⚠️ Could not send email - ${emailError.toString()}`);
+        // Don't fail the whole operation if email fails
+      }
+    }
+
+    return {
+      success: true,
+      sheetRow: sheetRow,
+      newStatus: newStatus,
+      action: isDone ? "undo" : "done"
+    };
+
+  } catch (error) {
+    Logger.log(`Error in toggleIvaClaimStatus: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Extract file ID from a Google Drive URL
+ */
+function extractFileId(fileUrl) {
+  if (!fileUrl) return null;
+  const idMatch = fileUrl.match(/[-\w]{25,}/);
+  return idMatch ? idMatch[0] : null;
+}
