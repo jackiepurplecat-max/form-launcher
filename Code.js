@@ -145,7 +145,7 @@ function handleFormSubmit(e) {
 
   if (sheetName === "Work" || sheetName === "Work (Responses)") {
     config = {
-      statusCol: null,  // Work doesn't use status
+      statusCol: 10,    // Column J (Status)
       dateCol: 2,       // Column B
       descriptionCol: 6, // Column F
       fileCol: 7,       // Column G
@@ -220,13 +220,13 @@ function handleFormSubmit(e) {
     rowValues = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getValues()[0];
   }
 
-  // Set status to "to do" if applicable
+  // Set status to "To do" if applicable
   if (config.statusCol) {
     const statusCell = sheet.getRange(row, config.statusCol);
     const currentStatus = statusCell.getValue();
     if (!currentStatus || currentStatus === "") {
-      statusCell.setValue("to do");
-      Logger.log(`${sheetName} Row ${row}: Set status to "to do"`);
+      statusCell.setValue("To do");
+      Logger.log(`${sheetName} Row ${row}: Set status to "To do"`);
     }
   }
 
@@ -453,12 +453,30 @@ function doPost(e) {
 
     // Handle different actions
     if (action === "toggleIvaStatus") {
-      // Toggle IVA claim status (done/undo)
+      // Toggle IVA claim status (claimed/undo)
       const result = toggleIvaClaimStatus(
         data.sheetRow,
         data.currentStatus,
         data.numero,
         data.data,  // Invoice date (Data field)
+        data.fileUrl
+      );
+      return createCORSResponse(result);
+
+    } else if (action === "toggleWorkStatus") {
+      // Toggle Work expense status (claimed/undo) - no email on status change
+      const result = toggleWorkClaimStatus(
+        data.sheetRow,
+        data.currentStatus,
+        data.fileUrl
+      );
+      return createCORSResponse(result);
+
+    } else if (action === "toggleHealthStatus") {
+      // Toggle Health claim status (claimed/undo) - no email
+      const result = toggleHealthClaimStatus(
+        data.sheetRow,
+        data.currentStatus,
         data.fileUrl
       );
       return createCORSResponse(result);
@@ -762,18 +780,18 @@ function toggleIvaClaimStatus(sheetRow, currentStatus, numero, invoiceDate, file
       return { success: false, error: "IVA sheet not found" };
     }
 
-    const isDone = (currentStatus || '').toLowerCase().startsWith('done');
+    const isClaimed = (currentStatus || '').toLowerCase().startsWith('claimed');
     const today = new Date();
     const formattedToday = Utilities.formatDate(today, Session.getScriptTimeZone(), "dd-MM-yyyy");
 
     // Determine new status
     let newStatus;
-    if (isDone) {
-      // Undo: set back to "to do"
-      newStatus = "to do";
+    if (isClaimed) {
+      // Undo: set back to "To do"
+      newStatus = "To do";
     } else {
-      // Mark as done with today's date
-      newStatus = `done - ${formattedToday}`;
+      // Mark as claimed with today's date
+      newStatus = `Claimed ${formattedToday}`;
     }
 
     // Update status in sheet (column J = column 10)
@@ -791,15 +809,15 @@ function toggleIvaClaimStatus(sheetRow, currentStatus, numero, invoiceDate, file
           const extension = extMatch ? extMatch[0] : "";
 
           let newFileName;
-          if (isDone) {
+          if (isClaimed) {
             // Undo: Revert to "Número DD-MM-YYYY.ext"
             // Parse the invoice date (could be in various formats)
             const parsedDate = new Date(invoiceDate);
             const formattedInvoiceDate = Utilities.formatDate(parsedDate, Session.getScriptTimeZone(), "dd-MM-yyyy");
             newFileName = `${numero} ${formattedInvoiceDate}${extension}`;
           } else {
-            // Mark done: Rename to "IVA Claim (DD-MM-YYYY) Número.ext"
-            newFileName = `IVA Claim (${formattedToday}) ${numero}${extension}`;
+            // Mark claimed: Rename to "Claimed (DD-MM-YYYY) Número.ext"
+            newFileName = `Claimed (${formattedToday}) ${numero}${extension}`;
           }
 
           file.setName(newFileName);
@@ -812,8 +830,8 @@ function toggleIvaClaimStatus(sheetRow, currentStatus, numero, invoiceDate, file
       }
     }
 
-    // Send email only when marking as done (not on undo)
-    if (!isDone && fileUrl) {
+    // Send email only when marking as claimed (not on undo)
+    if (!isClaimed && fileUrl) {
       try {
         const fileId = extractFileId(fileUrl);
         if (fileId) {
@@ -850,7 +868,7 @@ function toggleIvaClaimStatus(sheetRow, currentStatus, numero, invoiceDate, file
       success: true,
       sheetRow: sheetRow,
       newStatus: newStatus,
-      action: isDone ? "undo" : "done"
+      action: isClaimed ? "undo" : "claimed"
     };
 
   } catch (error) {
@@ -866,4 +884,144 @@ function extractFileId(fileUrl) {
   if (!fileUrl) return null;
   const idMatch = fileUrl.match(/[-\w]{25,}/);
   return idMatch ? idMatch[0] : null;
+}
+
+/**
+ * Toggle Work expense status between "To do" and "Claimed DD-MM-YYYY"
+ * - Renames file with "Claimed (DD-MM-YYYY)" prefix when marking claimed
+ * - Removes prefix when undoing
+ * - No email sent on status change (email already sent on submit)
+ */
+function toggleWorkClaimStatus(sheetRow, currentStatus, fileUrl) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName("Work");
+
+    if (!sheet) {
+      return { success: false, error: "Work sheet not found" };
+    }
+
+    const isClaimed = (currentStatus || '').toLowerCase().startsWith('claimed');
+    const today = new Date();
+    const formattedToday = Utilities.formatDate(today, Session.getScriptTimeZone(), "dd-MM-yyyy");
+
+    // Determine new status
+    let newStatus;
+    if (isClaimed) {
+      newStatus = "To do";
+    } else {
+      newStatus = `Claimed ${formattedToday}`;
+    }
+
+    // Update status in sheet (column J = column 10)
+    sheet.getRange(sheetRow, 10).setValue(newStatus);
+    Logger.log(`Work Row ${sheetRow}: Status changed from "${currentStatus}" to "${newStatus}"`);
+
+    // Handle file rename
+    if (fileUrl) {
+      const fileId = extractFileId(fileUrl);
+      if (fileId) {
+        try {
+          const file = DriveApp.getFileById(fileId);
+          const currentName = file.getName();
+
+          let newFileName;
+          if (isClaimed) {
+            // Undo: Remove "Claimed (DD-MM-YYYY) " prefix
+            newFileName = currentName.replace(/^Claimed \(\d{2}-\d{2}-\d{4}\) /, '');
+          } else {
+            // Mark claimed: Add "Claimed (DD-MM-YYYY) " prefix
+            newFileName = `Claimed (${formattedToday}) ${currentName}`;
+          }
+
+          file.setName(newFileName);
+          Logger.log(`Work Row ${sheetRow}: ✅ Renamed file to "${newFileName}"`);
+
+        } catch (fileError) {
+          Logger.log(`Work Row ${sheetRow}: ⚠️ Could not rename file - ${fileError.toString()}`);
+        }
+      }
+    }
+
+    return {
+      success: true,
+      sheetRow: sheetRow,
+      newStatus: newStatus,
+      action: isClaimed ? "undo" : "claimed"
+    };
+
+  } catch (error) {
+    Logger.log(`Error in toggleWorkClaimStatus: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Toggle Health claim status between "To do" and "Claimed DD-MM-YYYY"
+ * - Renames file with "Claimed (DD-MM-YYYY)" prefix when marking claimed
+ * - Removes prefix when undoing
+ * - No email sent
+ */
+function toggleHealthClaimStatus(sheetRow, currentStatus, fileUrl) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName("Health");
+
+    if (!sheet) {
+      return { success: false, error: "Health sheet not found" };
+    }
+
+    const isClaimed = (currentStatus || '').toLowerCase().startsWith('claimed');
+    const today = new Date();
+    const formattedToday = Utilities.formatDate(today, Session.getScriptTimeZone(), "dd-MM-yyyy");
+
+    // Determine new status
+    let newStatus;
+    if (isClaimed) {
+      newStatus = "To do";
+    } else {
+      newStatus = `Claimed ${formattedToday}`;
+    }
+
+    // Update status in sheet (column L = column 12)
+    sheet.getRange(sheetRow, 12).setValue(newStatus);
+    Logger.log(`Health Row ${sheetRow}: Status changed from "${currentStatus}" to "${newStatus}"`);
+
+    // Handle file rename (Receipt file in column J = column 10)
+    if (fileUrl) {
+      const fileId = extractFileId(fileUrl);
+      if (fileId) {
+        try {
+          const file = DriveApp.getFileById(fileId);
+          const currentName = file.getName();
+
+          let newFileName;
+          if (isClaimed) {
+            // Undo: Remove "Claimed (DD-MM-YYYY) " prefix
+            newFileName = currentName.replace(/^Claimed \(\d{2}-\d{2}-\d{4}\) /, '');
+          } else {
+            // Mark claimed: Add "Claimed (DD-MM-YYYY) " prefix
+            newFileName = `Claimed (${formattedToday}) ${currentName}`;
+          }
+
+          file.setName(newFileName);
+          Logger.log(`Health Row ${sheetRow}: ✅ Renamed file to "${newFileName}"`);
+
+        } catch (fileError) {
+          Logger.log(`Health Row ${sheetRow}: ⚠️ Could not rename file - ${fileError.toString()}`);
+        }
+      }
+    }
+
+    return {
+      success: true,
+      sheetRow: sheetRow,
+      newStatus: newStatus,
+      action: isClaimed ? "undo" : "claimed"
+    };
+
+  } catch (error) {
+    Logger.log(`Error in toggleHealthClaimStatus: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
 }

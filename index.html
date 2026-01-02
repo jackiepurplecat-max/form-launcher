@@ -409,6 +409,64 @@ th {
   cursor: wait;
 }
 
+/* Work Done/Undo button styles */
+.work-done-btn {
+  background-color: #e8f5e9 !important;
+  border-color: #4caf50 !important;
+  color: #2e7d32 !important;
+  margin-left: 8px;
+}
+
+.work-done-btn:hover {
+  background-color: #c8e6c9 !important;
+}
+
+.work-undo-btn {
+  background-color: #fff3e0 !important;
+  border-color: #ff9800 !important;
+  color: #e65100 !important;
+  margin-left: 8px;
+}
+
+.work-undo-btn:hover {
+  background-color: #ffe0b2 !important;
+}
+
+.work-done-btn:disabled,
+.work-undo-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+/* Health Done/Undo button styles */
+.health-done-btn {
+  background-color: #e8f5e9 !important;
+  border-color: #4caf50 !important;
+  color: #2e7d32 !important;
+  margin-left: 8px;
+}
+
+.health-done-btn:hover {
+  background-color: #c8e6c9 !important;
+}
+
+.health-undo-btn {
+  background-color: #fff3e0 !important;
+  border-color: #ff9800 !important;
+  color: #e65100 !important;
+  margin-left: 8px;
+}
+
+.health-undo-btn:hover {
+  background-color: #ffe0b2 !important;
+}
+
+.health-done-btn:disabled,
+.health-undo-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 td a,
 #dataTable td a,
 #ivaTable td a,
@@ -601,11 +659,11 @@ td a,
 <script>
 /* ========= CONFIG - Injected from .env via build script ========= */
 const SPREADSHEET_ID = '1J4dldGjb3SktoVxQD3BKm-iX6RDAF7YjoLImm7-MIsg';
-const TRAVEL_SHEET_NAME = 'Work!A:G';
+const TRAVEL_SHEET_NAME = 'Work!A:J'; // Extended to include Status column (J)
 const IVA_SHEET_NAME = 'IVA!A:J';
 const HEALTH_SHEET_NAME = 'Health!B:L';
 const INCOME_SHEET_NAME = 'Income!B:H';
-const TRAVEL_FILTER_COLUMN_INDEX = 0; // "Expense Reason" column
+const TRAVEL_FILTER_COLUMN_INDEX = 1; // "Expense Reason" column (now index 1 after reordering)
 const IVA_FILTER_COLUMN_INDEX = 1; // "Número (Fatura Ref Number)" column (B in sheet, index 1)
 const HEALTH_FILTER_COLUMN_INDEX = 10; // "Status" column (L in sheet, but index 10 in B:L range)
 const INCOME_FILTER_COLUMN_INDEX = 6; // "Status" column (H in sheet, but index 6 in B:H range)
@@ -632,12 +690,33 @@ async function loadTravelSheet() {
   if (rows.length === 0) return;
 
   const headers = rows[0];
-  headers[6] = "Link to File"; // rename column 7 header
-  allTravelRows = rows.slice(1);
+  // Reorder: Status (J=9) first, then A-G (0-6), skip H (7), I (8)
+  // Display: Status, Expense Reason, Date, (unused), Amount, Currency, Description, Link to File
+  const reorderedHeaders = [
+    headers[9] || 'Status', // J: Status
+    headers[0], // A: Expense Reason
+    headers[1], // B: Date
+    headers[3], // D: Amount
+    headers[4], // E: Currency
+    headers[5], // F: Description
+    'Link to File' // G: File link
+  ];
+
+  // Reorder data rows: Status first, then useful columns, plus original row number
+  allTravelRows = rows.slice(1).map((row, index) => [
+    row[9] || '', // J: Status
+    row[0], // A: Expense Reason
+    row[1], // B: Date
+    row[3], // D: Amount
+    row[4], // E: Currency
+    row[5], // F: Description
+    row[6], // G: File link
+    index + 2 // Original sheet row number (for API calls)
+  ]);
 
   // build header row
   document.querySelector('#dataTable thead').innerHTML =
-    '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+    '<tr>' + reorderedHeaders.map(h => `<th>${h}</th>`).join('') + '</tr>';
 
   // populate filter dropdown and delete dropdown with unique expense reasons
   const set = new Set(allTravelRows.map(r => (r[TRAVEL_FILTER_COLUMN_INDEX] || '').trim()).filter(x => x !== ''));
@@ -753,12 +832,13 @@ async function loadHealthSheet() {
     'Link to Invoice' // Link from K
   ];
 
-  // Reorder data rows: Status first, then B-I, then J and K as links
-  allHealthRows = rows.slice(1).map(row => [
+  // Reorder data rows: Status first, then B-I, then J and K as links, plus original row number
+  allHealthRows = rows.slice(1).map((row, index) => [
     row[10], // L: Status
     ...row.slice(0, 8), // B through I
     row[8],  // J: Receipt (will be converted to link)
-    row[9]   // K: Invoice (will be converted to link, may be empty)
+    row[9],  // K: Invoice (will be converted to link, may be empty)
+    index + 2 // Original sheet row number (for API calls)
   ]);
 
   // build header row
@@ -832,14 +912,22 @@ async function loadIncomeSheet() {
 function renderTravelTable(rows) {
   const tbody = document.querySelector('#dataTable tbody');
   tbody.innerHTML = '';
-  rows.forEach(r => {
+  rows.forEach((r, rowIndex) => {
     const tr = document.createElement('tr');
-    const cells = r.map((c, i) => {
-      if (i === 6 && c) { // make column 7 a link
+    // Only render first 7 columns (0-6), skip index 7 which is the internal sheet row number
+    const cells = r.slice(0, 7).map((c, i) => {
+      if (i === 0) { // Status column - add Done/Undo button
+        const status = (c || '').trim();
+        const isClaimed = status.toLowerCase().startsWith('claimed');
+        const buttonText = isClaimed ? '↩ Undo' : '✓ Done';
+        const buttonClass = isClaimed ? 'btn work-undo-btn' : 'btn work-done-btn';
+        return `<td>${c || ''} <button class="${buttonClass}" data-row-index="${rowIndex}" onclick="toggleWorkStatus(${rowIndex})">${buttonText}</button></td>`;
+      }
+      if (i === 6 && c) { // Link to File column
         const safeUrl = c.startsWith('http') ? c : 'https://' + c;
         return `<td><a href="${safeUrl}" target="_blank" rel="noopener">Link</a></td>`;
       }
-      return `<td>${c}</td>`;
+      return `<td>${c || ''}</td>`;
     }).join('');
     tr.innerHTML = cells;
     tbody.appendChild(tr);
@@ -874,9 +962,17 @@ function renderIvaTable(rows) {
 function renderHealthTable(rows) {
   const tbody = document.querySelector('#healthTable tbody');
   tbody.innerHTML = '';
-  rows.forEach(r => {
+  rows.forEach((r, rowIndex) => {
     const tr = document.createElement('tr');
-    const cells = r.map((c, i) => {
+    // Only render first 11 columns (0-10), skip index 11 which is the internal sheet row number
+    const cells = r.slice(0, 11).map((c, i) => {
+      if (i === 0) { // Status column - add Done/Undo button
+        const status = (c || '').trim();
+        const isClaimed = status.toLowerCase().startsWith('claimed');
+        const buttonText = isClaimed ? '↩ Undo' : '✓ Done';
+        const buttonClass = isClaimed ? 'btn health-undo-btn' : 'btn health-done-btn';
+        return `<td>${c || ''} <button class="${buttonClass}" data-row-index="${rowIndex}" onclick="toggleHealthStatus(${rowIndex})">${buttonText}</button></td>`;
+      }
       // Index 9 = Link to Receipt (from J)
       if (i === 9 && c) {
         const safeUrl = c.startsWith('http') ? c : 'https://' + c;
@@ -916,6 +1012,64 @@ document.getElementById('filterSelect').addEventListener('change', function() {
   renderTravelTable(filtered);
 });
 
+/* ---------- Toggle Work Status (Done/Undo) ---------- */
+async function toggleWorkStatus(displayRowIndex) {
+  // Get the row data from the currently displayed/filtered rows
+  const filterValue = document.getElementById('filterSelect').value;
+  const displayedRows = filterValue ? allTravelRows.filter(r => (r[TRAVEL_FILTER_COLUMN_INDEX] || '') === filterValue) : allTravelRows;
+  const rowData = displayedRows[displayRowIndex];
+
+  if (!rowData) {
+    alert('Error: Could not find row data');
+    return;
+  }
+
+  const sheetRow = rowData[7]; // Original sheet row number (stored at index 7)
+  const currentStatus = (rowData[0] || '').trim();
+  const isClaimed = currentStatus.toLowerCase().startsWith('claimed');
+  const fileUrl = rowData[6]; // File URL at index 6
+
+  // Disable the button while processing
+  const button = document.querySelector(`#dataTable button[data-row-index="${displayRowIndex}"]`);
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Working...';
+  }
+
+  try {
+    const res = await fetch(DELETE_WEBAPP_URL, {
+      method: "POST",
+      body: JSON.stringify({
+        action: "toggleWorkStatus",
+        sheetRow: sheetRow,
+        currentStatus: currentStatus,
+        fileUrl: fileUrl,
+        apiKey: DELETE_API_KEY
+      })
+    });
+
+    const result = await res.json();
+    if (result.success) {
+      // Reload the Travel sheet to reflect changes
+      await loadTravelSheet();
+    } else {
+      alert('Error: ' + (result.error || 'Unknown error'));
+      // Re-enable button on error
+      if (button) {
+        button.disabled = false;
+        button.textContent = isClaimed ? '↩ Undo' : '✓ Done';
+      }
+    }
+  } catch (err) {
+    alert('Network error: ' + err);
+    // Re-enable button on error
+    if (button) {
+      button.disabled = false;
+      button.textContent = isClaimed ? '↩ Undo' : '✓ Done';
+    }
+  }
+}
+
 document.getElementById('ivaFilterSelect').addEventListener('change', function() {
   const v = this.value;
   const filtered = v ? allIvaRows.filter(r => (r[0] || '') === v) : allIvaRows; // Filter by Status (first column)
@@ -936,13 +1090,13 @@ async function toggleIvaStatus(displayRowIndex) {
 
   const sheetRow = rowData[9]; // Original sheet row number (stored at index 9)
   const currentStatus = (rowData[0] || '').trim();
-  const isDone = currentStatus.toLowerCase().startsWith('done');
+  const isClaimed = currentStatus.toLowerCase().startsWith('claimed');
   const numero = rowData[1]; // Número for file rename
   const data = rowData[2]; // Data (invoice date) for file rename on undo
   const fileUrl = rowData[8]; // File URL
 
   // Disable the button while processing
-  const button = document.querySelector(`button[data-row-index="${displayRowIndex}"]`);
+  const button = document.querySelector(`#ivaTable button[data-row-index="${displayRowIndex}"]`);
   if (button) {
     button.disabled = true;
     button.textContent = 'Working...';
@@ -971,7 +1125,7 @@ async function toggleIvaStatus(displayRowIndex) {
       // Re-enable button on error
       if (button) {
         button.disabled = false;
-        button.textContent = isDone ? '↩ Undo' : '✓ Done';
+        button.textContent = isClaimed ? '↩ Undo' : '✓ Done';
       }
     }
   } catch (err) {
@@ -979,7 +1133,65 @@ async function toggleIvaStatus(displayRowIndex) {
     // Re-enable button on error
     if (button) {
       button.disabled = false;
-      button.textContent = isDone ? '↩ Undo' : '✓ Done';
+      button.textContent = isClaimed ? '↩ Undo' : '✓ Done';
+    }
+  }
+}
+
+/* ---------- Toggle Health Status (Done/Undo) ---------- */
+async function toggleHealthStatus(displayRowIndex) {
+  // Get the row data from the currently displayed/filtered rows
+  const filterValue = document.getElementById('healthFilterSelect').value;
+  const displayedRows = filterValue ? allHealthRows.filter(r => (r[0] || '') === filterValue) : allHealthRows;
+  const rowData = displayedRows[displayRowIndex];
+
+  if (!rowData) {
+    alert('Error: Could not find row data');
+    return;
+  }
+
+  const sheetRow = rowData[11]; // Original sheet row number (stored at index 11)
+  const currentStatus = (rowData[0] || '').trim();
+  const isClaimed = currentStatus.toLowerCase().startsWith('claimed');
+  const fileUrl = rowData[9]; // Receipt file URL at index 9
+
+  // Disable the button while processing
+  const button = document.querySelector(`#healthTable button[data-row-index="${displayRowIndex}"]`);
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Working...';
+  }
+
+  try {
+    const res = await fetch(DELETE_WEBAPP_URL, {
+      method: "POST",
+      body: JSON.stringify({
+        action: "toggleHealthStatus",
+        sheetRow: sheetRow,
+        currentStatus: currentStatus,
+        fileUrl: fileUrl,
+        apiKey: DELETE_API_KEY
+      })
+    });
+
+    const result = await res.json();
+    if (result.success) {
+      // Reload the Health sheet to reflect changes
+      await loadHealthSheet();
+    } else {
+      alert('Error: ' + (result.error || 'Unknown error'));
+      // Re-enable button on error
+      if (button) {
+        button.disabled = false;
+        button.textContent = isClaimed ? '↩ Undo' : '✓ Done';
+      }
+    }
+  } catch (err) {
+    alert('Network error: ' + err);
+    // Re-enable button on error
+    if (button) {
+      button.disabled = false;
+      button.textContent = isClaimed ? '↩ Undo' : '✓ Done';
     }
   }
 }
