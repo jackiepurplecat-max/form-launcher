@@ -1069,8 +1069,14 @@ async function toggleWorkStatus(displayRowIndex) {
 
     const result = await res.json();
     if (result.success) {
-      // Reload the Travel sheet to reflect changes
+      // Reload the Travel sheet to reflect changes and force re-render
       await loadTravelSheet();
+      // Reapply filter if one is selected
+      const currentFilter = document.getElementById('filterSelect').value;
+      if (currentFilter) {
+        const filtered = allTravelRows.filter(r => (r[TRAVEL_FILTER_COLUMN_INDEX] || '') === currentFilter);
+        renderTravelTable(filtered);
+      }
     } else {
       alert('Error: ' + (result.error || 'Unknown error'));
       // Re-enable button on error
@@ -1137,8 +1143,14 @@ async function toggleIvaStatus(displayRowIndex) {
 
     const result = await res.json();
     if (result.success) {
-      // Reload the IVA sheet to reflect changes
+      // Reload the IVA sheet to reflect changes and force re-render
       await loadIvaSheet();
+      // Reapply filter if one is selected
+      const currentFilter = document.getElementById('ivaFilterSelect').value;
+      if (currentFilter) {
+        const filtered = allIvaRows.filter(r => (r[0] || '') === currentFilter);
+        renderIvaTable(filtered);
+      }
     } else {
       alert('Error: ' + (result.error || 'Unknown error'));
       // Re-enable button on error
@@ -1195,8 +1207,14 @@ async function toggleHealthStatus(displayRowIndex) {
 
     const result = await res.json();
     if (result.success) {
-      // Reload the Health sheet to reflect changes
+      // Reload the Health sheet to reflect changes and force re-render
       await loadHealthSheet();
+      // Reapply filter if one is selected
+      const currentFilter = document.getElementById('healthFilterSelect').value;
+      if (currentFilter) {
+        const filtered = allHealthRows.filter(r => (r[0] || '') === currentFilter);
+        renderHealthTable(filtered);
+      }
     } else {
       alert('Error: ' + (result.error || 'Unknown error'));
       // Re-enable button on error
