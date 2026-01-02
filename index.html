@@ -877,6 +877,16 @@ async function loadHealthSheet() {
     index + 2 // Original sheet row number (for API calls)
   ]);
 
+  // Sort by Status (index 0), then by Patient (index 1)
+  allHealthRows.sort((a, b) => {
+    const statusA = (a[0] || '').toLowerCase();
+    const statusB = (b[0] || '').toLowerCase();
+    if (statusA !== statusB) return statusA.localeCompare(statusB);
+    const patientA = (a[1] || '').toLowerCase();
+    const patientB = (b[1] || '').toLowerCase();
+    return patientA.localeCompare(patientB);
+  });
+
   // build header row
   document.querySelector('#healthTable thead').innerHTML =
     '<tr>' + reorderedHeaders.map(h => `<th>${h}</th>`).join('') + '</tr>';
