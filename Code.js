@@ -277,8 +277,8 @@ function renameFile(sheet, row, sheetName, rowValues, config) {
 
     let newFileName;
     if (sheetName === "IVA" || sheetName === "IVA (Responses)") {
-      // IVA format: "Número Data.ext" (e.g., "INV-123 15-01-2025.pdf")
-      const formattedDate = Utilities.formatDate(date, Session.getScriptTimeZone(), "dd-MM-yyyy");
+      // IVA format: "Número Data.ext" (e.g., "INV-123 2025-01-15.pdf")
+      const formattedDate = Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM-dd");
       newFileName = `${description} ${formattedDate}${extension}`;
     } else {
       // Default format: "yyyymmdd_description.ext"
@@ -810,10 +810,10 @@ function toggleIvaClaimStatus(sheetRow, currentStatus, numero, invoiceDate, file
 
           let newFileName;
           if (isClaimed) {
-            // Undo: Revert to "Número DD-MM-YYYY.ext"
+            // Undo: Revert to "Número YYYY-MM-DD.ext"
             // Parse the invoice date (could be in various formats)
             const parsedDate = new Date(invoiceDate);
-            const formattedInvoiceDate = Utilities.formatDate(parsedDate, Session.getScriptTimeZone(), "dd-MM-yyyy");
+            const formattedInvoiceDate = Utilities.formatDate(parsedDate, Session.getScriptTimeZone(), "yyyy-MM-dd");
             newFileName = `${numero} ${formattedInvoiceDate}${extension}`;
           } else {
             // Mark claimed: Rename to "Claimed (DD-MM-YYYY) Número.ext"

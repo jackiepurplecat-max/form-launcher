@@ -674,6 +674,21 @@ const DELETE_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbyAg6E8J4X6Av
 const DELETE_API_KEY = 'auAzKQaDBNGZyXYWlcN1yTW2xAROTjlM';
 /* ============================ */
 
+/* ---------- Helper: Format date as yyyy-mm-dd ---------- */
+function formatDateYMD(dateStr) {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr; // Return original if invalid
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  } catch (e) {
+    return dateStr; // Return original on error
+  }
+}
+
 
 /* ---------- Load Travel Sheet Data ---------- */
 const travelEndpoint = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(TRAVEL_SHEET_NAME)}?key=${SHEETS_API_KEY}&majorDimension=ROWS`;
@@ -943,10 +958,14 @@ function renderIvaTable(rows) {
     const cells = r.slice(0, 9).map((c, i) => {
       if (i === 0) { // Status column - add Done/Undo button
         const status = (c || '').trim();
-        const isDone = status.toLowerCase().startsWith('done');
-        const buttonText = isDone ? '↩ Undo' : '✓ Done';
-        const buttonClass = isDone ? 'btn iva-undo-btn' : 'btn iva-done-btn';
+        const isClaimed = status.toLowerCase().startsWith('claimed');
+        const buttonText = isClaimed ? '↩ Undo' : '✓ Done';
+        const buttonClass = isClaimed ? 'btn iva-undo-btn' : 'btn iva-done-btn';
         return `<td>${c || ''} <button class="${buttonClass}" data-row-index="${rowIndex}" onclick="toggleIvaStatus(${rowIndex})">${buttonText}</button></td>`;
+      }
+      if (i === 2 && c) { // Data column - format as yyyy-mm-dd
+        const dateVal = formatDateYMD(c);
+        return `<td>${dateVal}</td>`;
       }
       if (i === 8 && c) { // column 9 in display (index 8) = Link to File from Ficheiro
         const safeUrl = c.startsWith('http') ? c : 'https://' + c;
