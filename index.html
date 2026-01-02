@@ -851,7 +851,8 @@ function renderIvaTable(rows) {
   tbody.innerHTML = '';
   rows.forEach((r, rowIndex) => {
     const tr = document.createElement('tr');
-    const cells = r.map((c, i) => {
+    // Only render first 9 columns (0-8), skip index 9 which is the internal sheet row number
+    const cells = r.slice(0, 9).map((c, i) => {
       if (i === 0) { // Status column - add Done/Undo button
         const status = (c || '').trim();
         const isDone = status.toLowerCase().startsWith('done');
