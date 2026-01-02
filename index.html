@@ -467,6 +467,35 @@ th {
   cursor: wait;
 }
 
+/* Income Done/Undo button styles */
+.income-done-btn {
+  background-color: #e8f5e9 !important;
+  border-color: #4caf50 !important;
+  color: #2e7d32 !important;
+  margin-left: 8px;
+}
+
+.income-done-btn:hover {
+  background-color: #c8e6c9 !important;
+}
+
+.income-undo-btn {
+  background-color: #fff3e0 !important;
+  border-color: #ff9800 !important;
+  color: #e65100 !important;
+  margin-left: 8px;
+}
+
+.income-undo-btn:hover {
+  background-color: #ffe0b2 !important;
+}
+
+.income-done-btn:disabled,
+.income-undo-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 td a,
 #dataTable td a,
 #ivaTable td a,
@@ -929,10 +958,11 @@ async function loadIncomeSheet() {
     ...headers.slice(0, 6) // B through G
   ];
 
-  // Reorder data rows: Status first, then B-G
-  allIncomeRows = rows.slice(1).map(row => [
+  // Reorder data rows: Status first, then B-G, plus original row number
+  allIncomeRows = rows.slice(1).map((row, index) => [
     row[6], // H: Status
-    ...row.slice(0, 6) // B through G
+    ...row.slice(0, 6), // B through G
+    index + 2 // Original sheet row number (for API calls)
   ]);
 
   // build header row
@@ -1046,9 +1076,17 @@ function renderHealthTable(rows) {
 function renderIncomeTable(rows) {
   const tbody = document.querySelector('#incomeTable tbody');
   tbody.innerHTML = '';
-  rows.forEach(r => {
+  rows.forEach((r, rowIndex) => {
     const tr = document.createElement('tr');
-    const cells = r.map((c, i) => {
+    // Only render first 7 columns (0-6), skip index 7 which is the internal sheet row number
+    const cells = r.slice(0, 7).map((c, i) => {
+      if (i === 0) { // Status column - add Done/Undo button
+        const status = (c || '').trim();
+        const isFatura = status.toLowerCase().startsWith('fatura');
+        const buttonText = isFatura ? '↩ Undo' : '✓ Done';
+        const buttonClass = isFatura ? 'btn income-undo-btn' : 'btn income-done-btn';
+        return `<td>${c || ''} <button class="${buttonClass}" data-row-index="${rowIndex}" onclick="toggleIncomeStatus(${rowIndex})">${buttonText}</button></td>`;
+      }
       return `<td>${c || ''}</td>`;
     }).join('');
     tr.innerHTML = cells;
@@ -1275,6 +1313,68 @@ document.getElementById('incomeFilterSelect').addEventListener('change', functio
   const filtered = v ? allIncomeRows.filter(r => (r[0] || '') === v) : allIncomeRows; // Filter by Status (first column in reordered data)
   renderIncomeTable(filtered);
 });
+
+/* ---------- Toggle Income Status (Done/Undo) ---------- */
+async function toggleIncomeStatus(displayRowIndex) {
+  // Get the row data from the currently displayed/filtered rows
+  const filterValue = document.getElementById('incomeFilterSelect').value;
+  const displayedRows = filterValue ? allIncomeRows.filter(r => (r[0] || '') === filterValue) : allIncomeRows;
+  const rowData = displayedRows[displayRowIndex];
+
+  if (!rowData) {
+    alert('Error: Could not find row data');
+    return;
+  }
+
+  const sheetRow = rowData[7]; // Original sheet row number (stored at index 7)
+  const currentStatus = (rowData[0] || '').trim();
+  const isFatura = currentStatus.toLowerCase().startsWith('fatura');
+
+  // Disable the button while processing
+  const button = document.querySelector(`#incomeTable button[data-row-index="${displayRowIndex}"]`);
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Working...';
+  }
+
+  try {
+    const res = await fetch(DELETE_WEBAPP_URL, {
+      method: "POST",
+      body: JSON.stringify({
+        action: "toggleIncomeStatus",
+        sheetRow: sheetRow,
+        currentStatus: currentStatus,
+        apiKey: DELETE_API_KEY
+      })
+    });
+
+    const result = await res.json();
+    if (result.success) {
+      // Reload the Income sheet to reflect changes and force re-render
+      await loadIncomeSheet();
+      // Reapply filter if one is selected
+      const currentFilter = document.getElementById('incomeFilterSelect').value;
+      if (currentFilter) {
+        const filtered = allIncomeRows.filter(r => (r[0] || '') === currentFilter);
+        renderIncomeTable(filtered);
+      }
+    } else {
+      alert('Error: ' + (result.error || 'Unknown error'));
+      // Re-enable button on error
+      if (button) {
+        button.disabled = false;
+        button.textContent = isFatura ? '↩ Undo' : '✓ Done';
+      }
+    }
+  } catch (err) {
+    alert('Network error: ' + err);
+    // Re-enable button on error
+    if (button) {
+      button.disabled = false;
+      button.textContent = isFatura ? '↩ Undo' : '✓ Done';
+    }
+  }
+}
 
 document.querySelectorAll('.refresh-btn').forEach(btn => {
   btn.addEventListener('click', () => {

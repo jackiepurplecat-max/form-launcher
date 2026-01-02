@@ -481,6 +481,14 @@ function doPost(e) {
       );
       return createCORSResponse(result);
 
+    } else if (action === "toggleIncomeStatus") {
+      // Toggle Income status (fatura/undo) - no file, no email
+      const result = toggleIncomeStatus(
+        data.sheetRow,
+        data.currentStatus
+      );
+      return createCORSResponse(result);
+
     } else if (action === "addTrip" || action === "addExpenseReason") {
       // Add expense reason to form dropdown
       if (!reasonName || reasonName.trim() === "") {
@@ -1022,6 +1030,49 @@ function toggleHealthClaimStatus(sheetRow, currentStatus, fileUrl) {
 
   } catch (error) {
     Logger.log(`Error in toggleHealthClaimStatus: ${error.toString()}`);
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Toggle Income status between "To do" and "Fatura DD-MM-YYYY"
+ * - No file rename (Income has no file upload)
+ * - No email sent
+ */
+function toggleIncomeStatus(sheetRow, currentStatus) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName("Income");
+
+    if (!sheet) {
+      return { success: false, error: "Income sheet not found" };
+    }
+
+    const isFatura = (currentStatus || '').toLowerCase().startsWith('fatura');
+    const today = new Date();
+    const formattedToday = Utilities.formatDate(today, Session.getScriptTimeZone(), "dd-MM-yyyy");
+
+    // Determine new status
+    let newStatus;
+    if (isFatura) {
+      newStatus = "To do";
+    } else {
+      newStatus = `Fatura ${formattedToday}`;
+    }
+
+    // Update status in sheet (column H = column 8)
+    sheet.getRange(sheetRow, 8).setValue(newStatus);
+    Logger.log(`Income Row ${sheetRow}: Status changed from "${currentStatus}" to "${newStatus}"`);
+
+    return {
+      success: true,
+      sheetRow: sheetRow,
+      newStatus: newStatus,
+      action: isFatura ? "undo" : "fatura"
+    };
+
+  } catch (error) {
+    Logger.log(`Error in toggleIncomeStatus: ${error.toString()}`);
     return { success: false, error: error.toString() };
   }
 }
