@@ -164,11 +164,12 @@ function handleFormSubmit(e) {
   } else if (sheetName === "Health" || sheetName === "Health (Responses)") {
     config = {
       statusCol: 12,    // Column L
-      dateCol: 6,       // Column F (Date)
-      descriptionCol: 13, // Column M (calculated: first letter of B + D + I)
+      dateCol: 7,       // Column G (Treatment Date)
+      descriptionCol: 13, // Column M (calculated: Patient first name + Provider first word)
       calculateDescription: true,
-      calcMethod: 'firstLetters', // Special calculation method
-      calcCols: [2, 4, 9], // Columns B, D, I
+      calcMethod: 'healthNames', // Patient first name + Provider first word
+      patientCol: 2,    // Column B (Patient)
+      providerCol: 4,   // Column D (Provider)
       fileCol: 10,      // Column J (Receipt)
       emailSentCol: null,
       sendEmail: false
@@ -197,14 +198,22 @@ function handleFormSubmit(e) {
   if (config.calculateDescription) {
     let calculatedDesc;
 
-    if (config.calcMethod === 'firstLetters') {
-      // Health: First letter of columns B, D, I
+    if (config.calcMethod === 'healthNames') {
+      // Health: Patient first name + Provider first word
+      const patient = (rowValues[config.patientCol - 1] || "").toString().trim();
+      const provider = (rowValues[config.providerCol - 1] || "").toString().trim();
+      const patientFirst = patient.split(/\s+/)[0] || '';
+      const providerFirst = provider.split(/\s+/)[0] || '';
+      calculatedDesc = `${patientFirst} ${providerFirst}`.trim();
+      Logger.log(`${sheetName} Row ${row}: Calculated description "${calculatedDesc}" from patient and provider names`);
+    } else if (config.calcMethod === 'firstLetters') {
+      // Legacy: First letter of specified columns
       const letters = config.calcCols.map(colNum => {
         const value = (rowValues[colNum - 1] || "").toString().trim();
         return value.charAt(0).toUpperCase();
       }).join('');
       calculatedDesc = letters;
-      Logger.log(`${sheetName} Row ${row}: Calculated description "${calculatedDesc}" from first letters and wrote to column M`);
+      Logger.log(`${sheetName} Row ${row}: Calculated description "${calculatedDesc}" from first letters`);
     } else {
       // Income: Column G + "-" + Column C
       const col1Value = (rowValues[config.calcCol1 - 1] || "").toString().trim();
@@ -280,6 +289,10 @@ function renameFile(sheet, row, sheetName, rowValues, config) {
       // IVA format: "Número Data.ext" (e.g., "INV-123 2025-01-15.pdf")
       const formattedDate = Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM-dd");
       newFileName = `${description} ${formattedDate}${extension}`;
+    } else if (sheetName === "Health" || sheetName === "Health (Responses)") {
+      // Health format: "YYYY-MM-DD Patient Provider.ext"
+      const formattedDate = Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM-dd");
+      newFileName = `${formattedDate} ${description}${extension}`;
     } else {
       // Default format: "yyyymmdd_description.ext"
       const formattedDate = Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyyMMdd");
@@ -966,8 +979,8 @@ function toggleWorkClaimStatus(sheetRow, currentStatus, fileUrl) {
 
 /**
  * Toggle Health claim status between "To do" and "Claimed DD-MM-YYYY"
- * - Renames file with "Claimed (DD-MM-YYYY)" prefix when marking claimed
- * - Removes prefix when undoing
+ * - On Done: Rename file to "Claimed (DD-MM-YYYY) Patient Provider.ext"
+ * - On Undo: Rename file back to "YYYY-MM-DD Patient Provider.ext"
  * - No email sent
  */
 function toggleHealthClaimStatus(sheetRow, currentStatus, fileUrl) {
@@ -979,9 +992,19 @@ function toggleHealthClaimStatus(sheetRow, currentStatus, fileUrl) {
       return { success: false, error: "Health sheet not found" };
     }
 
+    // Get row data for patient/provider/date info
+    const rowValues = sheet.getRange(sheetRow, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const patient = (rowValues[1] || "").toString().trim(); // Column B
+    const provider = (rowValues[3] || "").toString().trim(); // Column D
+    const treatmentDate = new Date(rowValues[6]); // Column G (Treatment Date)
+
+    const patientFirst = patient.split(/\s+/)[0] || '';
+    const providerFirst = provider.split(/\s+/)[0] || '';
+
     const isClaimed = (currentStatus || '').toLowerCase().startsWith('claimed');
     const today = new Date();
     const formattedToday = Utilities.formatDate(today, Session.getScriptTimeZone(), "dd-MM-yyyy");
+    const formattedTreatmentDate = Utilities.formatDate(treatmentDate, Session.getScriptTimeZone(), "yyyy-MM-dd");
 
     // Determine new status
     let newStatus;
@@ -1001,15 +1024,17 @@ function toggleHealthClaimStatus(sheetRow, currentStatus, fileUrl) {
       if (fileId) {
         try {
           const file = DriveApp.getFileById(fileId);
-          const currentName = file.getName();
+          const originalName = file.getName();
+          const extMatch = originalName.match(/(\.[^.\s]+)$/);
+          const extension = extMatch ? extMatch[0] : "";
 
           let newFileName;
           if (isClaimed) {
-            // Undo: Remove "Claimed (DD-MM-YYYY) " prefix
-            newFileName = currentName.replace(/^Claimed \(\d{2}-\d{2}-\d{4}\) /, '');
+            // Undo: Rename to "YYYY-MM-DD Patient Provider.ext"
+            newFileName = `${formattedTreatmentDate} ${patientFirst} ${providerFirst}${extension}`;
           } else {
-            // Mark claimed: Add "Claimed (DD-MM-YYYY) " prefix
-            newFileName = `Claimed (${formattedToday}) ${currentName}`;
+            // Mark claimed: Rename to "Claimed (DD-MM-YYYY) Patient Provider.ext"
+            newFileName = `Claimed (${formattedToday}) ${patientFirst} ${providerFirst}${extension}`;
           }
 
           file.setName(newFileName);
