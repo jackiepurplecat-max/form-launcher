@@ -678,8 +678,29 @@ const DELETE_API_KEY = 'auAzKQaDBNGZyXYWlcN1yTW2xAROTjlM';
 function formatDateYMD(dateStr) {
   if (!dateStr) return '';
   try {
+    // Handle DD/MM/YYYY format (European/Portuguese)
+    const slashMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (slashMatch) {
+      const day = slashMatch[1].padStart(2, '0');
+      const month = slashMatch[2].padStart(2, '0');
+      const year = slashMatch[3];
+      return `${year}-${month}-${day}`;
+    }
+    // Handle DD-MM-YYYY format
+    const dashMatch = dateStr.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    if (dashMatch) {
+      const day = dashMatch[1].padStart(2, '0');
+      const month = dashMatch[2].padStart(2, '0');
+      const year = dashMatch[3];
+      return `${year}-${month}-${day}`;
+    }
+    // Already in yyyy-mm-dd format
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return dateStr;
+    }
+    // Fallback: try parsing with Date object
     const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr; // Return original if invalid
+    if (isNaN(d.getTime())) return dateStr;
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
