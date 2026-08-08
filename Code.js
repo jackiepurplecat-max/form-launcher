@@ -1277,23 +1277,17 @@ function toggleHealthClaimStatus(sheetRow) {
     // Rename Details file (column K)
     renameHealthFile(detailsFileUrl, 'details');
 
-    // On Undo: Update original filenames (M and N) to the renamed versions
-    // with Claimed/ prefix since the files were moved to that folder
-    if (isClaimed) {
-      // Update column M with new receipt name in Claimed folder
-      const claimedReceiptPath = `Claimed/${newReceiptName}`;
-      sheet.getRange(row, 13).setValue(claimedReceiptPath);
-      Logger.log(`Health Row ${row}: Updated original receipt filename to "${claimedReceiptPath}"`);
-
-      // Update column N with new details name in Claimed folder (if exists)
-      if (newDetailsName) {
-        const claimedDetailsPath = `Claimed/${newDetailsName}`;
-        sheet.getRange(row, 14).setValue(claimedDetailsPath);
-        Logger.log(`Health Row ${row}: Updated original details filename to "${claimedDetailsPath}"`);
-      }
-    }
+    // Columns M and N record the CURRENT filename of the iCloud copies, which
+    // is what the next rename has to search for. They are updated only after
+    // the Shortcut email actually goes out, because that email is the thing
+    // that renames those copies.
+    //
+    // On Undo no email is sent, so the iCloud files keep their names and M/N
+    // must be left exactly as they are. (Previously Undo overwrote them with
+    // "Claimed/<name>", a path that matched nothing, breaking the next Done.)
 
     // Send email when marking as claimed (not on undo) to trigger iCloud rename Shortcut
+    let icloudEmailSent = false;
     if (!isClaimed && originalReceiptName) {
       try {
         const recipient = getIcloudEmail(); // iCloud email for Shortcut automation
@@ -1309,7 +1303,17 @@ function toggleHealthClaimStatus(sheetRow) {
         ].join("\n");
 
         GmailApp.sendEmail(recipient, subject, body);
+        icloudEmailSent = true;
         Logger.log(`Health Row ${row}: ✅ Email sent to ${recipient} for iCloud rename`);
+
+        // The Shortcut renames the iCloud copies to these names, so they become
+        // the current names for any future rename.
+        sheet.getRange(row, 13).setValue(newReceiptName);
+        Logger.log(`Health Row ${row}: Current receipt filename now "${newReceiptName}"`);
+        if (newDetailsName) {
+          sheet.getRange(row, 14).setValue(newDetailsName);
+          Logger.log(`Health Row ${row}: Current details filename now "${newDetailsName}"`);
+        }
 
       } catch (emailError) {
         Logger.log(`Health Row ${row}: ⚠️ Could not send email - ${emailError.toString()}`);
@@ -1320,7 +1324,8 @@ function toggleHealthClaimStatus(sheetRow) {
       success: true,
       sheetRow: row,
       newStatus: newStatus,
-      action: isClaimed ? "undo" : "claimed"
+      action: isClaimed ? "undo" : "claimed",
+      icloudEmailSent: icloudEmailSent
     };
 
   } catch (error) {

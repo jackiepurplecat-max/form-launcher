@@ -33,9 +33,13 @@ silent from the UI.
 | M | `Original Receipt Filename` |
 | N | `Original Details Filename` |
 
-These are filled in on form submit with the *original* upload names (with the
-` - Username` suffix Google Forms appends stripped off). The Shortcut needs them
-because the iCloud copies still carry those original names.
+These track the **current** filename of the iCloud copies — the name the
+Shortcut has to search for.
+
+On form submit they're set to the original upload names (with the ` - Username`
+suffix Google Forms appends stripped off). After a successful Done they're
+updated to the new names, because the Shortcut has just renamed those files.
+Undo leaves them alone, since no email is sent and iCloud is untouched.
 
 ---
 
@@ -146,17 +150,23 @@ Shortcuts → **Automation** → **+** → **Create Personal Automation** → **
 
 ---
 
-## Known issue: Done → Undo → Done
+## Done → Undo → Done
 
-Undoing a claim overwrites columns M and N with `Claimed/<new name>` rather than
-restoring the original upload names. So on a *second* Done, the email sends:
+This cycle is safe. Worked example:
 
-```
-ORIGINAL_RECEIPT=Claimed/250115_J_Dentist_50_receipt.pdf
-```
+| Step | Drive | iCloud | Column M |
+|---|---|---|---|
+| After submit | `250115_J_Dentist_50_receipt.pdf` | `IMG_1234.pdf` | `IMG_1234.pdf` |
+| Done | `Claimed (15-01-2025) 250115_J_…_receipt.pdf` | `250115_J_…_receipt.pdf` | `250115_J_…_receipt.pdf` |
+| Undo | `250115_J_…_receipt.pdf` | unchanged | unchanged |
+| Done again | `Claimed (…) 250115_J_…_receipt.pdf` | unchanged | unchanged |
 
-— a path, not a filename, which won't match anything in iCloud. Until that's
-fixed, if you undo a claim and re-do it, correct columns M and N by hand first.
+The second Done emails `ORIGINAL_RECEIPT` and `NEW_RECEIPT` as the same value,
+so the Shortcut performs a no-op rename. That's expected.
+
+If the Shortcut email can't be sent (e.g. `ICLOUD_EMAIL` unset), columns M and N
+are deliberately **not** updated — they keep pointing at the real iCloud names
+so a later retry still finds the files.
 
 ---
 
@@ -167,5 +177,6 @@ fixed, if you undo a claim and re-do it, correct columns M and N by hand first.
 | No email at all | `ICLOUD_EMAIL` not set, or column M empty for that row |
 | Email arrives, nothing renamed | Folder path in **Get File** doesn't match where the files actually are |
 | Receipt renamed, details skipped | Expected when there's no details file — `ORIGINAL_DETAILS` is empty |
-| `ORIGINAL_RECEIPT` looks like `Claimed/...` | See "Known issue" above |
+| `ORIGINAL_RECEIPT` = `NEW_RECEIPT` | Expected on a repeat Done — the Shortcut does a no-op rename |
+| Columns M/N drifted from the real iCloud names | Someone renamed the files outside the Shortcut; correct M/N by hand |
 | Automation never fires | "Ask Before Running" is still on, or the sender filter doesn't match |
