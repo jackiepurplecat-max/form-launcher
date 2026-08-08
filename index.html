@@ -573,22 +573,22 @@ td a,
       <button class="btn" type="button" onclick="addTrip()">Add</button>
     </div>
 
-    <!-- Delete Expense Reason controls -->
-    <div class="delete-trip">
-      <label for="deleteTripSelect" style="margin-right:0.5rem; display:block; margin-bottom:4px;">
-        🗑️ Delete expense reason:
+    <!-- Archive Expense Reason controls -->
+    <div class="archive-reason">
+      <label for="archiveReasonSelect" style="margin-right:0.5rem; display:block; margin-bottom:4px;">
+        📦 Archive expense reason:
       </label>
-      <select id="deleteTripSelect" style="width:calc(100% - 80px); margin-right:4px;">
+      <select id="archiveReasonSelect" style="width:calc(100% - 90px); margin-right:4px;">
         <option value="">-- Select expense reason --</option>
       </select>
-      <button class="btn" type="button" onclick="deleteTrip()">Delete</button>
+      <button class="btn" type="button" onclick="archiveExpenseReason()">Archive</button>
     </div>
   </div>
 </div><!-- end admin-section -->
 
 <!-- Status messages below the admin section -->
 <p id="addTripResult" style="margin-top:0.5rem; margin-bottom:0; font-size:12px; color:#333;"></p>
-<p id="deleteResult" style="margin-top:0; margin-bottom:0.5rem; font-size:12px; color:#333;"></p>
+<p id="archiveResult" style="margin-top:0; margin-bottom:0.5rem; font-size:12px; color:#333;"></p>
 
 <div class="table-wrapper">
   <table id="dataTable">
@@ -805,13 +805,13 @@ async function loadTravelSheet() {
     filterSelect.appendChild(opt);
   });
 
-  // Populate delete dropdown
-  const deleteSelect = document.getElementById('deleteTripSelect');
-  deleteSelect.innerHTML = '<option value="">-- Select expense reason --</option>';
+  // Populate archive dropdown
+  const archiveSelect = document.getElementById('archiveReasonSelect');
+  archiveSelect.innerHTML = '<option value="">-- Select expense reason --</option>';
   sortedReasons.forEach(val => {
     const opt = document.createElement('option');
     opt.value = val; opt.textContent = val;
-    deleteSelect.appendChild(opt);
+    archiveSelect.appendChild(opt);
   });
 
   renderTravelTable(allTravelRows);
@@ -1437,32 +1437,33 @@ async function addTrip() {
   }
 }
 
-/* ---------- Delete Expense Reason Function ---------- */
-async function deleteTrip() {
-  const trip = document.getElementById("deleteTripSelect").value.trim();
-  if (!trip) {
-    alert("Please select an expense reason to delete");
+/* ---------- Archive Expense Reason Function ---------- */
+async function archiveExpenseReason() {
+  const reason = document.getElementById("archiveReasonSelect").value.trim();
+  if (!reason) {
+    alert("Please select an expense reason to archive");
     return;
   }
 
-  const resultEl = document.getElementById("deleteResult");
+  const resultEl = document.getElementById("archiveResult");
 
-  // Deleting is permanent and removes every expense row for this reason,
-  // so state the row count and require an explicit confirmation.
+  // Archiving moves rows out of the active table, so confirm with the count.
+  // Nothing is destroyed, so the wording says where things end up.
   const affected = allTravelRows.filter(
-    r => (r[TRAVEL_FILTER_COLUMN_INDEX] || '') === trip
+    r => (r[TRAVEL_FILTER_COLUMN_INDEX] || '') === reason
   ).length;
 
   const warning = affected > 0
-    ? `Delete expense reason "${trip}"?\n\n`
-      + `This permanently deletes ${affected} expense row${affected === 1 ? '' : 's'} `
-      + `from the sheet and removes "${trip}" from the form dropdown.\n\n`
-      + `This cannot be undone.`
-    : `Delete expense reason "${trip}"?\n\n`
+    ? `Archive expense reason "${reason}"?\n\n`
+      + `${affected} expense row${affected === 1 ? '' : 's'} will move to the `
+      + `"Work Archive" sheet, and any receipts will move to the "Archived" `
+      + `folder in Drive.\n\n`
+      + `"${reason}" will be removed from the form dropdown.`
+    : `Archive expense reason "${reason}"?\n\n`
       + `No expense rows use it. It will be removed from the form dropdown.`;
 
   if (!confirm(warning)) {
-    resultEl.textContent = 'Delete cancelled.';
+    resultEl.textContent = 'Archive cancelled.';
     resultEl.style.color = '#333';
     return;
   }
@@ -1473,19 +1474,29 @@ async function deleteTrip() {
     const res = await fetch(DELETE_WEBAPP_URL, {
       method: "POST",
       body: JSON.stringify({
-        action: "deleteExpenseReason",
-        tripName: trip,
+        action: "archiveExpenseReason",
+        tripName: reason,
         apiKey: DELETE_API_KEY
       })
     });
 
     const data = await res.json();
     if (data.success) {
-      resultEl.textContent =
-        `Deleted ${data.deletedRows} expense row(s) for "${data.expenseReason || data.trip}". `
-        + `${data.remainingReasons || data.remainingTrips} expense reason(s) remain in list.`;
-      resultEl.style.color = '#2d7a2d'; // green for success
-      loadTravelSheet(); // refresh table after deletion
+      let msg = `Archived ${data.archivedRows} expense row(s) for `
+        + `"${data.expenseReason || reason}"`;
+      if (data.movedFiles) msg += `, moved ${data.movedFiles} file(s) to Archived`;
+      msg += `. ${data.remainingReasons} expense reason(s) remain in list.`;
+
+      // Surface partial failures rather than reporting a clean success
+      if (data.fileErrors && data.fileErrors.length) {
+        msg += ` ⚠️ ${data.fileErrors.length} file(s) could not be moved `
+          + `— rows were archived anyway.`;
+        resultEl.style.color = '#b26a00';
+      } else {
+        resultEl.style.color = '#2d7a2d';
+      }
+      resultEl.textContent = msg;
+      loadTravelSheet(); // refresh table after archiving
     } else {
       resultEl.textContent = `Error: ${data.error || "unknown"}`;
       resultEl.style.color = '#c72e2e'; // red for error

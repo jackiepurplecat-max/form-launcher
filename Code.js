@@ -596,14 +596,17 @@ function doPost(e) {
       return createCORSResponse(addExpenseReasonToForm(reasonName.trim()));
     }
 
-    if (action === "deleteTrip" || action === "deleteExpenseReason") {
+    // Archiving replaced deleting. The legacy delete actions are mapped here
+    // deliberately, so an older cached page archives rather than destroys.
+    if (action === "archiveExpenseReason" || action === "archiveTrip" ||
+        action === "deleteTrip" || action === "deleteExpenseReason") {
       if (!reasonName || reasonName.trim() === "") {
         return createCORSResponse({
           success: false,
           error: "Expense reason is required"
         });
       }
-      return createCORSResponse(deleteExpenseReasonRows(reasonName.trim()));
+      return createCORSResponse(archiveExpenseReasonRows(reasonName.trim()));
     }
 
     // No implicit default: a missing or unrecognised action must never fall
@@ -633,10 +636,68 @@ function createCORSResponse(data) {
   return output;
 }
 
+/** Name of the sheet archived Work rows are moved to (created on demand) */
+const WORK_ARCHIVE_SHEET_NAME = "Work Archive";
+
+/** Name of the Drive folder archived receipts are moved into (created on demand) */
+const ARCHIVE_FOLDER_NAME = "Archived";
+
 /**
- * Delete all rows from Work sheet matching the given expense reason
+ * Count the distinct non-empty expense reasons still present in a sheet
  */
-function deleteExpenseReasonRows(expenseReason) {
+function countRemainingReasons(sheet) {
+  const data = sheet.getDataRange().getValues();
+  const reasons = new Set();
+  for (let i = 1; i < data.length; i++) {
+    const reason = data[i][0];
+    if (reason != null && String(reason).trim() !== "") {
+      reasons.add(String(reason));
+    }
+  }
+  return reasons.size;
+}
+
+/**
+ * Get (or create) the archive sheet, seeding it with the Work headers
+ * plus an "Archived At" column.
+ */
+function getOrCreateWorkArchiveSheet(ss, headerRow) {
+  let archiveSheet = ss.getSheetByName(WORK_ARCHIVE_SHEET_NAME);
+  if (!archiveSheet) {
+    archiveSheet = ss.insertSheet(WORK_ARCHIVE_SHEET_NAME);
+    const headers = headerRow.concat(["Archived At"]);
+    archiveSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    archiveSheet.setFrozenRows(1);
+    Logger.log(`Created "${WORK_ARCHIVE_SHEET_NAME}" sheet`);
+  }
+  return archiveSheet;
+}
+
+/**
+ * Get (or create) the "Archived" folder alongside a file's current location,
+ * so archived receipts stay near the originals rather than at Drive root.
+ */
+function getOrCreateArchiveFolder(file) {
+  const parents = file.getParents();
+  const parent = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
+
+  // Already archived - don't nest Archived inside Archived
+  if (parent.getName() === ARCHIVE_FOLDER_NAME) return parent;
+
+  const existing = parent.getFoldersByName(ARCHIVE_FOLDER_NAME);
+  return existing.hasNext() ? existing.next() : parent.createFolder(ARCHIVE_FOLDER_NAME);
+}
+
+/**
+ * Archive all Work rows matching the given expense reason:
+ *  - copies the rows to the "Work Archive" sheet (with a timestamp)
+ *  - moves each receipt in Drive into an "Archived" folder
+ *  - removes the rows from Work and the reason from the form dropdown
+ *
+ * Rows are only removed from Work after they are safely written to the
+ * archive sheet, so a failure part-way through never loses data.
+ */
+function archiveExpenseReasonRows(expenseReason) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName("Work");
@@ -646,52 +707,85 @@ function deleteExpenseReasonRows(expenseReason) {
     }
 
     const data = sheet.getDataRange().getValues();
-    let deletedCount = 0;
+    const reasonStr = expenseReason == null ? "" : String(expenseReason);
 
-    // Start from bottom to avoid index shifting issues when deleting
-    for (let i = data.length - 1; i > 0; i--) {  // Skip header row (i > 0)
-      const rowExpenseReason = data[i][0]; // Column A (Expense Reason)
-
-      // Convert both to strings for comparison (handles numbers like 202511)
-      const rowReasonStr = rowExpenseReason ? rowExpenseReason.toString() : "";
-      const reasonStr = expenseReason ? expenseReason.toString() : "";
-
-      if (rowReasonStr === reasonStr) {
-        sheet.deleteRow(i + 1); // +1 because sheet rows are 1-indexed
-        deletedCount++;
-      }
+    // Collect matches top-down so archive order matches sheet order.
+    // Compare as strings so numeric reasons like 202511 still match.
+    const matches = [];
+    for (let i = 1; i < data.length; i++) {
+      const rowReason = data[i][0] == null ? "" : String(data[i][0]);
+      if (rowReason === reasonStr) matches.push({ index: i, values: data[i] });
     }
 
-    Logger.log(`Deleted ${deletedCount} rows for expense reason: ${expenseReason}`);
-
-    // Get remaining unique expense reasons from spreadsheet for the response
-    const remainingData = sheet.getDataRange().getValues();
-    const uniqueReasons = new Set();
-    for (let i = 1; i < remainingData.length; i++) {
-      const reason = remainingData[i][0];
-      // Convert to string safely
-      if (reason != null && reason !== "") {
-        const reasonStr = String(reason);  // Use String() instead of toString()
-        if (reasonStr.trim() !== "") {
-          uniqueReasons.add(reasonStr);
-        }
-      }
+    if (matches.length === 0) {
+      // Nothing to archive, but still tidy the form dropdown
+      removeExpenseReasonFromForm(expenseReason);
+      return {
+        success: true,
+        expenseReason: expenseReason,
+        archivedRows: 0,
+        movedFiles: 0,
+        fileErrors: [],
+        remainingReasons: countRemainingReasons(sheet)
+      };
     }
 
-    Logger.log(`Remaining unique expense reasons: ${Array.from(uniqueReasons).join(', ')}`);
+    // 1. Write to the archive sheet FIRST - nothing is removed until this works
+    const width = data[0].length;
+    const archiveSheet = getOrCreateWorkArchiveSheet(ss, data[0]);
+    const archivedAt = Utilities.formatDate(
+      new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss"
+    );
+    const rowsOut = matches.map(m => {
+      const values = m.values.slice(0, width);
+      while (values.length < width) values.push("");
+      return values.concat([archivedAt]);
+    });
+    archiveSheet
+      .getRange(archiveSheet.getLastRow() + 1, 1, rowsOut.length, width + 1)
+      .setValues(rowsOut);
+    Logger.log(`Archived ${rowsOut.length} row(s) for "${expenseReason}"`);
 
-    // Remove only the deleted expense reason from form dropdown
+    // 2. Move receipts into the Archived folder. A file that cannot be moved
+    //    is reported but does not abort the archive.
+    let movedFiles = 0;
+    const fileErrors = [];
+    matches.forEach(m => {
+      const fileRef = (m.values[6] || "").toString().trim(); // Column G
+      if (!fileRef) return;
+
+      const fileId = extractFileId(fileRef);
+      if (!fileId) return; // iCloud path or non-Drive reference - nothing to move
+
+      try {
+        const file = DriveApp.getFileById(fileId);
+        file.moveTo(getOrCreateArchiveFolder(file));
+        movedFiles++;
+      } catch (fileError) {
+        Logger.log(`⚠️ Could not archive file ${fileId} - ${fileError.toString()}`);
+        fileErrors.push(fileId);
+      }
+    });
+
+    // 3. Remove the archived rows from Work, bottom-up to keep indexes valid
+    for (let i = matches.length - 1; i >= 0; i--) {
+      sheet.deleteRow(matches[i].index + 1); // +1 because sheet rows are 1-indexed
+    }
+
+    // 4. Remove the reason from the form dropdown
     const removeResult = removeExpenseReasonFromForm(expenseReason);
     Logger.log(`Remove from form result: ${JSON.stringify(removeResult)}`);
 
     return {
       success: true,
       expenseReason: expenseReason,
-      deletedRows: deletedCount,
-      remainingReasons: uniqueReasons.size
+      archivedRows: matches.length,
+      movedFiles: movedFiles,
+      fileErrors: fileErrors,
+      remainingReasons: countRemainingReasons(sheet)
     };
   } catch (error) {
-    Logger.log(`Error in deleteExpenseReasonRows: ${error.toString()}`);
+    Logger.log(`Error in archiveExpenseReasonRows: ${error.toString()}`);
     return { success: false, error: error.toString() };
   }
 }
