@@ -93,6 +93,9 @@ const SECTIONS = {
     sheet: 'Work',
     counterpartyLabel: 'Supplier',
     category: { header: 'Expense Reason', label: 'Expense Reason', managed: true },
+    // No registry prefill: the same supplier serves many trips, so the expense
+    // reason genuinely varies and a default would be wrong more often than right
+    registryTypeField: null,
     states: [
       { name: 'To Do' },
       { name: 'Claimed', dateColumn: 'Claimed Date', fileSuffix: 'Claimed', folder: 'Claimed' },
@@ -110,6 +113,8 @@ const SECTIONS = {
     sheet: 'IVA',
     counterpartyLabel: 'Retailer',
     category: null,
+    registryTypeField: null,
+    registryNifField: 'Emitente NIF',
     states: [
       { name: 'To Do' },
       { name: 'Claimed', dateColumn: 'Claimed Date', fileSuffix: 'Claimed', folder: 'Claimed' },
@@ -146,6 +151,8 @@ const SECTIONS = {
     sheet: 'Health',
     counterpartyLabel: 'Provider',
     category: { header: 'Patient', label: 'Patient', managed: true },
+    // White Clinic is usually Dentist, so remember it
+    registryTypeField: 'Service Type',
     states: [
       { name: 'To Do' },
       { name: 'Claimed', dateColumn: 'Claimed Date', fileSuffix: 'Claimed', folder: 'Claimed' },
@@ -177,7 +184,10 @@ const SECTIONS = {
     label: 'Log Income',
     sheet: 'Income',
     counterpartyLabel: 'Paid by',
-    category: { header: 'Reason', label: 'Reason', managed: true, required: false },
+    category: { header: 'Reason', label: 'Reason', managed: false, required: false },
+    // The reason is currently fixed per payer, so let the registry remember it
+    // rather than asking every time
+    registryTypeField: 'Reason',
     states: [
       { name: 'Invoiced', dateColumn: 'Invoiced Date' },
       { name: 'Received', dateColumn: 'Received Date' },
@@ -226,6 +236,40 @@ function formatAmountForFilename(amount) {
   if (!isFinite(n)) return '';
   return n.toFixed(2).replace('.', DECIMAL_IN_FILENAME);
 }
+
+/**
+ * Every Script Property v2 reads.
+ *
+ * Real addresses and identifiers live here rather than in this file, because
+ * the repository is public. v1 hardcoded the IVA recipient into Code.js and
+ * put both NIFs in index.html; v2 does not repeat that.
+ */
+const SCRIPT_PROPERTY_INFO = {
+  ROOT_FOLDER_ID: {
+    required: true, secret: false,
+    description: 'Drive folder containing <Section>/{Inbox,Claimed,Settled,Archived}'
+  },
+  IVA_CLAIM_RECIPIENT: {
+    required: true, secret: false,
+    description: 'Where an IVA claim is emailed when the entry is created'
+  },
+  REF_JALLC_NIF: {
+    required: false, secret: false,
+    description: 'Shown in the IVA section for copying into Finanças'
+  },
+  REF_MY_NIF: {
+    required: false, secret: false,
+    description: 'Shown in the IVA section for copying into Finanças'
+  },
+  REF_IVA_TIPO: {
+    required: false, secret: false,
+    description: 'Fixed Tipo text shown in the IVA section'
+  },
+  SIRI_API_KEY: {
+    required: false, secret: true,
+    description: 'Key held only in the Shortcut, for the create-only endpoint'
+  }
+};
 
 /** The state a newly created entry starts in: the first in the list. */
 function initialState(section) {

@@ -120,11 +120,11 @@ something. Its allowed values are a **managed list** that populates the form
 dropdown — the generalisation of v1's add/delete expense reason, which gives
 Health add/remove patients for free.
 
-| Section | Category column | Managed | Required |
+| Section | Category column | Managed list | Required |
 |---|---|---|---|
 | Work | `Expense Reason` | yes | yes |
 | Health | `Patient` | yes | yes |
-| Income | `Reason` | yes | no |
+| Income | `Reason` | no — free text, prefilled | no |
 | IVA | — | — | — |
 
 `Status` holds only the current state name — never a date, never free text. That
@@ -414,6 +414,20 @@ said and let the completion step resolve it. Measured behaviour:
 
 Short names are inherently brittle — one wrong letter in four tanks the ratio.
 That is what `Aliases` is for: correct it once, and it resolves at 0.95 forever.
+
+**What the registry prefills differs per section**, because "usually the same"
+is not true everywhere:
+
+| Section | Prefills | Why |
+|---|---|---|
+| IVA | `Emitente NIF` | A fact about the retailer |
+| Health | `Service Type` | White Clinic is usually Dentist |
+| Income | `Reason` | Currently fixed per payer |
+| Work | nothing | The same supplier serves many trips, so Expense Reason genuinely varies and a default would be wrong more often than right |
+
+Income's `Reason` is therefore free text rather than a managed list: you enter
+it once per payer and it fills itself thereafter, which removes the reason it
+would otherwise go unfilled.
 
 **Types are cleared on conflict, not overwritten.** A clinic doing both
 dentistry and exams has no reliable default, so the second differing type blanks
