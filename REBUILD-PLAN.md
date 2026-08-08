@@ -272,7 +272,8 @@ a dropped field becomes a receipt you have to go and find.
 |---|---|
 | Work | none |
 | IVA | `Número`, `Emitente NIF`, `IVA Amount` |
-| Health | `Invoice Date`, `Service Type` |
+| Work | `Type` (Taxi, Train, Flight, Hotel, …) |
+| Health | `Invoice Date`, `Type` (Doctor, Dentist, …) |
 | Income | none — its extra dates are state dates |
 
 **Health `Service Type`** is a deliberately short list: Doctor, Dentist,
@@ -421,9 +422,9 @@ is not true everywhere:
 | Section | Prefills | Why |
 |---|---|---|
 | IVA | `Emitente NIF` | A fact about the retailer |
-| Health | `Service Type` | White Clinic is usually Dentist |
+| Health | `Type` | White Clinic is usually Dentist |
 | Income | `Reason` | Currently fixed per payer |
-| Work | nothing | The same supplier serves many trips, so Expense Reason genuinely varies and a default would be wrong more often than right |
+| Work | `Type` | Uber is always Taxi — but **not** `Expense Reason`, since the same supplier serves many trips |
 
 Income's `Reason` is therefore free text rather than a managed list: you enter
 it once per payer and it fills itself thereafter, which removes the reason it

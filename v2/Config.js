@@ -93,9 +93,10 @@ const SECTIONS = {
     sheet: 'Work',
     counterpartyLabel: 'Supplier',
     category: { header: 'Expense Reason', label: 'Expense Reason', managed: true },
-    // No registry prefill: the same supplier serves many trips, so the expense
-    // reason genuinely varies and a default would be wrong more often than right
-    registryTypeField: null,
+    // The trip varies, but the KIND of expense does not: Uber is always Taxi
+    // whether the trip is Amsterdam or Plymouth. So Type prefills from the
+    // registry and Expense Reason never does.
+    registryTypeField: 'Type',
     states: [
       { name: 'To Do' },
       { name: 'Claimed', dateColumn: 'Claimed Date', fileSuffix: 'Claimed', folder: 'Claimed' },
@@ -104,7 +105,13 @@ const SECTIONS = {
     fileColumns: [
       { header: COMMON.receiptUrl, label: 'Receipt', suffix: 'receipt' }
     ],
-    extraFields: [],
+    extraFields: [
+      // TODO confirm this list - proposed, not taken from your current data
+      {
+        header: 'Type', label: 'Type', type: 'choice', required: false,
+        options: ['Taxi', 'Train', 'Flight', 'Hotel', 'Meals', 'Parking', 'Fuel', 'Other']
+      }
+    ],
     emailOnCreate: null
   },
 
@@ -152,7 +159,7 @@ const SECTIONS = {
     counterpartyLabel: 'Provider',
     category: { header: 'Patient', label: 'Patient', managed: true },
     // White Clinic is usually Dentist, so remember it
-    registryTypeField: 'Service Type',
+    registryTypeField: 'Type',
     states: [
       { name: 'To Do' },
       { name: 'Claimed', dateColumn: 'Claimed Date', fileSuffix: 'Claimed', folder: 'Claimed' },
@@ -173,7 +180,7 @@ const SECTIONS = {
       // This is a short one for your own tracking; the insurer's value is
       // chosen at submission time, not here.
       {
-        header: 'Service Type', label: 'Type', type: 'choice', required: false,
+        header: 'Type', label: 'Type', type: 'choice', required: false,
         options: ['Doctor', 'Dentist', 'Optician', 'Prescription', 'Exam/Test']
       }
     ],
