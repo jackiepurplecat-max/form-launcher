@@ -14,6 +14,8 @@ Status: **planning**. Nothing here is built yet.
 | Migration | Start clean. Old account frozen as archive, worked down in parallel |
 | Status model | Three states per section, one date column per state (see below) |
 | UI hosting | Apps Script web app, not GitHub Pages |
+| Intake | **Custom form. No Google Forms** (see below) |
+| Supplier registry | Self-populating, learned from entries as they are made |
 | OCR intake | Designed into the schema now, built after migration |
 | Siri intake | Designed into the architecture now, built after migration |
 
@@ -23,6 +25,28 @@ Sheets store Drive **URLs**. Transferring preserves file IDs, copying does not �
 so a copy breaks every historical receipt link. Starting clean sidesteps the
 question: legacy files never move, so legacy links never break. The old page
 keeps working against the old account until its backlog is empty.
+
+### Why there is no Google Form
+
+The deciding argument is the supplier registry. **Google Forms cannot fill one
+answer from another** — "type FNAC, get its NIF" is impossible there and trivial
+in a form we control. Everything else follows from having made that choice.
+
+Dropping Forms *deletes* work rather than adding it:
+
+- Form dropdown syncing for expense reasons and patients — a real chunk of v1's
+  complexity, and of what the management module would have been
+- Four forms to create, own, link and migrate to the new account
+- The `onFormSubmit` trigger and the "Forms writes the row, we finalise it" split
+- `entry.NNN` field IDs, which would have made a Siri→Forms POST brittle
+
+What it costs: file upload has to be built (`<input type="file">` → base64 →
+`google.script.run` → Drive, receipts are small), and validation becomes ours —
+but `missingFields()` already exists.
+
+Since the UI was already moving into Apps Script, the form is just another view
+in the same app, and Siri stops being a special case: form and Siri are two
+callers of `createEntry`.
 
 ### Why the UI moves into Apps Script
 
@@ -96,12 +120,12 @@ something. Its allowed values are a **managed list** that populates the form
 dropdown — the generalisation of v1's add/delete expense reason, which gives
 Health add/remove patients for free.
 
-| Section | Category column | Managed |
-|---|---|---|
-| Work | `Expense Reason` | yes |
-| Health | `Patient` | yes |
-| IVA | — | — |
-| Income | — | — |
+| Section | Category column | Managed | Required |
+|---|---|---|---|
+| Work | `Expense Reason` | yes | yes |
+| Health | `Patient` | yes | yes |
+| Income | `Reason` | yes | no |
+| IVA | — | — | — |
 
 `Status` holds only the current state name — never a date, never free text. That
 is what fixes the filter dropdowns: three stable options per section instead of
@@ -248,8 +272,18 @@ a dropped field becomes a receipt you have to go and find.
 |---|---|
 | Work | none |
 | IVA | `Número`, `Emitente NIF`, `Tipo`, `Importados`, `IVA Amount` |
-| Health | `Invoice Date` |
-| Income | to confirm from the sheet |
+| Health | `Invoice Date`, `Service Type` |
+| Income | none — its extra dates are state dates |
+
+**Health `Service Type`** is a deliberately short list: Doctor, Dentist,
+Optician, Prescription, Exam/Test. It is **not** the insurer's list, which is
+huge and multi-level and is chosen at submission time. This one exists for your
+own tracking and is optional.
+
+**Income** is Date, Counterparty, Amount, Currency, optional Reason, plus its
+three state dates. `Received Date` and `Logged Date` are ordinary editable
+fields shown in the form — settable at entry or later — as well as being filled
+by the status control. So an income entry can arrive already `Received`.
 
 `Amount` holds the total in every section; IVA's VAT figure is its own
 `IVA Amount` field. `Date` holds the transaction date — for Health that is the
@@ -324,6 +358,47 @@ instead of `fetch` — no API key, no CORS, caller identity known server-side.
 One render function driven by section config. Explicit loading, empty and error
 states, so a failure stops looking identical to "no data".
 
+### Supplier registry
+
+A `Suppliers` sheet that **populates itself**. Nothing is entered up front:
+every entry teaches it, so it is current by construction rather than by
+maintenance.
+
+| Column | Purpose |
+|---|---|
+| `Name` | Canonical name |
+| `Type` | Default service type, e.g. Uber → Taxi, White Clinic → Dentist |
+| `NIF` | IVA retailers only |
+| `Aliases` | Recurring mishearings, mapped once and fixed forever |
+| `Times Used`, `Last Used` | Orders autocomplete by what you actually use |
+
+Serves the form (autocomplete, prefill Type and NIF) and Siri (matching a
+misheard name to something real).
+
+**Matching is tiered**, strongest first: exact after normalising (1.00), alias
+(0.95), one name containing the other scaled by length ratio (0.75–0.95), then
+edit-distance similarity. Accents, case and punctuation are ignored throughout.
+
+**Nothing prefills below 0.85 confidence.** A wrong NIF means a rejected claim,
+which is far worse than a blank field — below the bar we keep what was actually
+said and let the completion step resolve it. Measured behaviour:
+
+| Heard | Stored | Score | |
+|---|---|---|---|
+| `wite clinic` | White Clinic | 0.92 | autofills |
+| `the white clinic` | White Clinic | 0.90 | autofills |
+| `white clinique` | White Clinic | 0.79 | holds |
+| `fnak` | FNAC | 0.75 | holds |
+| `uber` | Uber Eats | 0.84 | holds |
+
+Short names are inherently brittle — one wrong letter in four tanks the ratio.
+That is what `Aliases` is for: correct it once, and it resolves at 0.95 forever.
+
+**Types are cleared on conflict, not overwritten.** A clinic doing both
+dentistry and exams has no reliable default, so the second differing type blanks
+it. A field that prefills the wrong value is worse than one that prefills
+nothing.
+
 ### Management module
 
 v1's only management action was add/delete expense reason. v2 gets a proper
@@ -364,6 +439,35 @@ space is urgent, permanent removal is a config switch.
 category field, which updates the linked form's dropdown. Works for Work's
 Expense Reason and Health's Patient; hidden for IVA and Income, which have no
 category.
+
+### Siri intake, and why partial entries make it work
+
+The target utterances:
+
+> "Siri, log expense: Worton, 298 euros, today, receipt in email"
+
+> "Siri, Phoenix just went to the dentist at White Clinic and it cost 70 euros,
+> invoice and receipt in email"
+
+The insight that makes this tractable: **the entry does not have to be
+complete.** Parsing therefore does not have to be reliable, only useful.
+
+1. Parse what is parseable — amount, currency, date, and a supplier matched
+   against the registry.
+2. Put the **raw utterance in `Notes`**, always. Nothing said is ever lost.
+3. Anything unmatched stays blank; `Receipt State` becomes `awaiting`.
+4. Email a **completion link** that opens the form on that row.
+
+A misheard word costs one tap on the link instead of a failed capture. This is
+also why the registry must not guess: a held match leaves a blank you will see
+and fix, while a confident wrong match silently corrupts the entry.
+
+The completion link is only possible without Google Forms — Forms cannot reopen
+an existing row for editing in any usable way.
+
+**Learning from corrections.** When a completion edit changes the supplier from
+what was heard, that spoken form is a candidate `Alias`. Adding it — offered,
+not automatic — means the same mishearing resolves next time.
 
 ### Security
 

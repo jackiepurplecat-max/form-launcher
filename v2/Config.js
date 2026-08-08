@@ -74,9 +74,9 @@ const RECEIPT_STATE = {
  *
  * category
  *   Optional extra classifying field, present only where it means something.
- *   `managed: true` means its allowed values are a list you maintain, which
- *   populates the form dropdown — the generalisation of v1's add/delete
- *   expense reason.
+ *   `managed: true` means its allowed values are a maintained list offered in
+ *   the form. Since v2 has no Google Form, this list lives in the sheet rather
+ *   than in a form question.
  *
  * extraFields
  *   Section-specific columns beyond the shared core. Declared with type and
@@ -156,7 +156,14 @@ const SECTIONS = {
     // COMMON.date holds the treatment date - the event itself, consistent with
     // the other sections. The invoice date is also required by the claim.
     extraFields: [
-      { header: 'Invoice Date', label: 'Invoice date', type: 'date', required: true }
+      { header: 'Invoice Date', label: 'Invoice date', type: 'date', required: true },
+      // Deliberately NOT the insurer's list, which is huge and multi-level.
+      // This is a short one for your own tracking; the insurer's value is
+      // chosen at submission time, not here.
+      {
+        header: 'Service Type', label: 'Type', type: 'choice', required: false,
+        options: ['Doctor', 'Dentist', 'Optician', 'Prescription', 'Exam/Test']
+      }
     ],
     emailOnCreate: null
   },
@@ -165,7 +172,7 @@ const SECTIONS = {
     label: 'Log Income',
     sheet: 'Income',
     counterpartyLabel: 'Paid by',
-    category: null,
+    category: { header: 'Reason', label: 'Reason', managed: true, required: false },
     states: [
       { name: 'Invoiced', dateColumn: 'Invoiced Date' },
       { name: 'Received', dateColumn: 'Received Date' },
