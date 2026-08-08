@@ -41,23 +41,109 @@ function getIcloudEmail() {
 }
 
 /**
- * One-time setup function to store secrets in Script Properties
- * Run this once from the Apps Script editor, then delete or comment out
+ * Every Script Property this project reads, and what it is for.
+ * Keep this in step with the getters above.
+ */
+const SCRIPT_PROPERTY_INFO = {
+  DELETE_API_KEY: {
+    required: true,
+    secret: true,
+    description: 'Shared key the web app checks on every POST'
+  },
+  RECIPIENT_EMAIL: {
+    required: true,
+    secret: false,
+    description: 'Where Work expense receipts are emailed on form submit'
+  },
+  FORM_ID: {
+    required: true,
+    secret: false,
+    description: 'Work expenses form, for adding/removing dropdown options'
+  },
+  ICLOUD_EMAIL: {
+    required: false,
+    secret: false,
+    description: 'Address the Health iCloud rename Shortcut watches (Health only)'
+  }
+};
+
+/**
+ * Values to write. Fill in the ones you want to set, then run
+ * setupScriptProperties(). Anything left blank is skipped, so running this
+ * again can never overwrite a real value with a placeholder.
  *
- * IMPORTANT: Update these values from your .env file before running!
+ * Take these from .env - do not commit real values here.
+ */
+const SCRIPT_PROPERTY_VALUES = {
+  DELETE_API_KEY: '',
+  RECIPIENT_EMAIL: '',
+  FORM_ID: '',
+  ICLOUD_EMAIL: ''
+};
+
+/**
+ * Store configuration in Script Properties.
+ * Run from the Apps Script editor after filling in SCRIPT_PROPERTY_VALUES.
+ * Safe to re-run: blank entries are left untouched.
  */
 function setupScriptProperties() {
   const props = PropertiesService.getScriptProperties();
+  const written = [];
+  const skipped = [];
 
-  // Update these values from your .env file!
-  props.setProperty('DELETE_API_KEY', 'YOUR_DELETE_API_KEY_HERE');
-  props.setProperty('RECIPIENT_EMAIL', 'your-email@example.com');
-  props.setProperty('FORM_ID', 'YOUR_FORM_ID_HERE');
+  Object.keys(SCRIPT_PROPERTY_INFO).forEach(key => {
+    const value = (SCRIPT_PROPERTY_VALUES[key] || '').toString().trim();
+    if (!value) {
+      skipped.push(key);
+      return;
+    }
+    props.setProperty(key, value);
+    written.push(key);
+  });
 
-  Logger.log('✅ Configuration stored in Script Properties');
-  Logger.log('   - DELETE_API_KEY: Set');
-  Logger.log('   - RECIPIENT_EMAIL: ' + props.getProperty('RECIPIENT_EMAIL'));
-  Logger.log('   - FORM_ID: ' + props.getProperty('FORM_ID'));
+  if (written.length) {
+    Logger.log(`✅ Wrote ${written.length} property(ies): ${written.join(', ')}`);
+  } else {
+    Logger.log('⚠️ Nothing written - fill in SCRIPT_PROPERTY_VALUES first');
+  }
+  if (skipped.length) {
+    Logger.log(`   Left unchanged (blank in SCRIPT_PROPERTY_VALUES): ${skipped.join(', ')}`);
+  }
+
+  checkScriptProperties();
+}
+
+/**
+ * Report which Script Properties are configured, without changing anything.
+ * Useful after moving the project to another account.
+ */
+function checkScriptProperties() {
+  const props = PropertiesService.getScriptProperties();
+  let missingRequired = 0;
+
+  Logger.log('--- Script Properties ---');
+  Object.keys(SCRIPT_PROPERTY_INFO).forEach(key => {
+    const info = SCRIPT_PROPERTY_INFO[key];
+    const value = props.getProperty(key);
+
+    if (value) {
+      // Never log a secret back out in full
+      const shown = info.secret ? `set (${value.length} chars)` : value;
+      Logger.log(`✅ ${key}: ${shown}`);
+    } else if (info.required) {
+      missingRequired++;
+      Logger.log(`❌ ${key}: MISSING - ${info.description}`);
+    } else {
+      Logger.log(`➖ ${key}: not set (optional) - ${info.description}`);
+    }
+  });
+
+  if (missingRequired > 0) {
+    Logger.log(`❌ ${missingRequired} required property(ies) missing.`);
+  } else {
+    Logger.log('✅ All required properties are set.');
+  }
+  return missingRequired === 0;
 }
 
 /**

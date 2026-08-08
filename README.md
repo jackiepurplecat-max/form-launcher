@@ -43,11 +43,21 @@ DELETE_WEBAPP_URL=your-web-app-url-here
 SHEETS_API_KEY=your-sheets-api-key-here
 SPREADSHEET_ID=your-spreadsheet-id-here
 RECIPIENT_EMAIL=your-email@example.com
+ICLOUD_EMAIL=your-address@icloud.com
+FORM_ID=your-work-expenses-form-id
 ```
 
-**To update:** Edit `form-launcher/.env`, then run `npm run build`
+**To update:** Edit `.env`, then run `npm run build`
 
-**Note:** `RECIPIENT_EMAIL` is only used in Code.js (stored in Script Properties), not in the frontend.
+**Note:** only the first four are injected into the frontend. `RECIPIENT_EMAIL`,
+`ICLOUD_EMAIL` and `FORM_ID` are used by Code.js and live in Script Properties.
+
+| Property | Required | Used for |
+|---|---|---|
+| `DELETE_API_KEY` | yes | Key the web app checks on every POST |
+| `RECIPIENT_EMAIL` | yes | Where Work expense receipts are emailed |
+| `FORM_ID` | yes | Work expenses form, for dropdown add/remove |
+| `ICLOUD_EMAIL` | no | Health iCloud rename Shortcut (Health section only) |
 
 ### `index.template.html`
 Template with placeholders like `{{DELETE_API_KEY}}` - safe to commit to git.
@@ -78,10 +88,15 @@ Built automatically from template - **DO NOT edit directly!** This file is gitig
 
 5. **Set up Script Properties**:
    - Open Apps Script: `npm run clasp:open`
-   - **IMPORTANT:** Edit `setupScriptProperties()` function and replace `your-email@example.com` with your actual email
-   - Select `setupScriptProperties` from function dropdown
-   - Click Run ▶️
-   - Verify in logs that your email was set correctly
+   - Fill in `SCRIPT_PROPERTY_VALUES` near the top of `Code.js` with the values
+     from your `.env`. Leave any you don't want to change blank — blanks are
+     skipped, so re-running never overwrites a real value with a placeholder.
+   - Select `setupScriptProperties` from the function dropdown, click Run ▶️
+   - The log lists what was written and then reports the state of every property
+   - **Clear `SCRIPT_PROPERTY_VALUES` again afterwards** so secrets aren't left
+     sitting in the script body
+   - You can run `checkScriptProperties` at any time to see what's configured
+     without changing anything — useful after moving to a different account
 
 6. **Deploy as Web App**:
    - `npm run clasp:open`
@@ -147,7 +162,17 @@ npm run build
 - Check that all required variables are set in `form-launcher/.env`
 - Required: `DELETE_API_KEY`, `DELETE_WEBAPP_URL`, `SHEETS_API_KEY`, `SPREADSHEET_ID`, `RECIPIENT_EMAIL`
 
-**Delete function not working?**
+**Not sure which properties are configured?**
+- Run `checkScriptProperties` in the Apps Script editor. It reports every
+  property as set / missing / optional-and-unset, and never logs the API key
+  back out in full.
+
+**Health "Done" not renaming files in iCloud?**
+- `ICLOUD_EMAIL` is likely unset — the send fails and is only logged, so the
+  status still flips and the Drive files are still renamed
+- Run `checkScriptProperties` to confirm, and see `health-rename-shortcut.md`
+
+**Archive function not working?**
 - Make sure you ran `setupScriptProperties()` in Apps Script
 - Verify `DELETE_WEBAPP_URL` is set to your deployed Web App URL
 - Check that both frontend and backend have the same `DELETE_API_KEY`
