@@ -12,7 +12,7 @@ Status: **planning**. Nothing here is built yet.
 | Decision | Choice |
 |---|---|
 | Migration | Start clean. Old account frozen as archive, worked down in parallel |
-| Status model | `Status` (To do / Done) + `Status Date` as separate columns |
+| Status model | Three states per section, one date column per state (see below) |
 | UI hosting | Apps Script web app, not GitHub Pages |
 | OCR intake | Designed into the schema now, built after migration |
 | Siri intake | Designed into the architecture now, built after migration |
@@ -66,19 +66,55 @@ Every sheet gets the same spine. Section-specific fields sit between.
 |---|---|---|
 | `Timestamp` | datetime | When the entry was created |
 | `Source` | text | `form` / `siri` / `ocr` / `manual` — how it arrived |
-| `Status` | text | Exactly `To do` or `Done`. No dates, no other words |
-| `Status Date` | date | When status last changed. Blank while `To do` |
+| `Status` | text | Current state. Closed vocabulary, see below |
 | `Receipt URL` | url | Blank if awaiting a receipt |
 | `Receipt State` | text | `attached` / `awaiting` / `none required` |
 | `Notes` | text | Free text, never parsed |
 
-`Status` being a closed vocabulary is what fixes the filter dropdowns — two
-stable options instead of one per claim date — and lets all four sections share
-sorting and toggle logic. Income's `Fatura` wording goes; it becomes `Done` like
-everything else.
+`Status` holds only the current state name — never a date, never free text. That
+is what fixes the filter dropdowns: three stable options per section instead of
+one per claim date.
 
 `Receipt State` is what makes Siri and scan-later work: a row can exist before
 its receipt does.
+
+### Status states and their dates
+
+Each state gets **its own date column**. A single shared `Status Date` would
+overwrite itself on each transition and lose the history — and for Income all
+three dates are distinct business facts worth keeping.
+
+**Work, IVA, Health**
+
+| State | Date column | How the date is set |
+|---|---|---|
+| `To Do` | — | Creation is `Timestamp` |
+| `Claimed` | `Claimed Date` | **Automatic** — the day the state was set |
+| `Settled` | `Settled Date` | **Manual** — entered by hand |
+
+**Income**
+
+| State | Date column | How the date is set |
+|---|---|---|
+| `Invoiced` | `Invoiced Date` | **Manual** |
+| `Received` | `Received Date` | **Manual** |
+| `Logged` | `Logged Date` | **Automatic** — the day the state was set |
+
+Config per section is therefore a list of states, each flagged `auto` or
+`manual`. One generic implementation covers both shapes; adding a fourth state
+later is a config edit.
+
+### Status control replaces Done/Undo
+
+Three states cannot be a two-way toggle, so each row gets a **status selector**
+rather than Done/Undo buttons. Consequences:
+
+- **"Undo" stops existing as a concept.** Going back is just selecting an
+  earlier state, which removes the four inconsistent undo implementations.
+- Selecting a state whose date is `manual` **prompts for the date** and will not
+  commit until one is given.
+- Selecting a state whose date is `auto` fills the date server-side.
+- Correcting a mistake is the same action as making the change — no special path.
 
 ### Section-specific fields
 
@@ -116,18 +152,25 @@ Adapters
   ocrIntake(file)      -> createEntry(...)                  (later)
 ```
 
-`setStatus` replaces four divergent toggle functions. What Done *does* per
-section becomes config, not code:
+`setStatus` replaces four divergent toggle functions. What each transition does
+becomes config, not code:
 
-| | Rename receipt | Email | Extra |
-|---|---|---|---|
-| Work | prefix | no | — |
-| IVA | prefix | yes → configurable recipient | — |
-| Health | prefix, both files | no | — |
-| Income | n/a | no | — |
+| | Rename receipt | Email |
+|---|---|---|
+| Work | prefix on `Claimed` | no |
+| IVA | prefix on `Claimed` | **on entry creation**, not on status change |
+| Health | prefix on `Claimed`, both files | no |
+| Income | n/a | no |
 
-IVA's hardcoded `jacqueline.eaton@nato.int` becomes a Script Property. Undo is
-defined once: strip the prefix, clear `Status Date`.
+**The IVA claim email moves to `createEntry`** — it fires when the receipt is
+uploaded rather than when the status changes. That decouples it from status
+entirely, so no transition has a side effect beyond renaming, and re-selecting a
+state can never re-send mail. Recipient becomes a Script Property rather than
+the hardcoded `jacqueline.eaton@nato.int`.
+
+Moving back to an earlier state reverses the rename. Because that is now the
+same code path as moving forward, it cannot drift the way four hand-written
+undos did.
 
 ### Client
 
@@ -201,8 +244,14 @@ stop.
 
 ## Open questions
 
+- **Does renaming happen at `Settled` / `Logged` too**, or only at `Claimed`?
+  Currently only one transition touches filenames.
+- **Is `Invoiced` the state every Income row starts in?** If so its date is
+  manual, so the form must ask for it at submission.
+- **Should a manual date be allowed to be blank**, i.e. can you mark something
+  Settled without knowing the date yet, or is the date required to advance?
 - Exact current field names for Income — read from the sheet before building
-- Whether IVA's claim email is still wanted, and to which address
+- IVA email recipient address for the new account
 - Whether the four sections should stay four Forms or become one with branching
 - Where OCR runs: Drive's built-in OCR vs an API, and how confident it needs to
   be before autofilling rather than prompting
