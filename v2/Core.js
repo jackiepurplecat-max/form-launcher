@@ -92,21 +92,7 @@ function today() {
   return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
 }
 
-/* ============================ Filename prefixes =========================== */
-
-/** Regex matching any prefix any state in this section could have applied. */
-function knownPrefixPattern(section) {
-  const labels = section.states
-    .filter(s => s.filePrefix)
-    .map(s => s.filePrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  if (!labels.length) return null;
-  return new RegExp(`^(?:${labels.join('|')}) \\(\\d{2}-\\d{2}-\\d{4}\\) `);
-}
-
-function stripKnownPrefix(section, filename) {
-  const pattern = knownPrefixPattern(section);
-  return pattern ? filename.replace(pattern, '') : filename;
-}
+/* ========================= Drive folders and names ======================== */
 
 function extractFileId(fileRef) {
   if (!fileRef) return null;
@@ -114,18 +100,83 @@ function extractFileId(fileRef) {
   return match ? match[0] : null;
 }
 
+/** Get a subfolder by name, creating it if absent. */
+function childFolder(parent, name) {
+  const existing = parent.getFoldersByName(name);
+  return existing.hasNext() ? existing.next() : parent.createFolder(name);
+}
+
+/** Resolve <root>/<Section>/<folderName>, creating anything missing. */
+function sectionFolder(section, folderName) {
+  const rootId = PropertiesService.getScriptProperties().getProperty(ROOT_FOLDER_PROPERTY);
+  if (!rootId) throw new Error(`${ROOT_FOLDER_PROPERTY} not set in Script Properties`);
+  return childFolder(childFolder(DriveApp.getFolderById(rootId), section.label), folderName);
+}
+
+/** Where files for a given state belong. States with no folder use the inbox. */
+function folderForState(section, state) {
+  return sectionFolder(section, state.folder || INBOX_FOLDER);
+}
+
+function splitExtension(filename) {
+  const match = filename.match(/^(.*?)(\.[^.\s]+)$/);
+  return match ? { base: match[1], ext: match[2] } : { base: filename, ext: '' };
+}
+
 /**
- * Bring every receipt filename into line with the target state.
- *
- * Always strips whatever prefix is currently there before applying the target
- * state's prefix, so moving forwards and backwards use the same code path and
- * cannot drift apart.
- *
- * Returns one result per file rather than throwing: a rename failure must be
- * reported, not silently swallowed, but it must not roll back the status.
+ * Regex matching the accumulated state suffix chain at the end of a base name,
+ * e.g. "_Claimed_04-01-2026_Settled_20-01-2026".
  */
-function applyFilePrefixes(section, sheet, cols, row, targetState, dateForPrefix) {
+function suffixChainPattern(section) {
+  const labels = section.states
+    .filter(s => s.fileSuffix)
+    .map(s => s.fileSuffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (!labels.length) return null;
+  return new RegExp(`(?:_(?:${labels.join('|')})_\\d{2}-\\d{2}-\\d{4})+$`);
+}
+
+function stripSuffixChain(section, base) {
+  const pattern = suffixChainPattern(section);
+  return pattern ? base.replace(pattern, '') : base;
+}
+
+/**
+ * Build the suffix chain for every state up to and including the target that
+ * has a suffix and a recorded date.
+ *
+ * Derived from the row's dates rather than by editing the existing string, so
+ * reverting simply produces a shorter chain. There is no separate "undo"
+ * path that could drift out of step with the forward one.
+ */
+function buildSuffixChain(section, sheet, cols, row, targetIndex) {
+  let chain = '';
+  section.states.forEach((state, i) => {
+    if (i > targetIndex || !state.fileSuffix || !state.dateColumn) return;
+    const value = readCell(sheet, cols, row, state.dateColumn);
+    if (!value) return;
+    const stamp = Utilities.formatDate(
+      new Date(value), Session.getScriptTimeZone(), 'dd-MM-yyyy'
+    );
+    chain += `_${state.fileSuffix}_${stamp}`;
+  });
+  return chain;
+}
+
+/**
+ * Rename and relocate every document to match the target state.
+ *
+ * The name is rebuilt as <base><chain><ext>, where base is whatever remains
+ * after removing any existing chain. Moving forwards lengthens the chain,
+ * reverting shortens it, and both use this one path.
+ *
+ * Returns one result per file rather than throwing: a failure here must be
+ * reported, not swallowed, but it must not roll back the status change.
+ */
+function applyFileState(section, sheet, cols, row, targetIndex) {
+  const target = section.states[targetIndex];
+  const chain = buildSuffixChain(section, sheet, cols, row, targetIndex);
   const results = [];
+  let destination = null;
 
   section.fileColumns.forEach(fileCol => {
     const header = fileCol.header;
@@ -140,18 +191,16 @@ function applyFilePrefixes(section, sheet, cols, row, targetState, dateForPrefix
 
     try {
       const file = DriveApp.getFileById(fileId);
-      const bare = stripKnownPrefix(section, file.getName());
-
-      let newName = bare;
-      if (targetState.filePrefix) {
-        const stamp = Utilities.formatDate(
-          new Date(dateForPrefix), Session.getScriptTimeZone(), 'dd-MM-yyyy'
-        );
-        newName = `${targetState.filePrefix} (${stamp}) ${bare}`;
-      }
-
+      const { base, ext } = splitExtension(file.getName());
+      const newName = `${stripSuffixChain(section, base)}${chain}${ext}`;
       if (newName !== file.getName()) file.setName(newName);
-      results.push({ column: header, ok: true, name: newName });
+
+      // Resolved lazily and once: creating folders is slow, and a section with
+      // no attached files should not create any.
+      if (!destination) destination = folderForState(section, target);
+      file.moveTo(destination);
+
+      results.push({ column: header, ok: true, name: newName, folder: destination.getName() });
 
     } catch (error) {
       results.push({ column: header, ok: false, error: error.toString() });
@@ -214,9 +263,8 @@ function setStatus(sectionKey, sheetRow, newState, dateISO) {
 
   writeCell(sheet, cols, row, COMMON.status, target.name);
 
-  const files = applyFilePrefixes(
-    section, sheet, cols, row, target, effectiveDate || today()
-  );
+  // After the dates are written, so the suffix chain reflects them
+  const files = applyFileState(section, sheet, cols, row, targetIndex);
 
   const failed = files.filter(f => !f.ok);
   Logger.log(

@@ -61,8 +61,12 @@ const RECEIPT_STATE = {
  *
  *   name        displayed, and written verbatim into the Status column
  *   dateColumn  header of this state's own date column, or omitted for none
- *   filePrefix  label prefixed to receipt filenames while in this state,
- *               rendered as "<label> (DD-MM-YYYY) ". Omit for no prefix.
+ *   fileSuffix  label APPENDED to filenames on reaching this state, as
+ *               "_<label>_<DD-MM-YYYY>". Suffixes accumulate, so a settled
+ *               claim reads ..._Claimed_04-01-2026_Settled_20-01-2026.pdf and
+ *               carries its own audit trail. Omit for no suffix.
+ *   folder      subfolder under <root>/<Section>/ that files live in while in
+ *               this state. Omit to leave files in the section inbox.
  *
  * counterpartyLabel
  *   What the shared Counterparty column is called in the UI. The column header
@@ -91,8 +95,8 @@ const SECTIONS = {
     category: { header: 'Expense Reason', label: 'Expense Reason', managed: true },
     states: [
       { name: 'To Do' },
-      { name: 'Claimed', dateColumn: 'Claimed Date', filePrefix: 'Claimed' },
-      { name: 'Settled', dateColumn: 'Settled Date' }
+      { name: 'Claimed', dateColumn: 'Claimed Date', fileSuffix: 'Claimed', folder: 'Claimed' },
+      { name: 'Settled', dateColumn: 'Settled Date', fileSuffix: 'Settled', folder: 'Settled' }
     ],
     fileColumns: [
       { header: COMMON.receiptUrl, label: 'Receipt', suffix: 'receipt' }
@@ -108,8 +112,8 @@ const SECTIONS = {
     category: null,
     states: [
       { name: 'To Do' },
-      { name: 'Claimed', dateColumn: 'Claimed Date', filePrefix: 'Claimed' },
-      { name: 'Settled', dateColumn: 'Settled Date' }
+      { name: 'Claimed', dateColumn: 'Claimed Date', fileSuffix: 'Claimed', folder: 'Claimed' },
+      { name: 'Settled', dateColumn: 'Settled Date', fileSuffix: 'Settled', folder: 'Settled' }
     ],
     fileColumns: [
       { header: COMMON.receiptUrl, label: 'Fatura', suffix: 'fatura' }
@@ -139,8 +143,8 @@ const SECTIONS = {
     category: { header: 'Patient', label: 'Patient', managed: true },
     states: [
       { name: 'To Do' },
-      { name: 'Claimed', dateColumn: 'Claimed Date', filePrefix: 'Claimed' },
-      { name: 'Settled', dateColumn: 'Settled Date' }
+      { name: 'Claimed', dateColumn: 'Claimed Date', fileSuffix: 'Claimed', folder: 'Claimed' },
+      { name: 'Settled', dateColumn: 'Settled Date', fileSuffix: 'Settled', folder: 'Settled' }
     ],
     // A health claim needs two documents: proof that the expense was necessary,
     // and proof that it was paid. v1 called the first one "Details", which hid
@@ -174,12 +178,42 @@ const SECTIONS = {
 };
 
 /**
- * OPEN QUESTION — does Settled / Logged also rename the file?
- * Currently only Claimed carries a filePrefix. If Settled should rename too,
- * add `filePrefix: 'Settled'` to that state. No code change needed: Core.js
- * strips whatever prefix is present and applies whatever the target state
- * declares.
+ * Script Property holding the ID of the app's root Drive folder.
+ * Layout beneath it, all created on demand:
+ *
+ *   <root>/<Section>/Inbox      form uploads land here (state: To Do)
+ *   <root>/<Section>/Claimed
+ *   <root>/<Section>/Settled
+ *   <root>/<Section>/Archived   archived and soft-deleted entries
  */
+const ROOT_FOLDER_PROPERTY = 'ROOT_FOLDER_ID';
+
+/** Folder used for entries in a state that declares no folder of its own. */
+const INBOX_FOLDER = 'Inbox';
+
+/** Folder that archived and soft-deleted files are moved to. */
+const ARCHIVE_FOLDER = 'Archived';
+
+/**
+ * How an amount is rendered inside a filename.
+ *
+ * Always two decimal places, and the decimal point replaced, so a filename
+ * contains exactly one dot - the extension. Multiple dots invite naive
+ * split('.') parsing to break, in this codebase or any script, Shortcut or
+ * OCR step added later.
+ *
+ * 3.4  -> "3-40"      3.456 -> "3-46"      1234.5 -> "1234-50"
+ *
+ * Set DECIMAL_IN_FILENAME to '.' to keep the dot instead, at the cost of
+ * reintroducing that ambiguity.
+ */
+const DECIMAL_IN_FILENAME = '-';
+
+function formatAmountForFilename(amount) {
+  const n = Number(amount);
+  if (!isFinite(n)) return '';
+  return n.toFixed(2).replace('.', DECIMAL_IN_FILENAME);
+}
 
 /** The state a newly created entry starts in: the first in the list. */
 function initialState(section) {

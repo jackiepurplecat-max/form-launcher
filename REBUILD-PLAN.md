@@ -169,6 +169,45 @@ When the target state **already has a date** — which is the case when revertin
 `Keep 15 Jan` rather than `Today`. That keeps the dialog honest about the
 "only fill if blank" rule, so reverting never silently re-stamps.
 
+### Drive layout and filenames
+
+Files follow the status. Each state has a folder, and reaching a state appends
+to the filename, so the name carries its own audit trail.
+
+```
+<root>/<Section>/Inbox       form uploads land here (To Do)
+<root>/<Section>/Claimed
+<root>/<Section>/Settled
+<root>/<Section>/Archived    archived and soft-deleted
+```
+
+Base name: `YYMMDD_Counterparty_Amount_<document>.ext`
+
+```
+on upload   250115_HospitalLuz_3-45_receipt.pdf
+Claimed     250115_HospitalLuz_3-45_receipt_Claimed_04-01-2026.pdf
+Settled     250115_HospitalLuz_3-45_receipt_Claimed_04-01-2026_Settled_20-01-2026.pdf
+reverted    250115_HospitalLuz_3-45_receipt_Claimed_04-01-2026.pdf
+```
+
+The chain is **rebuilt from the row's date columns** on every transition, not
+edited in place. Going forward lengthens it, reverting shortens it, and both use
+one code path — so there is no separate undo to drift out of step.
+
+### Amounts in filenames
+
+Rendered to two decimal places with the decimal point replaced: `3.4` → `3-40`,
+`3.456` → `3-46`, `12` → `12-00`.
+
+Two reasons. A sheet cell holding `3.4500001` would otherwise land in the
+filename verbatim. And a name containing `3.45` has two dots, which invites
+naive `split('.')` extension parsing to break — in this codebase, or in any
+Shortcut, script or OCR step added later. One dot per filename, always the
+extension.
+
+Cost: searching Drive means typing `3-45`. Controlled by `DECIMAL_IN_FILENAME`
+in `Config.js` — set it to `'.'` to keep the dot.
+
 ### Status control replaces Done/Undo
 
 Three states cannot be a two-way toggle, so each row gets a **status selector**
@@ -295,21 +334,31 @@ mean opening the spreadsheet on a phone.
 mode — the same validation as `createEntry` applies, so an edited row can never
 be less valid than a created one.
 
-**Delete a row — as a soft delete.** Deleting moves the row to the section's
-archive sheet marked `deleted`, and moves any receipt to the `Archived` Drive
-folder. It does **not** remove data.
+**Delete a row — archives it.** Deleting from the main table moves the row to
+the section's archive sheet marked `deleted` and moves its documents to the
+`Archived` folder. It does **not** remove data. Given how easy it is to mis-tap,
+a one-click unrecoverable delete of the wrong row is not worth the convenience,
+and the row you meant to remove is junk anyway.
 
-This matters given how easy it is to mis-tap: a hard delete of the wrong row is
-unrecoverable, and the row you meant to remove is junk anyway, so nothing is
-lost by keeping it. It also reuses the archive machinery rather than adding a
-second, more dangerous path.
+**Hard delete — really deletes, and only from the archive.** The management
+module can permanently destroy a row and its files.
 
-| Action | Reversible | Confirms |
-|---|---|---|
-| Change status | yes, freely | no |
-| Edit a field | yes, by editing back | no |
-| Delete a row | yes, from the archive sheet | yes |
-| Archive a category value | yes, from the archive sheet | yes |
+The safeguard is structural rather than a scarier dialog: **hard delete only
+operates on rows that are already archived.** Live data can never be destroyed
+in one action; you archive first, then purge from the archive. Two deliberate
+steps, in two different places, with a confirmation on the second.
+
+Drive files are moved to Drive's trash rather than removed outright, which keeps
+a 30-day grace period. Storage is only reclaimed when the trash empties — if
+space is urgent, permanent removal is a config switch.
+
+| Action | Where | Reversible | Confirms |
+|---|---|---|---|
+| Change status | table | yes, freely | no |
+| Edit a field | table | yes, by editing back | no |
+| Delete a row | table | yes — lands in archive | yes |
+| Hard delete | management, archived rows only | no (30 days in Drive trash) | yes |
+| Archive a category value | management | yes | yes |
 
 **Manage category values.** Add and remove the allowed values of a section's
 category field, which updates the linked form's dropdown. Works for Work's
@@ -380,12 +429,11 @@ stop.
 
 ## Open questions
 
-- **Does renaming happen at `Settled` / `Logged` too**, or only at `Claimed`?
-  Currently only one transition touches filenames.
-- **Filename convention.** v1 used Description, which is now optional `Notes`.
-  Proposed: `YYMMDD_Counterparty_Amount_<suffix>.ext`.
+- **Keep `3-45` or revert to `3.45` in filenames?** One line in `Config.js`.
 - **Is `Invoiced` the state every Income row starts in?** If so its date is
   manual, so the form must ask for it at submission.
+- **Income has no files** — so it has no folders and no filename suffixes. Does
+  it need a Drive presence at all, or is the sheet row the whole record?
 - **Can you advance to a state without its date yet**, or is the date required?
 - Exact current field names for Income — read from the sheet before building
 - IVA email recipient address for the new account
