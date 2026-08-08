@@ -86,35 +86,82 @@ three dates are distinct business facts worth keeping.
 
 **Work, IVA, Health**
 
-| State | Date column | How the date is set |
+| Order | State | Date column |
 |---|---|---|
-| `To Do` | — | Creation is `Timestamp` |
-| `Claimed` | `Claimed Date` | **Automatic** — the day the state was set |
-| `Settled` | `Settled Date` | **Manual** — entered by hand |
+| 1 | `To Do` | — (creation is `Timestamp`) |
+| 2 | `Claimed` | `Claimed Date` |
+| 3 | `Settled` | `Settled Date` |
 
 **Income**
 
-| State | Date column | How the date is set |
+| Order | State | Date column |
 |---|---|---|
-| `Invoiced` | `Invoiced Date` | **Manual** |
-| `Received` | `Received Date` | **Manual** |
-| `Logged` | `Logged Date` | **Automatic** — the day the state was set |
+| 1 | `Invoiced` | `Invoiced Date` |
+| 2 | `Received` | `Received Date` |
+| 3 | `Logged` | `Logged Date` |
 
-Config per section is therefore a list of states, each flagged `auto` or
-`manual`. One generic implementation covers both shapes; adding a fourth state
-later is a config edit.
+### Date rules
+
+Every date behaves the same way — there is no auto/manual split:
+
+- Selecting a state **prompts for its date, pre-filled with today**. One tap to
+  accept, but it is always seen before it is written.
+- Pre-filling rather than writing silently matters because `Invoiced`,
+  `Received` and `Settled` are usually **backdated**. A silent "today" would be
+  wrong most of the time and never noticed.
+- Any date can be **edited later** without changing state.
+
+**The date dialog.** Selecting a state opens a small dialog:
+
+```
+        Mark as Settled
+
+  ┌──────────────────────────────┐
+  │        Today — 8 Aug         │   ← primary, one tap, done
+  └──────────────────────────────┘
+
+  or pick a date
+
+  ┌──────────────┐  ┌────────────┐
+  │  08/08/2026  │  │     OK     │
+  └──────────────┘  └────────────┘
+
+           Cancel
+```
+
+The date field is a native `<input type="date">`, so on iOS it opens the system
+date wheel rather than anything custom.
+
+When the target state **already has a date** — which is the case when reverting
+— the dialog pre-fills with that existing date and the primary button reads
+`Keep 15 Jan` rather than `Today`. That keeps the dialog honest about the
+"only fill if blank" rule, so reverting never silently re-stamps.
 
 ### Status control replaces Done/Undo
 
 Three states cannot be a two-way toggle, so each row gets a **status selector**
-rather than Done/Undo buttons. Consequences:
+rather than Done/Undo buttons.
 
 - **"Undo" stops existing as a concept.** Going back is just selecting an
   earlier state, which removes the four inconsistent undo implementations.
-- Selecting a state whose date is `manual` **prompts for the date** and will not
-  commit until one is given.
-- Selecting a state whose date is `auto` fills the date server-side.
-- Correcting a mistake is the same action as making the change — no special path.
+- Correcting a mistake is the same action as making it — no special path.
+
+### Reverting must not rewrite history
+
+Reverting is expected to be common (mis-taps on a phone), so it has explicit
+rules rather than falling out of the implementation:
+
+- Moving to an earlier state **clears the date columns of every state after the
+  target**, so the row never claims a date for a state it is no longer in.
+- The target state's own date is **only filled if blank**. Reverting Settled →
+  Claimed keeps the original `Claimed Date` rather than re-stamping today.
+- Any file rename applied by the states being reversed past is undone.
+
+### Reversibility instead of confirmations
+
+Because every state change is freely reversible, state changes get **no
+confirmation dialog** — confirmations on frequent actions just train you to tap
+through them. Only genuinely irreversible actions (archiving) confirm.
 
 ### Section-specific fields
 
