@@ -66,10 +66,42 @@ Every sheet gets the same spine. Section-specific fields sit between.
 |---|---|---|
 | `Timestamp` | datetime | When the entry was created |
 | `Source` | text | `form` / `siri` / `ocr` / `manual` — how it arrived |
+| `Date` | date | Date of the transaction itself |
+| `Amount` | number | |
+| `Currency` | text | |
+| `Counterparty` | text | The other party — see labels below |
 | `Status` | text | Current state. Closed vocabulary, see below |
 | `Receipt URL` | url | Blank if awaiting a receipt |
 | `Receipt State` | text | `attached` / `awaiting` / `none required` |
-| `Notes` | text | Free text, never parsed |
+| `Notes` | text | Free text, never parsed. Absorbs v1's Description |
+
+This is a deliberate cut from what v1 collected. Date, Amount, Currency and
+Counterparty are shared by all four sections, which is why the generic renderer
+can handle nearly every column without knowing which section it is showing.
+
+### Counterparty and category
+
+`Counterparty` is one column with a **per-section display label**, so the sheet
+and code stay generic while the UI uses the natural word:
+
+| Section | Label | Example |
+|---|---|---|
+| Work | Supplier | Uber |
+| IVA | Retailer | FNAC |
+| Health | Provider | Hospital da Luz |
+| Income | Paid by | *the client* |
+
+`category` is an optional extra classifying field, present only where it means
+something. Its allowed values are a **managed list** that populates the form
+dropdown — the generalisation of v1's add/delete expense reason, which gives
+Health add/remove patients for free.
+
+| Section | Category column | Managed |
+|---|---|---|
+| Work | `Expense Reason` | yes |
+| Health | `Patient` | yes |
+| IVA | — | — |
+| Income | — | — |
 
 `Status` holds only the current state name — never a date, never free text. That
 is what fixes the filter dropdowns: three stable options per section instead of
@@ -163,17 +195,17 @@ Because every state change is freely reversible, state changes get **no
 confirmation dialog** — confirmations on frequent actions just train you to tap
 through them. Only genuinely irreversible actions (archiving) confirm.
 
-### Section-specific fields
+### What v1 collected that v2 drops
 
-Carry forward what exists today, confirm exact names during build:
+- **Health** — `Original Receipt Filename` / `Original Details Filename` (M/N).
+  Existed only for the iCloud Shortcut, which is cancelled.
+- **Health** — one of Treatment Date / Invoice Date collapses into `Date`.
+- **All** — `Description` becomes `Notes`, and is optional.
+- **IVA** — Número, Emitente NIF, Tipo, Importados, Valor do IVA, Valor Total.
+  **Confirm before dropping** (see open questions) — these were presumably
+  collected because the reclaim needs them.
 
-- **Work** — Expense Reason, Expense Date, Amount, Currency, Description
-- **IVA** — Número, Data, Emitente NIF, Tipo, Importados, Valor do IVA, Valor Total
-- **Health** — Patient, Provider, Treatment Date, Invoice Date, Amount, Details URL
-- **Income** — confirm current fields before building
-
-Health's columns M/N (`Original Receipt Filename` / `Original Details Filename`)
-are **dropped** — they existed only for the iCloud Shortcut, which is cancelled.
+Health keeps its second file (`Details URL`).
 
 ---
 
@@ -226,6 +258,37 @@ instead of `fetch` — no API key, no CORS, caller identity known server-side.
 
 One render function driven by section config. Explicit loading, empty and error
 states, so a failure stops looking identical to "no data".
+
+### Management module
+
+v1's only management action was add/delete expense reason. v2 gets a proper
+management surface, because mistakes are normal and correcting them shouldn't
+mean opening the spreadsheet on a phone.
+
+**Edit a row.** Any field, in place, from the table. Editing is not a special
+mode — the same validation as `createEntry` applies, so an edited row can never
+be less valid than a created one.
+
+**Delete a row — as a soft delete.** Deleting moves the row to the section's
+archive sheet marked `deleted`, and moves any receipt to the `Archived` Drive
+folder. It does **not** remove data.
+
+This matters given how easy it is to mis-tap: a hard delete of the wrong row is
+unrecoverable, and the row you meant to remove is junk anyway, so nothing is
+lost by keeping it. It also reuses the archive machinery rather than adding a
+second, more dangerous path.
+
+| Action | Reversible | Confirms |
+|---|---|---|
+| Change status | yes, freely | no |
+| Edit a field | yes, by editing back | no |
+| Delete a row | yes, from the archive sheet | yes |
+| Archive a category value | yes, from the archive sheet | yes |
+
+**Manage category values.** Add and remove the allowed values of a section's
+category field, which updates the linked form's dropdown. Works for Work's
+Expense Reason and Health's Patient; hidden for IVA and Income, which have no
+category.
 
 ### Security
 
