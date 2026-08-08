@@ -195,17 +195,43 @@ Because every state change is freely reversible, state changes get **no
 confirmation dialog** — confirmations on frequent actions just train you to tap
 through them. Only genuinely irreversible actions (archiving) confirm.
 
-### What v1 collected that v2 drops
+### Section-specific fields — and why they stay
+
+**The forms exist so that a claim can be submitted without reopening the
+receipt.** Número and Emitente NIF get retyped into Finanças; a health claim
+needs both the treatment date and the invoice date. Capturing them once at entry
+is the whole point of the system.
+
+So completeness beats minimalism. Do not trim these back to a tidy shared core —
+a dropped field becomes a receipt you have to go and find.
+
+| Section | Extra fields |
+|---|---|
+| Work | none |
+| IVA | `Número`, `Emitente NIF`, `Tipo`, `Importados`, `IVA Amount` |
+| Health | `Invoice Date` |
+| Income | to confirm from the sheet |
+
+`Amount` holds the total in every section; IVA's VAT figure is its own
+`IVA Amount` field. `Date` holds the transaction date — for Health that is the
+**treatment** date, with the invoice date alongside it.
+
+### Health has two documents, not one
+
+A health claim needs proof the expense was **necessary** and proof it was
+**paid** — usually a prescription or invoice, plus a payment receipt. v1 called
+the second file "Details", which hid what it was for.
+
+| Column | Label | Filename suffix |
+|---|---|---|
+| `Justification URL` | Prescription / Invoice | `_justification` |
+| `Receipt URL` | Proof of payment | `_receipt` |
+
+### What v2 does drop
 
 - **Health** — `Original Receipt Filename` / `Original Details Filename` (M/N).
   Existed only for the iCloud Shortcut, which is cancelled.
-- **Health** — one of Treatment Date / Invoice Date collapses into `Date`.
 - **All** — `Description` becomes `Notes`, and is optional.
-- **IVA** — Número, Emitente NIF, Tipo, Importados, Valor do IVA, Valor Total.
-  **Confirm before dropping** (see open questions) — these were presumably
-  collected because the reclaim needs them.
-
-Health keeps its second file (`Details URL`).
 
 ---
 
@@ -356,10 +382,11 @@ stop.
 
 - **Does renaming happen at `Settled` / `Logged` too**, or only at `Claimed`?
   Currently only one transition touches filenames.
+- **Filename convention.** v1 used Description, which is now optional `Notes`.
+  Proposed: `YYMMDD_Counterparty_Amount_<suffix>.ext`.
 - **Is `Invoiced` the state every Income row starts in?** If so its date is
   manual, so the form must ask for it at submission.
-- **Should a manual date be allowed to be blank**, i.e. can you mark something
-  Settled without knowing the date yet, or is the date required to advance?
+- **Can you advance to a state without its date yet**, or is the date required?
 - Exact current field names for Income — read from the sheet before building
 - IVA email recipient address for the new account
 - Whether the four sections should stay four Forms or become one with branching

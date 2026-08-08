@@ -42,6 +42,18 @@ const RECEIPT_STATE = {
 };
 
 /**
+ * WHY extraFields EXIST
+ *
+ * The point of these forms is that a claim can be submitted without reopening
+ * the receipt. Fields like Número and Emitente NIF are retyped into Finanças,
+ * and Health needs both the treatment date and the invoice date. Capturing
+ * them once at entry is the entire value of the system.
+ *
+ * So completeness beats minimalism here. Do not trim these back to a tidy
+ * shared core - a dropped field becomes a receipt you have to go and find.
+ */
+
+/**
  * Per-section configuration.
  *
  * states[] is ordered. Index position defines what "earlier" and "later" mean
@@ -61,6 +73,15 @@ const RECEIPT_STATE = {
  *   `managed: true` means its allowed values are a list you maintain, which
  *   populates the form dropdown — the generalisation of v1's add/delete
  *   expense reason.
+ *
+ * extraFields
+ *   Section-specific columns beyond the shared core. Declared with type and
+ *   label so the form, the table and the edit dialog can all render them
+ *   without special-casing. See the note above on why these matter.
+ *
+ * fileColumns
+ *   Each uploaded document, with the filename suffix it contributes.
+ *   Health has two because a claim needs proof of need AND proof of payment.
  */
 const SECTIONS = {
   work: {
@@ -73,7 +94,9 @@ const SECTIONS = {
       { name: 'Claimed', dateColumn: 'Claimed Date', filePrefix: 'Claimed' },
       { name: 'Settled', dateColumn: 'Settled Date' }
     ],
-    fileColumns: [COMMON.receiptUrl],
+    fileColumns: [
+      { header: COMMON.receiptUrl, label: 'Receipt', suffix: 'receipt' }
+    ],
     extraFields: [],
     emailOnCreate: null
   },
@@ -88,11 +111,19 @@ const SECTIONS = {
       { name: 'Claimed', dateColumn: 'Claimed Date', filePrefix: 'Claimed' },
       { name: 'Settled', dateColumn: 'Settled Date' }
     ],
-    fileColumns: [COMMON.receiptUrl],
-    // OPEN: v1 also collected Número, Emitente NIF, Tipo, Importados,
-    // Valor do IVA and Valor Total. Confirm whether the reclaim process still
-    // needs any of these before dropping them.
-    extraFields: [],
+    fileColumns: [
+      { header: COMMON.receiptUrl, label: 'Fatura', suffix: 'fatura' }
+    ],
+    // All required by Finanças at submission time and retyped from here rather
+    // than from the receipt. COMMON.amount holds Valor Total; the VAT figure is
+    // its own field.
+    extraFields: [
+      { header: 'Número', label: 'Número', type: 'text', required: true },
+      { header: 'Emitente NIF', label: 'Emitente NIF', type: 'text', required: true },
+      { header: 'Tipo', label: 'Tipo', type: 'text', required: false },
+      { header: 'Importados', label: 'Importados', type: 'boolean', required: false },
+      { header: 'IVA Amount', label: 'Valor do IVA', type: 'number', required: true }
+    ],
     // Sent when the entry is created (receipt uploaded), NOT on status change,
     // so no transition can re-send it.
     emailOnCreate: {
@@ -111,8 +142,18 @@ const SECTIONS = {
       { name: 'Claimed', dateColumn: 'Claimed Date', filePrefix: 'Claimed' },
       { name: 'Settled', dateColumn: 'Settled Date' }
     ],
-    fileColumns: [COMMON.receiptUrl, 'Details URL'],
-    extraFields: [],
+    // A health claim needs two documents: proof that the expense was necessary,
+    // and proof that it was paid. v1 called the first one "Details", which hid
+    // what it was for.
+    fileColumns: [
+      { header: 'Justification URL', label: 'Prescription / Invoice', suffix: 'justification' },
+      { header: COMMON.receiptUrl, label: 'Proof of payment', suffix: 'receipt' }
+    ],
+    // COMMON.date holds the treatment date - the event itself, consistent with
+    // the other sections. The invoice date is also required by the claim.
+    extraFields: [
+      { header: 'Invoice Date', label: 'Invoice date', type: 'date', required: true }
+    ],
     emailOnCreate: null
   },
 

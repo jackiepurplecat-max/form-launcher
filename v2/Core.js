@@ -127,7 +127,8 @@ function extractFileId(fileRef) {
 function applyFilePrefixes(section, sheet, cols, row, targetState, dateForPrefix) {
   const results = [];
 
-  section.fileColumns.forEach(header => {
+  section.fileColumns.forEach(fileCol => {
+    const header = fileCol.header;
     const fileRef = (readCell(sheet, cols, row, header) || '').toString().trim();
     if (!fileRef) return;
 
