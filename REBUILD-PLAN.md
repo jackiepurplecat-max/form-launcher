@@ -271,7 +271,7 @@ a dropped field becomes a receipt you have to go and find.
 | Section | Extra fields |
 |---|---|
 | Work | none |
-| IVA | `Número`, `Emitente NIF`, `Tipo`, `Importados`, `IVA Amount` |
+| IVA | `Número`, `Emitente NIF`, `IVA Amount` |
 | Health | `Invoice Date`, `Service Type` |
 | Income | none — its extra dates are state dates |
 
@@ -288,6 +288,27 @@ by the status control. So an income entry can arrive already `Received`.
 `Amount` holds the total in every section; IVA's VAT figure is its own
 `IVA Amount` field. `Date` holds the transaction date — for Health that is the
 **treatment** date, with the invoice date alongside it.
+
+### Reference values are shown, not stored
+
+`Tipo` and `Importados` are identical on every IVA row, so they were never
+really data — they were a reminder. They stop being columns and become a
+**reference block displayed in the section**, alongside the NIFs you have to
+retype into Finanças and cannot always remember:
+
+| Label | Source |
+|---|---|
+| JALLC NIF | `REF_JALLC_NIF` |
+| My NIF | `REF_MY_NIF` |
+| Tipo | `REF_IVA_TIPO` |
+
+Shown with **tap to copy**, since the whole point is transcribing them into
+another system.
+
+Values live in Script Properties rather than in `Config.js`. They are identifiers
+rather than secrets, but the repository is public and there is no reason to put
+a personal NIF into it twice — note that v1's `index.html` already contains
+these values publicly, which is worth cleaning up when the old system retires.
 
 ### Health has two documents, not one
 

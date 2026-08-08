@@ -124,9 +124,14 @@ const SECTIONS = {
     extraFields: [
       { header: 'Número', label: 'Número', type: 'text', required: true },
       { header: 'Emitente NIF', label: 'Emitente NIF', type: 'text', required: true },
-      { header: 'Tipo', label: 'Tipo', type: 'text', required: false },
-      { header: 'Importados', label: 'Importados', type: 'boolean', required: false },
       { header: 'IVA Amount', label: 'Valor do IVA', type: 'number', required: true }
+    ],
+    // Fixed for every claim, so they are shown for reference rather than asked
+    // per row. Values come from Script Properties, not from this file.
+    reference: [
+      { label: 'JALLC NIF', property: 'REF_JALLC_NIF' },
+      { label: 'My NIF', property: 'REF_MY_NIF' },
+      { label: 'Tipo', property: 'REF_IVA_TIPO' }
     ],
     // Sent when the entry is created (receipt uploaded), NOT on status change,
     // so no transition can re-send it.
