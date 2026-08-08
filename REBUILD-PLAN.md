@@ -17,7 +17,7 @@ Status: **planning**. Nothing here is built yet.
 | Intake | **Custom form. No Google Forms** (see below) |
 | Supplier registry | Self-populating, learned from entries as they are made |
 | OCR intake | Designed into the schema now, built after migration |
-| Siri intake | Designed into the architecture now, built after migration |
+| Siri intake | Prompted questions + visual confirmation. Built after migration |
 
 ### Why clean rather than transfer
 
@@ -461,27 +461,64 @@ category field, which updates the linked form's dropdown. Works for Work's
 Expense Reason and Health's Patient; hidden for IVA and Income, which have no
 category.
 
-### Siri intake, and why partial entries make it work
+### Siri intake
 
-The target utterances:
+**Decision: prompted questions, then a visual confirmation.** Not one dictated
+sentence.
 
-> "Siri, log expense: Worton, 298 euros, today, receipt in email"
+The reason is not recognition accuracy, it is memory: prompts are a **checklist**.
+A field the Shortcut insists on asking for cannot be forgotten, whereas a single
+sentence quietly omits whatever you did not think to say.
 
-> "Siri, Phoenix just went to the dentist at White Clinic and it cost 70 euros,
-> invoice and receipt in email"
+One Shortcut per section, named so the phrase is natural — "Log expense",
+"Log health claim". No "which section?" question.
 
-The insight that makes this tractable: **the entry does not have to be
-complete.** Parsing therefore does not have to be reliable, only useful.
+```
+You:   Hey Siri, log health claim
+Siri:  Who is it for?        -> tap Phoenix from a list
+Siri:  Which provider?       -> "White Clinic"
+Siri:  How much?             -> "70"
 
-1. Parse what is parseable — amount, currency, date, and a supplier matched
-   against the registry.
-2. Put the **raw utterance in `Notes`**, always. Nothing said is ever lost.
-3. Anything unmatched stays blank; `Receipt State` becomes `awaiting`.
-4. Email a **completion link** that opens the form on that row.
+       ┌──────────────────────────────┐
+       │  Health claim                │
+       │  Phoenix · White Clinic      │
+       │  €70.00 · today              │
+       │        Save    Cancel        │
+       └──────────────────────────────┘
+```
 
-A misheard word costs one tap on the link instead of a failed capture. This is
-also why the registry must not guess: a held match leaves a blank you will see
-and fix, while a confident wrong match silently corrupts the entry.
+**Refinements that follow from choosing prompts:**
+
+- **Do not ask for the date.** Default to today and show it in the confirmation.
+  Most entries are same-day, and the confirmation is where an exception gets
+  caught. One fewer prompt every time.
+- **Category fields are a list, not dictation.** Expense Reason and Patient are
+  taps, which cannot be misheard. The list is **fetched from the server**, so
+  adding a patient never means editing the Shortcut.
+- **Amount uses the Number input type**, so words can never arrive where digits
+  belong. Amount errors are the dangerous ones — a supplier typo is obvious in a
+  list, "29.80" instead of "298" is not.
+- **Currency defaults to EUR** and is not asked.
+
+**Siri captures the core only** — counterparty, amount, category. Número, NIF,
+invoice date and documents are left for the completion step. This keeps the
+Shortcuts stable: adding a field to a section never requires re-editing them,
+because they only ever ask for the same few things.
+
+> Note: an Alert action is right here, where you invoked the Shortcut and are
+> looking at the phone. It is wrong in an unattended *automation*, where it
+> stalls waiting for a tap — which is why one was removed from the v1 iCloud
+> Shortcut.
+
+### Partial entries are the safety net
+
+**An entry does not have to be complete.** Whatever Siri did not capture stays
+blank, `Receipt State` becomes `awaiting`, and an email arrives with a
+**completion link** that opens the form on that row.
+
+So a mishearing costs one tap on a link rather than a failed capture. It is also
+why the registry must hold rather than guess: a blank you will see and fix beats
+a confident wrong match that silently corrupts the entry.
 
 The completion link is only possible without Google Forms — Forms cannot reopen
 an existing row for editing in any usable way.
