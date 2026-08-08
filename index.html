@@ -467,6 +467,15 @@ th {
   cursor: wait;
 }
 
+.working-btn {
+  background-color: #f5f5f5 !important;
+  border-color: #9e9e9e !important;
+  color: #616161 !important;
+  margin-left: 8px;
+  opacity: 0.6;
+  cursor: wait;
+}
+
 /* Income Done/Undo button styles */
 .income-done-btn {
   background-color: #e8f5e9 !important;
@@ -894,7 +903,7 @@ async function loadHealthSheet() {
     headers[10], // L: Status (first)
     ...headers.slice(0, 8), // B through I
     'Link to Receipt', // Link from J
-    'Link to Invoice' // Link from K
+    'Link to Details' // Link from K
   ];
 
   // Reorder data rows: Status first, then B-I, then J and K as links, plus original row number
@@ -999,9 +1008,16 @@ function renderTravelTable(rows) {
         const buttonClass = isClaimed ? 'btn work-undo-btn' : 'btn work-done-btn';
         return `<td>${c || ''} <button class="${buttonClass}" data-row-index="${rowIndex}" onclick="toggleWorkStatus(${rowIndex})">${buttonText}</button></td>`;
       }
-      if (i === 6 && c) { // Link to File column
-        const safeUrl = c.startsWith('http') ? c : 'https://' + c;
-        return `<td><a href="${safeUrl}" target="_blank" rel="noopener">Link</a></td>`;
+      if (i === 6 && c) { // File column - could be Google Drive URL or iCloud path
+        if (c.startsWith('http') || c.startsWith('drive.google.com')) {
+          // Google Drive link (legacy v1 entries)
+          const safeUrl = c.startsWith('http') ? c : 'https://' + c;
+          return `<td><a href="${safeUrl}" target="_blank" rel="noopener">Drive</a></td>`;
+        } else {
+          // iCloud path (v2 entries) - display as text, file is in iCloud
+          const shortPath = c.split('/').pop() || c; // Show just filename
+          return `<td title="${c}">iCloud: ${shortPath}</td>`;
+        }
       }
       return `<td>${c || ''}</td>`;
     }).join('');
@@ -1058,13 +1074,13 @@ function renderHealthTable(rows) {
         const safeUrl = c.startsWith('http') ? c : 'https://' + c;
         return `<td><a href="${safeUrl}" target="_blank" rel="noopener">Link</a></td>`;
       }
-      // Index 10 = Link to Invoice (from K) - may be empty
+      // Index 10 = Link to Details (from K) - may be empty
       if (i === 10) {
         if (c && c.trim() !== '') {
           const safeUrl = c.startsWith('http') ? c : 'https://' + c;
           return `<td><a href="${safeUrl}" target="_blank" rel="noopener">Link</a></td>`;
         }
-        return `<td></td>`; // Empty cell if no invoice
+        return `<td></td>`; // Empty cell if no details
       }
       return `<td>${c || ''}</td>`;
     }).join('');
@@ -1115,7 +1131,6 @@ async function toggleWorkStatus(displayRowIndex) {
   const sheetRow = rowData[7]; // Original sheet row number (stored at index 7)
   const currentStatus = (rowData[0] || '').trim();
   const isClaimed = currentStatus.toLowerCase().startsWith('claimed');
-  const fileUrl = rowData[6]; // File URL at index 6
 
   // Disable the button while processing
   const button = document.querySelector(`#dataTable button[data-row-index="${displayRowIndex}"]`);
@@ -1125,13 +1140,13 @@ async function toggleWorkStatus(displayRowIndex) {
   }
 
   try {
+    // Only the row number is sent; the server reads status and file URL
+    // from the sheet itself.
     const res = await fetch(DELETE_WEBAPP_URL, {
       method: "POST",
       body: JSON.stringify({
         action: "toggleWorkStatus",
         sheetRow: sheetRow,
-        currentStatus: currentStatus,
-        fileUrl: fileUrl,
         apiKey: DELETE_API_KEY
       })
     });
@@ -1185,9 +1200,6 @@ async function toggleIvaStatus(displayRowIndex) {
   const sheetRow = rowData[9]; // Original sheet row number (stored at index 9)
   const currentStatus = (rowData[0] || '').trim();
   const isClaimed = currentStatus.toLowerCase().startsWith('claimed');
-  const numero = rowData[1]; // Número for file rename
-  const data = rowData[2]; // Data (invoice date) for file rename on undo
-  const fileUrl = rowData[8]; // File URL
 
   // Disable the button while processing
   const button = document.querySelector(`#ivaTable button[data-row-index="${displayRowIndex}"]`);
@@ -1197,15 +1209,13 @@ async function toggleIvaStatus(displayRowIndex) {
   }
 
   try {
+    // Only the row number is sent; the server reads status, Número, Data and
+    // file URL from the sheet itself.
     const res = await fetch(DELETE_WEBAPP_URL, {
       method: "POST",
       body: JSON.stringify({
         action: "toggleIvaStatus",
         sheetRow: sheetRow,
-        currentStatus: currentStatus,
-        numero: numero,
-        data: data,
-        fileUrl: fileUrl,
         apiKey: DELETE_API_KEY
       })
     });
@@ -1253,13 +1263,13 @@ async function toggleHealthStatus(displayRowIndex) {
   const sheetRow = rowData[11]; // Original sheet row number (stored at index 11)
   const currentStatus = (rowData[0] || '').trim();
   const isClaimed = currentStatus.toLowerCase().startsWith('claimed');
-  const fileUrl = rowData[9]; // Receipt file URL at index 9
 
   // Disable the button while processing
   const button = document.querySelector(`#healthTable button[data-row-index="${displayRowIndex}"]`);
   if (button) {
     button.disabled = true;
     button.textContent = 'Working...';
+    button.className = 'btn working-btn';
   }
 
   try {
@@ -1268,8 +1278,6 @@ async function toggleHealthStatus(displayRowIndex) {
       body: JSON.stringify({
         action: "toggleHealthStatus",
         sheetRow: sheetRow,
-        currentStatus: currentStatus,
-        fileUrl: fileUrl,
         apiKey: DELETE_API_KEY
       })
     });
@@ -1278,11 +1286,13 @@ async function toggleHealthStatus(displayRowIndex) {
     if (result.success) {
       // Reload the Health sheet to reflect changes and force re-render
       await loadHealthSheet();
-      // Reapply filter if one is selected
+      // Reapply filter if one is selected, otherwise render all
       const currentFilter = document.getElementById('healthFilterSelect').value;
       if (currentFilter) {
         const filtered = allHealthRows.filter(r => (r[0] || '') === currentFilter);
         renderHealthTable(filtered);
+      } else {
+        renderHealthTable(allHealthRows);
       }
     } else {
       alert('Error: ' + (result.error || 'Unknown error'));
@@ -1290,6 +1300,7 @@ async function toggleHealthStatus(displayRowIndex) {
       if (button) {
         button.disabled = false;
         button.textContent = isClaimed ? '↩ Undo' : '✓ Done';
+        button.className = isClaimed ? 'btn health-undo-btn' : 'btn health-done-btn';
       }
     }
   } catch (err) {
@@ -1298,6 +1309,7 @@ async function toggleHealthStatus(displayRowIndex) {
     if (button) {
       button.disabled = false;
       button.textContent = isClaimed ? '↩ Undo' : '✓ Done';
+      button.className = isClaimed ? 'btn health-undo-btn' : 'btn health-done-btn';
     }
   }
 }
@@ -1343,7 +1355,6 @@ async function toggleIncomeStatus(displayRowIndex) {
       body: JSON.stringify({
         action: "toggleIncomeStatus",
         sheetRow: sheetRow,
-        currentStatus: currentStatus,
         apiKey: DELETE_API_KEY
       })
     });
@@ -1441,6 +1452,7 @@ async function deleteTrip() {
     const res = await fetch(DELETE_WEBAPP_URL, {
       method: "POST",
       body: JSON.stringify({
+        action: "deleteExpenseReason",
         tripName: trip,
         apiKey: DELETE_API_KEY
       })

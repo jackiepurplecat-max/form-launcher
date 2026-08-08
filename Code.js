@@ -27,6 +27,19 @@ function getRecipientEmail() {
   return email;
 }
 
+function getIcloudEmail() {
+  const props = PropertiesService.getScriptProperties();
+  let email = props.getProperty('ICLOUD_EMAIL');
+
+  // Fallback for initial setup
+  if (!email) {
+    Logger.log('⚠️ ICLOUD_EMAIL not found in Script Properties. Run setupScriptProperties() to configure.');
+    throw new Error('ICLOUD_EMAIL not configured in Script Properties');
+  }
+
+  return email;
+}
+
 /**
  * One-time setup function to store secrets in Script Properties
  * Run this once from the Apps Script editor, then delete or comment out
@@ -164,13 +177,14 @@ function handleFormSubmit(e) {
   } else if (sheetName === "Health" || sheetName === "Health (Responses)") {
     config = {
       statusCol: 12,    // Column L
-      dateCol: 7,       // Column G (Treatment Date)
-      descriptionCol: 13, // Column M (calculated: Patient first name + Provider first word)
-      calculateDescription: true,
-      calcMethod: 'healthNames', // Patient first name + Provider first word
+      dateCol: 6,       // Column F (Invoice Date) - used for file naming
       patientCol: 2,    // Column B (Patient)
       providerCol: 4,   // Column D (Provider)
+      amountCol: 9,     // Column I (Amount)
       fileCol: 10,      // Column J (Receipt)
+      detailsFileCol: 11, // Column K (Details - was Invoice)
+      originalReceiptNameCol: 13, // Column M (Original Receipt Filename)
+      originalDetailsNameCol: 14, // Column N (Original Details Filename)
       emailSentCol: null,
       sendEmail: false
     };
@@ -244,6 +258,11 @@ function handleFormSubmit(e) {
     renameFile(sheet, row, sheetName, rowValues, config);
   }
 
+  // Rename Details file for Health (column K)
+  if (config.detailsFileCol) {
+    renameDetailsFile(sheet, row, sheetName, rowValues, config);
+  }
+
   // Send email if applicable (Work expenses only)
   if (config.sendEmail && config.emailSentCol) {
     const emailSent = rowValues[config.emailSentCol - 1];
@@ -284,15 +303,28 @@ function renameFile(sheet, row, sheetName, rowValues, config) {
     const extMatch = originalName.match(/(\.[^.\s]+)$/);
     const extension = extMatch ? extMatch[0] : "";
 
+    // Store original filename for Health claims (for later Shortcut use)
+    // Strip " - Username" suffix added by Google Forms uploads
+    if ((sheetName === "Health" || sheetName === "Health (Responses)") && config.originalReceiptNameCol) {
+      const cleanedName = originalName.replace(/ - [^.]+(\.[^.]+)$/, '$1');
+      sheet.getRange(row, config.originalReceiptNameCol).setValue(cleanedName);
+      Logger.log(`${sheetName} Row ${row}: Stored original receipt filename "${cleanedName}"`);
+    }
+
     let newFileName;
     if (sheetName === "IVA" || sheetName === "IVA (Responses)") {
       // IVA format: "Número Data.ext" (e.g., "INV-123 2025-01-15.pdf")
       const formattedDate = Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM-dd");
       newFileName = `${description} ${formattedDate}${extension}`;
     } else if (sheetName === "Health" || sheetName === "Health (Responses)") {
-      // Health format: "YYYY-MM-DD Patient Provider.ext"
-      const formattedDate = Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM-dd");
-      newFileName = `${formattedDate} ${description}${extension}`;
+      // Health format: "yymmdd_initial_provider_amount_receipt.ext"
+      const formattedDate = Utilities.formatDate(date, Session.getScriptTimeZone(), "yyMMdd");
+      const patient = (rowValues[config.patientCol - 1] || "").toString().trim();
+      const provider = (rowValues[config.providerCol - 1] || "").toString().trim();
+      const amount = (rowValues[config.amountCol - 1] || "").toString().trim();
+      const patientInitial = (patient.split(/\s+/)[0] || '').charAt(0) || '';
+      const providerFirst = provider.split(/\s+/)[0] || '';
+      newFileName = `${formattedDate}_${patientInitial}_${providerFirst}_${amount}_receipt${extension}`;
     } else {
       // Default format: "yyyymmdd_description.ext"
       const formattedDate = Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyyMMdd");
@@ -305,6 +337,59 @@ function renameFile(sheet, row, sheetName, rowValues, config) {
 
   } catch (error) {
     Logger.log(`${sheetName} Row ${row}: ❌ File rename error - ${error.toString()}`);
+  }
+}
+
+/**
+ * Rename Details file for Health claims
+ * Format: "yyyymmdd_patient_provider_amount_details.ext"
+ */
+function renameDetailsFile(sheet, row, sheetName, rowValues, config) {
+  try {
+    const fileRef = (rowValues[config.detailsFileCol - 1] || "").toString().trim();
+    if (!fileRef) {
+      Logger.log(`${sheetName} Row ${row}: No details file to rename`);
+      return;
+    }
+
+    // Extract file ID from URL
+    let fileId;
+    const idMatch = fileRef.match(/[-\w]{25,}/);
+    if (idMatch) fileId = idMatch[0];
+
+    if (!fileId) {
+      Logger.log(`${sheetName} Row ${row}: Could not extract details file ID`);
+      return;
+    }
+
+    const file = DriveApp.getFileById(fileId);
+    const originalName = file.getName();
+    const extMatch = originalName.match(/(\.[^.\s]+)$/);
+    const extension = extMatch ? extMatch[0] : "";
+
+    // Store original filename for Health claims (for later Shortcut use)
+    // Strip " - Username" suffix added by Google Forms uploads
+    if (config.originalDetailsNameCol) {
+      const cleanedName = originalName.replace(/ - [^.]+(\.[^.]+)$/, '$1');
+      sheet.getRange(row, config.originalDetailsNameCol).setValue(cleanedName);
+      Logger.log(`${sheetName} Row ${row}: Stored original details filename "${cleanedName}"`);
+    }
+
+    const date = new Date(rowValues[config.dateCol - 1]);
+    const formattedDate = Utilities.formatDate(date, Session.getScriptTimeZone(), "yyMMdd");
+    const patient = (rowValues[config.patientCol - 1] || "").toString().trim();
+    const provider = (rowValues[config.providerCol - 1] || "").toString().trim();
+    const amount = (rowValues[config.amountCol - 1] || "").toString().trim();
+    const patientInitial = (patient.split(/\s+/)[0] || '').charAt(0) || '';
+    const providerFirst = provider.split(/\s+/)[0] || '';
+
+    const newFileName = `${formattedDate}_${patientInitial}_${providerFirst}_${amount}_details${extension}`;
+
+    file.setName(newFileName);
+    Logger.log(`${sheetName} Row ${row}: ✅ Renamed details file to "${newFileName}"`);
+
+  } catch (error) {
+    Logger.log(`${sheetName} Row ${row}: ❌ Details file rename error - ${error.toString()}`);
   }
 }
 
@@ -431,6 +516,24 @@ function handleTravel(e) {
 }
 
 /**
+ * Validate a caller-supplied sheet row number.
+ * Returns the row as a number, or null if it is not a real data row.
+ * Guards against writes to the header row or past the end of the sheet.
+ */
+function resolveSheetRow(sheet, sheetRow) {
+  const row = Number(sheetRow);
+  if (!Number.isInteger(row) || row < 2 || row > sheet.getLastRow()) return null;
+  return row;
+}
+
+/**
+ * Read a full sheet row as a 0-indexed array of values.
+ */
+function readRowValues(sheet, row) {
+  return sheet.getRange(row, 1, 1, sheet.getLastColumn()).getValues()[0];
+}
+
+/**
  * Web App endpoint for handling GET requests (for testing)
  */
 function doGet(e) {
@@ -464,66 +567,51 @@ function doPost(e) {
       });
     }
 
-    // Handle different actions
+    // Status toggles take only the sheet row. Current status, file URLs and
+    // invoice numbers are read from the sheet server-side, so a caller cannot
+    // point these at an arbitrary Drive file or an unrelated row.
     if (action === "toggleIvaStatus") {
-      // Toggle IVA claim status (claimed/undo)
-      const result = toggleIvaClaimStatus(
-        data.sheetRow,
-        data.currentStatus,
-        data.numero,
-        data.data,  // Invoice date (Data field)
-        data.fileUrl
-      );
-      return createCORSResponse(result);
-
-    } else if (action === "toggleWorkStatus") {
-      // Toggle Work expense status (claimed/undo) - no email on status change
-      const result = toggleWorkClaimStatus(
-        data.sheetRow,
-        data.currentStatus,
-        data.fileUrl
-      );
-      return createCORSResponse(result);
-
-    } else if (action === "toggleHealthStatus") {
-      // Toggle Health claim status (claimed/undo) - no email
-      const result = toggleHealthClaimStatus(
-        data.sheetRow,
-        data.currentStatus,
-        data.fileUrl
-      );
-      return createCORSResponse(result);
-
-    } else if (action === "toggleIncomeStatus") {
-      // Toggle Income status (fatura/undo) - no file, no email
-      const result = toggleIncomeStatus(
-        data.sheetRow,
-        data.currentStatus
-      );
-      return createCORSResponse(result);
-
-    } else if (action === "addTrip" || action === "addExpenseReason") {
-      // Add expense reason to form dropdown
-      if (!reasonName || reasonName.trim() === "") {
-        return createCORSResponse({
-          success: false,
-          error: "Expense reason is required"
-        });
-      }
-      const result = addExpenseReasonToForm(reasonName.trim());
-      return createCORSResponse(result);
-
-    } else {
-      // Default action: delete expense reason (backwards compatibility)
-      if (!reasonName || reasonName.trim() === "") {
-        return createCORSResponse({
-          success: false,
-          error: "Expense reason is required"
-        });
-      }
-      const result = deleteExpenseReasonRows(reasonName.trim());
-      return createCORSResponse(result);
+      return createCORSResponse(toggleIvaClaimStatus(data.sheetRow));
     }
+
+    if (action === "toggleWorkStatus") {
+      return createCORSResponse(toggleWorkClaimStatus(data.sheetRow));
+    }
+
+    if (action === "toggleHealthStatus") {
+      return createCORSResponse(toggleHealthClaimStatus(data.sheetRow));
+    }
+
+    if (action === "toggleIncomeStatus") {
+      return createCORSResponse(toggleIncomeStatus(data.sheetRow));
+    }
+
+    if (action === "addTrip" || action === "addExpenseReason") {
+      if (!reasonName || reasonName.trim() === "") {
+        return createCORSResponse({
+          success: false,
+          error: "Expense reason is required"
+        });
+      }
+      return createCORSResponse(addExpenseReasonToForm(reasonName.trim()));
+    }
+
+    if (action === "deleteTrip" || action === "deleteExpenseReason") {
+      if (!reasonName || reasonName.trim() === "") {
+        return createCORSResponse({
+          success: false,
+          error: "Expense reason is required"
+        });
+      }
+      return createCORSResponse(deleteExpenseReasonRows(reasonName.trim()));
+    }
+
+    // No implicit default: a missing or unrecognised action must never fall
+    // through to deleting rows.
+    return createCORSResponse({
+      success: false,
+      error: `Unknown action: ${action || "(none supplied)"}`
+    });
 
   } catch (error) {
     return createCORSResponse({
@@ -792,7 +880,7 @@ function getFormId() {
  * - When marking done: Rename file to "IVA Claim (DD-MM-YYYY) Número.ext" and send email
  * - When undoing: Revert file name to "Número DD-MM-YYYY.ext"
  */
-function toggleIvaClaimStatus(sheetRow, currentStatus, numero, invoiceDate, fileUrl) {
+function toggleIvaClaimStatus(sheetRow) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName("IVA");
@@ -801,7 +889,19 @@ function toggleIvaClaimStatus(sheetRow, currentStatus, numero, invoiceDate, file
       return { success: false, error: "IVA sheet not found" };
     }
 
-    const isClaimed = (currentStatus || '').toLowerCase().startsWith('claimed');
+    const row = resolveSheetRow(sheet, sheetRow);
+    if (!row) {
+      return { success: false, error: `Invalid IVA row: ${sheetRow}` };
+    }
+
+    // Read everything from the sheet rather than trusting the request body
+    const rowValues = readRowValues(sheet, row);
+    const currentStatus = (rowValues[9] || '').toString().trim();  // J: Status
+    const numero = (rowValues[1] || '').toString().trim();         // B: Número
+    const invoiceDate = rowValues[2];                              // C: Data
+    const fileUrl = (rowValues[8] || '').toString().trim();        // I: Ficheiro
+
+    const isClaimed = currentStatus.toLowerCase().startsWith('claimed');
     const today = new Date();
     const formattedToday = Utilities.formatDate(today, Session.getScriptTimeZone(), "dd-MM-yyyy");
 
@@ -816,8 +916,8 @@ function toggleIvaClaimStatus(sheetRow, currentStatus, numero, invoiceDate, file
     }
 
     // Update status in sheet (column J = column 10)
-    sheet.getRange(sheetRow, 10).setValue(newStatus);
-    Logger.log(`IVA Row ${sheetRow}: Status changed from "${currentStatus}" to "${newStatus}"`);
+    sheet.getRange(row, 10).setValue(newStatus);
+    Logger.log(`IVA Row ${row}: Status changed from "${currentStatus}" to "${newStatus}"`);
 
     // Handle file rename
     if (fileUrl) {
@@ -842,10 +942,10 @@ function toggleIvaClaimStatus(sheetRow, currentStatus, numero, invoiceDate, file
           }
 
           file.setName(newFileName);
-          Logger.log(`IVA Row ${sheetRow}: ✅ Renamed file to "${newFileName}"`);
+          Logger.log(`IVA Row ${row}: ✅ Renamed file to "${newFileName}"`);
 
         } catch (fileError) {
-          Logger.log(`IVA Row ${sheetRow}: ⚠️ Could not rename file - ${fileError.toString()}`);
+          Logger.log(`IVA Row ${row}: ⚠️ Could not rename file - ${fileError.toString()}`);
           // Don't fail the whole operation if file rename fails
         }
       }
@@ -877,17 +977,17 @@ function toggleIvaClaimStatus(sheetRow, currentStatus, numero, invoiceDate, file
           ].join("\n");
 
           GmailApp.sendEmail(recipient, subject, body, { attachments: [file.getBlob()] });
-          Logger.log(`IVA Row ${sheetRow}: ✅ Email sent to ${recipient}`);
+          Logger.log(`IVA Row ${row}: ✅ Email sent to ${recipient}`);
         }
       } catch (emailError) {
-        Logger.log(`IVA Row ${sheetRow}: ⚠️ Could not send email - ${emailError.toString()}`);
+        Logger.log(`IVA Row ${row}: ⚠️ Could not send email - ${emailError.toString()}`);
         // Don't fail the whole operation if email fails
       }
     }
 
     return {
       success: true,
-      sheetRow: sheetRow,
+      sheetRow: row,
       newStatus: newStatus,
       action: isClaimed ? "undo" : "claimed"
     };
@@ -913,7 +1013,7 @@ function extractFileId(fileUrl) {
  * - Removes prefix when undoing
  * - No email sent on status change (email already sent on submit)
  */
-function toggleWorkClaimStatus(sheetRow, currentStatus, fileUrl) {
+function toggleWorkClaimStatus(sheetRow) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName("Work");
@@ -922,7 +1022,17 @@ function toggleWorkClaimStatus(sheetRow, currentStatus, fileUrl) {
       return { success: false, error: "Work sheet not found" };
     }
 
-    const isClaimed = (currentStatus || '').toLowerCase().startsWith('claimed');
+    const row = resolveSheetRow(sheet, sheetRow);
+    if (!row) {
+      return { success: false, error: `Invalid Work row: ${sheetRow}` };
+    }
+
+    // Read everything from the sheet rather than trusting the request body
+    const rowValues = readRowValues(sheet, row);
+    const currentStatus = (rowValues[9] || '').toString().trim(); // J: Status
+    const fileUrl = (rowValues[6] || '').toString().trim();       // G: File
+
+    const isClaimed = currentStatus.toLowerCase().startsWith('claimed');
     const today = new Date();
     const formattedToday = Utilities.formatDate(today, Session.getScriptTimeZone(), "dd-MM-yyyy");
 
@@ -935,8 +1045,8 @@ function toggleWorkClaimStatus(sheetRow, currentStatus, fileUrl) {
     }
 
     // Update status in sheet (column J = column 10)
-    sheet.getRange(sheetRow, 10).setValue(newStatus);
-    Logger.log(`Work Row ${sheetRow}: Status changed from "${currentStatus}" to "${newStatus}"`);
+    sheet.getRange(row, 10).setValue(newStatus);
+    Logger.log(`Work Row ${row}: Status changed from "${currentStatus}" to "${newStatus}"`);
 
     // Handle file rename
     if (fileUrl) {
@@ -956,17 +1066,17 @@ function toggleWorkClaimStatus(sheetRow, currentStatus, fileUrl) {
           }
 
           file.setName(newFileName);
-          Logger.log(`Work Row ${sheetRow}: ✅ Renamed file to "${newFileName}"`);
+          Logger.log(`Work Row ${row}: ✅ Renamed file to "${newFileName}"`);
 
         } catch (fileError) {
-          Logger.log(`Work Row ${sheetRow}: ⚠️ Could not rename file - ${fileError.toString()}`);
+          Logger.log(`Work Row ${row}: ⚠️ Could not rename file - ${fileError.toString()}`);
         }
       }
     }
 
     return {
       success: true,
-      sheetRow: sheetRow,
+      sheetRow: row,
       newStatus: newStatus,
       action: isClaimed ? "undo" : "claimed"
     };
@@ -979,11 +1089,10 @@ function toggleWorkClaimStatus(sheetRow, currentStatus, fileUrl) {
 
 /**
  * Toggle Health claim status between "To do" and "Claimed DD-MM-YYYY"
- * - On Done: Rename file to "Claimed (DD-MM-YYYY) Patient Provider.ext"
- * - On Undo: Rename file back to "YYYY-MM-DD Patient Provider.ext"
- * - No email sent
+ * - On Done: Rename files in Google Drive, send email to trigger iCloud rename Shortcut
+ * - On Undo: Rename files back (no email)
  */
-function toggleHealthClaimStatus(sheetRow, currentStatus, fileUrl) {
+function toggleHealthClaimStatus(sheetRow) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName("Health");
@@ -992,19 +1101,31 @@ function toggleHealthClaimStatus(sheetRow, currentStatus, fileUrl) {
       return { success: false, error: "Health sheet not found" };
     }
 
-    // Get row data for patient/provider/date info
-    const rowValues = sheet.getRange(sheetRow, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const row = resolveSheetRow(sheet, sheetRow);
+    if (!row) {
+      return { success: false, error: `Invalid Health row: ${sheetRow}` };
+    }
+
+    // Get row data for patient/provider/date/amount/original filenames.
+    // Status and file URLs come from the sheet, not the request body.
+    const rowValues = readRowValues(sheet, row);
+    const currentStatus = (rowValues[11] || "").toString().trim(); // Column L (Status)
+    const fileUrl = (rowValues[9] || "").toString().trim(); // Column J (Receipt file)
     const patient = (rowValues[1] || "").toString().trim(); // Column B
     const provider = (rowValues[3] || "").toString().trim(); // Column D
-    const treatmentDate = new Date(rowValues[6]); // Column G (Treatment Date)
+    const invoiceDate = new Date(rowValues[5]); // Column F (Invoice Date)
+    const amount = (rowValues[8] || "").toString().trim(); // Column I (Amount)
+    const detailsFileUrl = (rowValues[10] || "").toString().trim(); // Column K (Details file)
+    const originalReceiptName = (rowValues[12] || "").toString().trim(); // Column M (Original Receipt Filename)
+    const originalDetailsName = (rowValues[13] || "").toString().trim(); // Column N (Original Details Filename)
 
-    const patientFirst = patient.split(/\s+/)[0] || '';
+    const patientInitial = (patient.split(/\s+/)[0] || '').charAt(0) || '';
     const providerFirst = provider.split(/\s+/)[0] || '';
 
     const isClaimed = (currentStatus || '').toLowerCase().startsWith('claimed');
     const today = new Date();
     const formattedToday = Utilities.formatDate(today, Session.getScriptTimeZone(), "dd-MM-yyyy");
-    const formattedTreatmentDate = Utilities.formatDate(treatmentDate, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    const formattedInvoiceDate = Utilities.formatDate(invoiceDate, Session.getScriptTimeZone(), "yyMMdd");
 
     // Determine new status
     let newStatus;
@@ -1015,40 +1136,95 @@ function toggleHealthClaimStatus(sheetRow, currentStatus, fileUrl) {
     }
 
     // Update status in sheet (column L = column 12)
-    sheet.getRange(sheetRow, 12).setValue(newStatus);
-    Logger.log(`Health Row ${sheetRow}: Status changed from "${currentStatus}" to "${newStatus}"`);
+    sheet.getRange(row, 12).setValue(newStatus);
+    Logger.log(`Health Row ${row}: Status changed from "${currentStatus}" to "${newStatus}"`);
 
-    // Handle file rename (Receipt file in column J = column 10)
-    if (fileUrl) {
-      const fileId = extractFileId(fileUrl);
-      if (fileId) {
-        try {
-          const file = DriveApp.getFileById(fileId);
-          const originalName = file.getName();
-          const extMatch = originalName.match(/(\.[^.\s]+)$/);
-          const extension = extMatch ? extMatch[0] : "";
+    // Build new filenames for email
+    const receiptExt = originalReceiptName.match(/(\.[^.\s]+)$/) ? originalReceiptName.match(/(\.[^.\s]+)$/)[0] : '';
+    const detailsExt = originalDetailsName.match(/(\.[^.\s]+)$/) ? originalDetailsName.match(/(\.[^.\s]+)$/)[0] : '';
+    const newReceiptName = `${formattedInvoiceDate}_${patientInitial}_${providerFirst}_${amount}_receipt${receiptExt}`;
+    const newDetailsName = originalDetailsName ? `${formattedInvoiceDate}_${patientInitial}_${providerFirst}_${amount}_details${detailsExt}` : '';
 
-          let newFileName;
-          if (isClaimed) {
-            // Undo: Rename to "YYYY-MM-DD Patient Provider.ext"
-            newFileName = `${formattedTreatmentDate} ${patientFirst} ${providerFirst}${extension}`;
-          } else {
-            // Mark claimed: Rename to "Claimed (DD-MM-YYYY) Patient Provider.ext"
-            newFileName = `Claimed (${formattedToday}) ${patientFirst} ${providerFirst}${extension}`;
-          }
+    // Helper function to rename a Health file in Google Drive
+    function renameHealthFile(url, fileType) {
+      if (!url) return;
+      const fileId = extractFileId(url);
+      if (!fileId) return;
 
-          file.setName(newFileName);
-          Logger.log(`Health Row ${sheetRow}: ✅ Renamed file to "${newFileName}"`);
+      try {
+        const file = DriveApp.getFileById(fileId);
+        const originalName = file.getName();
+        const extMatch = originalName.match(/(\.[^.\s]+)$/);
+        const extension = extMatch ? extMatch[0] : "";
 
-        } catch (fileError) {
-          Logger.log(`Health Row ${sheetRow}: ⚠️ Could not rename file - ${fileError.toString()}`);
+        // Base name: yymmdd_initial_provider_amount_type
+        const baseName = `${formattedInvoiceDate}_${patientInitial}_${providerFirst}_${amount}_${fileType}`;
+
+        let newFileName;
+        if (isClaimed) {
+          // Undo: Remove "Claimed (DD-MM-YYYY) " prefix
+          newFileName = `${baseName}${extension}`;
+        } else {
+          // Mark claimed: Add "Claimed (DD-MM-YYYY) " prefix
+          newFileName = `Claimed (${formattedToday}) ${baseName}${extension}`;
         }
+
+        file.setName(newFileName);
+        Logger.log(`Health Row ${row}: ✅ Renamed ${fileType} file to "${newFileName}"`);
+
+      } catch (fileError) {
+        Logger.log(`Health Row ${row}: ⚠️ Could not rename ${fileType} file - ${fileError.toString()}`);
+      }
+    }
+
+    // Rename Receipt file (column J)
+    renameHealthFile(fileUrl, 'receipt');
+
+    // Rename Details file (column K)
+    renameHealthFile(detailsFileUrl, 'details');
+
+    // On Undo: Update original filenames (M and N) to the renamed versions
+    // with Claimed/ prefix since the files were moved to that folder
+    if (isClaimed) {
+      // Update column M with new receipt name in Claimed folder
+      const claimedReceiptPath = `Claimed/${newReceiptName}`;
+      sheet.getRange(row, 13).setValue(claimedReceiptPath);
+      Logger.log(`Health Row ${row}: Updated original receipt filename to "${claimedReceiptPath}"`);
+
+      // Update column N with new details name in Claimed folder (if exists)
+      if (newDetailsName) {
+        const claimedDetailsPath = `Claimed/${newDetailsName}`;
+        sheet.getRange(row, 14).setValue(claimedDetailsPath);
+        Logger.log(`Health Row ${row}: Updated original details filename to "${claimedDetailsPath}"`);
+      }
+    }
+
+    // Send email when marking as claimed (not on undo) to trigger iCloud rename Shortcut
+    if (!isClaimed && originalReceiptName) {
+      try {
+        const recipient = getIcloudEmail(); // iCloud email for Shortcut automation
+        const subject = `Health Claim Rename: ${patientInitial} ${formattedInvoiceDate} ${providerFirst} ${amount}`;
+
+        // Email body with structured data for Shortcut to parse
+        // Each field on its own line for easy parsing
+        const body = [
+          `ORIGINAL_RECEIPT=${originalReceiptName}`,
+          `NEW_RECEIPT=${newReceiptName}`,
+          `ORIGINAL_DETAILS=${originalDetailsName || ''}`,
+          `NEW_DETAILS=${newDetailsName || ''}`,
+        ].join("\n");
+
+        GmailApp.sendEmail(recipient, subject, body);
+        Logger.log(`Health Row ${row}: ✅ Email sent to ${recipient} for iCloud rename`);
+
+      } catch (emailError) {
+        Logger.log(`Health Row ${row}: ⚠️ Could not send email - ${emailError.toString()}`);
       }
     }
 
     return {
       success: true,
-      sheetRow: sheetRow,
+      sheetRow: row,
       newStatus: newStatus,
       action: isClaimed ? "undo" : "claimed"
     };
@@ -1064,7 +1240,7 @@ function toggleHealthClaimStatus(sheetRow, currentStatus, fileUrl) {
  * - No file rename (Income has no file upload)
  * - No email sent
  */
-function toggleIncomeStatus(sheetRow, currentStatus) {
+function toggleIncomeStatus(sheetRow) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName("Income");
@@ -1073,7 +1249,16 @@ function toggleIncomeStatus(sheetRow, currentStatus) {
       return { success: false, error: "Income sheet not found" };
     }
 
-    const isFatura = (currentStatus || '').toLowerCase().startsWith('fatura');
+    const row = resolveSheetRow(sheet, sheetRow);
+    if (!row) {
+      return { success: false, error: `Invalid Income row: ${sheetRow}` };
+    }
+
+    // Read status from the sheet rather than trusting the request body
+    const rowValues = readRowValues(sheet, row);
+    const currentStatus = (rowValues[7] || '').toString().trim(); // H: Status
+
+    const isFatura = currentStatus.toLowerCase().startsWith('fatura');
     const today = new Date();
     const formattedToday = Utilities.formatDate(today, Session.getScriptTimeZone(), "dd-MM-yyyy");
 
@@ -1086,12 +1271,12 @@ function toggleIncomeStatus(sheetRow, currentStatus) {
     }
 
     // Update status in sheet (column H = column 8)
-    sheet.getRange(sheetRow, 8).setValue(newStatus);
-    Logger.log(`Income Row ${sheetRow}: Status changed from "${currentStatus}" to "${newStatus}"`);
+    sheet.getRange(row, 8).setValue(newStatus);
+    Logger.log(`Income Row ${row}: Status changed from "${currentStatus}" to "${newStatus}"`);
 
     return {
       success: true,
-      sheetRow: sheetRow,
+      sheetRow: row,
       newStatus: newStatus,
       action: isFatura ? "undo" : "fatura"
     };
@@ -1100,4 +1285,88 @@ function toggleIncomeStatus(sheetRow, currentStatus) {
     Logger.log(`Error in toggleIncomeStatus: ${error.toString()}`);
     return { success: false, error: error.toString() };
   }
+}
+
+/**
+ * ONE-OFF FUNCTION: Rename all Details files in Health sheet
+ * Run this manually from Apps Script editor, then delete it
+ * Format: yymmdd_initial_provider_amount_details.ext
+ */
+function oneOffRenameAllHealthDetails() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Health");
+
+  if (!sheet) {
+    Logger.log("Health sheet not found");
+    return;
+  }
+
+  const lastRow = sheet.getLastRow();
+  const dataRange = sheet.getRange(2, 1, lastRow - 1, 14); // Start from row 2, columns A-N
+  const data = dataRange.getValues();
+
+  let renamedCount = 0;
+  let skippedCount = 0;
+  let errorCount = 0;
+
+  data.forEach((row, index) => {
+    const rowNum = index + 2; // Actual sheet row number
+    const detailsFileUrl = (row[10] || "").toString().trim(); // Column K (index 10)
+
+    if (!detailsFileUrl) {
+      Logger.log(`Row ${rowNum}: No details file, skipping`);
+      skippedCount++;
+      return;
+    }
+
+    try {
+      // Extract file ID
+      const idMatch = detailsFileUrl.match(/[-\w]{25,}/);
+      if (!idMatch) {
+        Logger.log(`Row ${rowNum}: Could not extract file ID from URL`);
+        skippedCount++;
+        return;
+      }
+      const fileId = idMatch[0];
+
+      // Get file
+      const file = DriveApp.getFileById(fileId);
+      const originalName = file.getName();
+      const extMatch = originalName.match(/(\.[^.\s]+)$/);
+      const extension = extMatch ? extMatch[0] : "";
+
+      // Get data for new filename
+      const invoiceDate = new Date(row[5]); // Column F (index 5)
+      const patient = (row[1] || "").toString().trim(); // Column B (index 1)
+      const provider = (row[3] || "").toString().trim(); // Column D (index 3)
+      const amount = (row[8] || "").toString().trim(); // Column I (index 8)
+
+      const formattedDate = Utilities.formatDate(invoiceDate, Session.getScriptTimeZone(), "yyMMdd");
+      const patientInitial = (patient.split(/\s+/)[0] || '').charAt(0) || '';
+      const providerFirst = provider.split(/\s+/)[0] || '';
+
+      const newFileName = `${formattedDate}_${patientInitial}_${providerFirst}_${amount}_details${extension}`;
+
+      // Check if already renamed
+      if (originalName === newFileName) {
+        Logger.log(`Row ${rowNum}: Already renamed, skipping`);
+        skippedCount++;
+        return;
+      }
+
+      // Rename
+      file.setName(newFileName);
+      Logger.log(`Row ${rowNum}: ✅ Renamed "${originalName}" to "${newFileName}"`);
+      renamedCount++;
+
+    } catch (error) {
+      Logger.log(`Row ${rowNum}: ❌ Error - ${error.toString()}`);
+      errorCount++;
+    }
+  });
+
+  Logger.log(`\n=== SUMMARY ===`);
+  Logger.log(`Renamed: ${renamedCount}`);
+  Logger.log(`Skipped: ${skippedCount}`);
+  Logger.log(`Errors: ${errorCount}`);
 }
