@@ -184,10 +184,10 @@ to the filename, so the name carries its own audit trail.
 Base name: `YYMMDD_Counterparty_Amount_<document>.ext`
 
 ```
-on upload   250115_HospitalLuz_3-45_receipt.pdf
-Claimed     250115_HospitalLuz_3-45_receipt_Claimed_04-01-2026.pdf
-Settled     250115_HospitalLuz_3-45_receipt_Claimed_04-01-2026_Settled_20-01-2026.pdf
-reverted    250115_HospitalLuz_3-45_receipt_Claimed_04-01-2026.pdf
+on upload   250115_HospitalDaLuz_3-45_receipt.pdf
+Claimed     250115_HospitalDaLuz_3-45_receipt_Claimed_04-01-2026.pdf
+Settled     250115_HospitalDaLuz_3-45_receipt_Claimed_04-01-2026_Settled_20-01-2026.pdf
+reverted    250115_HospitalDaLuz_3-45_receipt_Claimed_04-01-2026.pdf
 ```
 
 The chain is **rebuilt from the row's date columns** on every transition, not
