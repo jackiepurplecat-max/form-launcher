@@ -3,7 +3,32 @@
 Working plan. The old account is frozen as a read-only archive and drained
 manually; the new account is built clean rather than transferred.
 
-Status: **planning**. Nothing here is built yet.
+## State of play
+
+**Server code written, never executed.** Nothing is deployed. `node --check`
+passes on all of it, which proves syntax only — the first real run will find
+things it cannot.
+
+| File | Contains |
+|---|---|
+| `v2/Config.js` | Section config, common columns, Script Properties, filename rules |
+| `v2/Core.js` | Columns by header, `setStatus`, folder moves, filename suffix chain |
+| `v2/Entries.js` | `createEntry`, `initializeEntry`, validation, creation email |
+| `v2/Registry.js` | Self-populating supplier registry, fuzzy matching |
+
+**Not written yet:** management module (edit / archive / hard delete / category
+lists), the web UI and custom form, Siri endpoint, OCR intake.
+
+**Blocked on:** the new Google account existing. Once it does, what is needed is
+the spreadsheet ID and a root Drive folder ID for `ROOT_FOLDER_ID`.
+
+**Old system is frozen.** The v1 `Code.js` at the repo root and the GitHub Pages
+page still serve the old account and must not be changed. `.claspignore` only
+tracks the root `Code.js`, so `v2/` cannot reach it by accident.
+
+**Open TODO in config:** Work's `Type` option list is proposed, not real.
+
+---
 
 ---
 
