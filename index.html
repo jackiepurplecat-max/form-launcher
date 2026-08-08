@@ -1446,6 +1446,27 @@ async function deleteTrip() {
   }
 
   const resultEl = document.getElementById("deleteResult");
+
+  // Deleting is permanent and removes every expense row for this reason,
+  // so state the row count and require an explicit confirmation.
+  const affected = allTravelRows.filter(
+    r => (r[TRAVEL_FILTER_COLUMN_INDEX] || '') === trip
+  ).length;
+
+  const warning = affected > 0
+    ? `Delete expense reason "${trip}"?\n\n`
+      + `This permanently deletes ${affected} expense row${affected === 1 ? '' : 's'} `
+      + `from the sheet and removes "${trip}" from the form dropdown.\n\n`
+      + `This cannot be undone.`
+    : `Delete expense reason "${trip}"?\n\n`
+      + `No expense rows use it. It will be removed from the form dropdown.`;
+
+  if (!confirm(warning)) {
+    resultEl.textContent = 'Delete cancelled.';
+    resultEl.style.color = '#333';
+    return;
+  }
+
   resultEl.textContent = "Working…";
 
   try {
