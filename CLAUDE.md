@@ -1,6 +1,64 @@
-## HelpfulForms
+# This repository holds TWO systems
 
-Google Apps Script-based expense tracking system that integrates Google Forms, Google Sheets, and automated file management with email notifications.
+Read this before anything else. Most of this file describes **v1**, which is
+frozen. New work happens in **v2**, which is a different design on a different
+Google account, and several things that are true of v1 are deliberately false
+of v2.
+
+| | v1 (frozen) | v2 (active) |
+|---|---|---|
+| Code | `Code.js` at the repo root, `index.html` | `v2/` |
+| Account | the original one | a separate one — `V2_CLASP_ACCOUNT` in `.env` |
+| Push | `npm run clasp:push` | `npm run v2:push` (`--user v2` credential) |
+| Intake | four Google Forms + `onFormSubmit` | **no Forms, no triggers** — `createEntry()` only |
+| UI | GitHub Pages + Sheets API + two client-side keys | Apps Script web app (not built yet) |
+
+**Do not change v1.** It still serves the old account and is being worked down
+to zero in parallel. Its known bugs are accepted, not fixed.
+
+## v2 — the active system
+
+`REBUILD-PLAN.md` is the source of truth: architecture, decisions and the
+reasons behind them, the build order, and a state-of-play section saying exactly
+what is done. Read it before starting work.
+
+**Run the tests.** `npm run v2:test` executes the real `v2/` source against
+stand-ins for Apps Script's services. Run it before you change anything, to
+establish the baseline, and after, because it catches things review does not —
+several of the bugs it now guards against were found that way rather than by
+reading the code.
+
+```
+npm run v2:test    # the harness — do this first
+npm run v2:check   # syntax only
+npm run v2:push    # add --force if appsscript.json changed
+```
+
+**Things that are true of v2 and not of v1:**
+
+- **Columns are resolved by header name, never by index.** No magic numbers.
+- **Headers are generated from `SECTIONS`**, so adding a field is a config
+  change plus a re-run of `bootstrap()`. Never type a header into a sheet.
+- **Everything section-specific lives in `v2/Config.js`.** An
+  `if (section === 'health')` anywhere else is a bug in the wrong place.
+- **`createEntry()` is the only way a row is born.** There is no trigger.
+- **Never report success for work that failed.** Operations return what
+  actually happened; a status change that renames nothing says so.
+- **Every value written to a sheet goes through `safeCellValue`.**
+- **Claim mail sends once**, when the document is there, and at no other time —
+  guarded by a `Claim Emailed` column, not by convention.
+
+`v2/Smoke.js` is the live counterpart of the harness, run from the Apps Script
+editor. `v2/test/` is local only and is not pushed.
+
+---
+
+## v1 — FROZEN. Do not change.
+
+Everything below describes the old system. It is kept for reference while its
+backlog is worked down. Google Apps Script-based expense tracking that
+integrates Google Forms, Google Sheets, and automated file management with email
+notifications.
 
 ### Project Structure
 
