@@ -1,0 +1,10 @@
+# Pushed to the NEW account's project only. The root .claspignore covers the
+# old account and allows only the frozen Code.js, so the two cannot cross.
+**/**
+!Config.js
+!Core.js
+!Entries.js
+!Registry.js
+!Setup.js
+!Smoke.js
+!appsscript.json

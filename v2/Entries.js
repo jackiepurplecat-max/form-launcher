@@ -3,15 +3,16 @@
  *
  * NOT YET DEPLOYED. See Config.js.
  *
- * An entry can be born two ways, and they differ in one respect only:
+ * There is exactly one way an entry is born: createEntry(). The custom form,
+ * Siri and OCR all call it, and differ only in where the values came from.
  *
- *   Google Form  Forms writes the row, then the trigger fires. The row already
- *                exists, so the adapter finalises it.
- *   Siri / OCR   Nothing exists yet, so the row is appended first.
+ * v1 had two paths, because Google Forms wrote the row itself and left the
+ * trigger to finalise it. That split is gone with Forms — nothing writes a row
+ * behind this module's back, so there is no "already exists" case to handle
+ * and no onFormSubmit trigger to keep in step.
  *
- * Both then run initializeEntry(), which is the single place bookkeeping
- * columns are set, documents are named and filed, and creation mail is sent.
- * Adding a third intake means writing an adapter, not touching this logic.
+ * initializeEntry() is the single place bookkeeping columns are set, documents
+ * are named and filed, the registry is taught and creation mail is sent.
  */
 
 /* ============================== Filenames ================================= */
@@ -66,7 +67,11 @@ function missingFields(section, sheet, cols, row) {
     { header: COMMON.amount, label: 'Amount' },
     { header: COMMON.counterparty, label: counterpartyLabel(section) }
   ];
-  if (section.category) {
+  // Required unless the config says otherwise. Work's Expense Reason and
+  // Health's Patient are required; Income's Reason declares required: false,
+  // because it prefills from the registry and is genuinely optional - treating
+  // it as required made every Income entry report itself incomplete.
+  if (section.category && section.category.required !== false) {
     core.push({ header: section.category.header, label: section.category.label });
   }
 
@@ -98,6 +103,49 @@ function receiptStateFor(section, sheet, cols, row) {
     : RECEIPT_STATE.awaiting;
 }
 
+/* =============================== Registry ================================= */
+
+/**
+ * Teach the registry about this entry's counterparty.
+ *
+ * This is what makes the registry self-populating: nothing is entered up
+ * front, every entry contributes, so it is current by construction rather
+ * than by maintenance. Without this call the Suppliers sheet would simply
+ * stay empty forever.
+ *
+ * What gets learned is per-section, because "usually the same" is not true
+ * everywhere - see registryTypeField / registryNifField in Config.js. Work
+ * learns that Uber is a Taxi but never learns the Expense Reason, since the
+ * same supplier serves many trips.
+ *
+ * Never fatal. A registry write failing must not cost you the entry, so this
+ * reports rather than throws.
+ *
+ * Note: the registry is shared across sections, so a counterparty that
+ * appears in two of them with different type fields would see its stored type
+ * cleared on the conflict. In practice they do not overlap; if one ever does,
+ * the fix is a per-section registry rather than a smarter merge.
+ */
+function learnCounterparty(section, sheet, cols, row) {
+  try {
+    const name = readCell(sheet, cols, row, COMMON.counterparty);
+    if (!name) return null;
+
+    const details = {};
+    if (section.registryTypeField) {
+      details.type = readCell(sheet, cols, row, section.registryTypeField);
+    }
+    if (section.registryNifField) {
+      details.nif = readCell(sheet, cols, row, section.registryNifField);
+    }
+
+    return recordSupplier(name, details);
+
+  } catch (error) {
+    return { ok: false, error: error.toString() };
+  }
+}
+
 /* ============================ Creation email ============================== */
 
 /**
@@ -106,10 +154,36 @@ function receiptStateFor(section, sheet, cols, row) {
  * Deliberately tied to creation rather than to a status change, so no
  * transition has a side effect beyond moving files, and re-selecting a state
  * can never re-send it.
+ *
+ * Only sent when the claim is actually sendable. A partial entry - Siri caught
+ * the core and the receipt is still to come - would otherwise mail a claim
+ * missing its Número and NIF, with no attachment, and nothing would ever send
+ * the real one.
+ *
+ * TODO: the completion path must call this again once the receipt lands, and
+ * needs a "Claim Emailed" marker column before it does, or editing a row twice
+ * mails the claim twice. Until that exists, a deferred claim is sent by hand.
  */
-function sendCreationEmail(section, sheet, cols, row) {
+function sendCreationEmail(section, sheet, cols, row, missing) {
   const spec = section.emailOnCreate;
   if (!spec) return null;
+
+  // Sent once, ever. Checked first so no amount of re-running any caller can
+  // produce a second claim.
+  const alreadySent = readCell(sheet, cols, row, CLAIM_EMAILED_COLUMN);
+  if (alreadySent) {
+    return { ok: false, skipped: true, reason: `already emailed ${alreadySent}` };
+  }
+
+  const incomplete = missing || missingFields(section, sheet, cols, row);
+  if (incomplete.length) {
+    return { ok: false, deferred: true, reason: `incomplete: missing ${incomplete.join(', ')}` };
+  }
+
+  if (spec.attachReceipt &&
+      readCell(sheet, cols, row, COMMON.receiptState) !== RECEIPT_STATE.attached) {
+    return { ok: false, deferred: true, reason: 'receipt not attached yet' };
+  }
 
   try {
     const recipient = PropertiesService.getScriptProperties()
@@ -121,7 +195,15 @@ function sendCreationEmail(section, sheet, cols, row) {
     const who = readCell(sheet, cols, row, COMMON.counterparty);
     const amount = readCell(sheet, cols, row, COMMON.amount);
     const currency = readCell(sheet, cols, row, COMMON.currency);
-    const subject = `${section.label}: ${who} ${amount} ${currency}`.trim();
+
+    // The category goes in the subject where there is one, because it is what
+    // the claim is filed under: v1's work subject led with the trip, and
+    // "Uber 12.50" without it does not tell you which trip to bill.
+    const category = section.category
+      ? (readCell(sheet, cols, row, section.category.header) || '').toString().trim()
+      : '';
+    const subject =
+      `${section.label}: ${category ? category + ' - ' : ''}${who} ${amount} ${currency}`.trim();
 
     const lines = [`${section.label} entry created.`, ''];
     [COMMON.date, COMMON.counterparty, COMMON.amount, COMMON.currency].forEach(header => {
@@ -138,15 +220,139 @@ function sendCreationEmail(section, sheet, cols, row) {
         const fileId = extractFileId(readCell(sheet, cols, row, fileCol.header));
         if (fileId) attachments.push(DriveApp.getFileById(fileId).getBlob());
       });
-      if (attachments.length) options.attachments = attachments;
+
+      // Receipt State says a URL is present, not that it resolves. A dead link
+      // would otherwise mail a claim with nothing attached and report ok.
+      if (!attachments.length) {
+        return { ok: false, deferred: true, reason: 'no attachable document found' };
+      }
+      options.attachments = attachments;
     }
 
-    GmailApp.sendEmail(recipient, subject, lines.join('\n'), options);
-    return { ok: true, recipient: recipient };
+    // MailApp, not GmailApp. Both send as you, but GmailApp asks for
+    // https://mail.google.com/ - full read and write of the whole mailbox -
+    // whereas MailApp needs only script.send_mail. This code has no business
+    // being able to read your email (principle 6, least privilege).
+    MailApp.sendEmail(recipient, subject, lines.join('\n'), options);
+
+    // Stamped only after the send succeeded, so a failure leaves the claim
+    // genuinely unsent and re-sendable rather than silently marked done
+    writeCell(sheet, cols, row, CLAIM_EMAILED_COLUMN, new Date());
+
+    return { ok: true, recipient: recipient, subject: subject };
 
   } catch (error) {
     // Reported, never fatal: the entry exists and must not be lost because
     // mail failed.
+    return { ok: false, error: error.toString() };
+  }
+}
+
+/**
+ * Send a claim whose document arrived after the entry was made.
+ *
+ * This is the other half of "email when the file is uploaded". An entry created
+ * from Siri has no receipt yet, so its claim defers; when the receipt is added
+ * this fires it. Re-running the same gate rather than a second implementation of
+ * it, so late claims cannot behave differently from prompt ones.
+ *
+ * Safe to call repeatedly and on any row: the Claim Emailed stamp stops a second
+ * send, and a still-incomplete row simply defers again. Nothing here decides
+ * whether to send - sendCreationEmail does, exactly as at creation.
+ *
+ * The completion step and the edit path both call this. It is also runnable by
+ * hand for a row whose receipt you attached in the sheet.
+ */
+function sendPendingClaim(sectionKey, sheetRow) {
+  const section = getSection(sectionKey);
+  if (!section.emailOnCreate) {
+    return { ok: false, error: `${sectionKey} does not send a claim email` };
+  }
+
+  const sheet = getSheet(section);
+  const row = resolveDataRow(sheet, sheetRow);
+  const cols = resolveColumns(sheet);
+
+  // Recomputed from the sheet, never taken from a caller
+  writeCell(sheet, cols, row, COMMON.receiptState, receiptStateFor(section, sheet, cols, row));
+
+  const result = sendCreationEmail(section, sheet, cols, row, null);
+  Logger.log(`${section.sheet} row ${row}: pending claim -> ${JSON.stringify(result)}`);
+  return result;
+}
+
+/* ========================== More-info request ============================= */
+
+/** Script Property holding the address that "more info needed" mail goes to. */
+const COMPLETION_RECIPIENT_PROPERTY = 'COMPLETION_EMAIL_RECIPIENT';
+
+/**
+ * Tell you an entry arrived incomplete.
+ *
+ * This is the safety net the whole partial-entry design rests on: a row is
+ * written even when it is missing fields, so something has to say so or the gap
+ * is only ever visible by scrolling the sheet. A mishearing then costs one tap
+ * rather than a lost capture.
+ *
+ * Fires when required fields are blank OR a document is still awaited - both
+ * mean "come back to this", which is the only thing the mail is for.
+ *
+ * Goes to its own address, not to the IVA claims address: this is a note to
+ * yourself, and it must never land in front of whoever processes claims.
+ *
+ * The link points at the row in the spreadsheet. Once the web form exists this
+ * becomes the completion link that opens the form on that row - the thing
+ * Google Forms could never do - and only the URL built here has to change.
+ *
+ * Never fatal. The entry exists; failing to send a reminder must not undo it.
+ */
+function sendCompletionRequest(section, sheet, cols, row, missing, receiptState) {
+  const needsDocument = receiptState === RECEIPT_STATE.awaiting;
+  if (!missing.length && !needsDocument) return null;
+
+  try {
+    const recipient = PropertiesService.getScriptProperties()
+      .getProperty(COMPLETION_RECIPIENT_PROPERTY);
+    if (!recipient) {
+      return { ok: false, error: `${COMPLETION_RECIPIENT_PROPERTY} not set in Script Properties` };
+    }
+
+    const outstanding = missing.slice();
+    if (needsDocument) {
+      section.fileColumns.forEach(fileCol => {
+        const value = readCell(sheet, cols, row, fileCol.header);
+        if (value === '' || value === null || value === undefined) outstanding.push(fileCol.label);
+      });
+    }
+
+    const who = readCell(sheet, cols, row, COMMON.counterparty) || 'unknown';
+    const subject = `${section.label}: more info needed - ${who}`;
+
+    const link = `${SpreadsheetApp.getActiveSpreadsheet().getUrl()}` +
+      `#gid=${sheet.getSheetId()}&range=A${row}`;
+
+    const lines = [
+      `A ${section.label} entry was created but is not finished.`,
+      '',
+      'Still needed:'
+    ];
+    outstanding.forEach(label => lines.push(`  - ${label}`));
+
+    lines.push('', 'What was captured:');
+    [COMMON.date, COMMON.counterparty, COMMON.amount, COMMON.currency, COMMON.notes]
+      .forEach(header => {
+        const value = readCell(sheet, cols, row, header);
+        if (value !== '' && value !== null && value !== undefined) {
+          lines.push(`  ${header}: ${value}`);
+        }
+      });
+
+    lines.push('', `Finish it here: ${link}`);
+
+    MailApp.sendEmail(recipient, subject, lines.join('\n'));
+    return { ok: true, recipient: recipient, outstanding: outstanding };
+
+  } catch (error) {
     return { ok: false, error: error.toString() };
   }
 }
@@ -173,7 +379,8 @@ function initializeEntry(section, sheet, row, source) {
     writeCell(sheet, cols, row, first.dateColumn, today());
   }
 
-  writeCell(sheet, cols, row, COMMON.receiptState, receiptStateFor(section, sheet, cols, row));
+  const receiptState = receiptStateFor(section, sheet, cols, row);
+  writeCell(sheet, cols, row, COMMON.receiptState, receiptState);
 
   // Name each document, then let applyFileState move it to the state folder.
   const renames = [];
@@ -192,7 +399,9 @@ function initializeEntry(section, sheet, row, source) {
 
   const files = applyFileState(section, sheet, cols, row, 0);
   const warnings = missingFields(section, sheet, cols, row);
-  const email = sendCreationEmail(section, sheet, cols, row);
+  const registry = learnCounterparty(section, sheet, cols, row);
+  const email = sendCreationEmail(section, sheet, cols, row, warnings);
+  const completion = sendCompletionRequest(section, sheet, cols, row, warnings, receiptState);
 
   if (warnings.length) {
     Logger.log(`${section.sheet} row ${row}: incomplete — missing ${warnings.join(', ')}`);
@@ -203,80 +412,81 @@ function initializeEntry(section, sheet, row, source) {
     section: section.sheet,
     row: row,
     state: first.name,
+    receiptState: receiptState,
     warnings: warnings,
     renames: renames,
     files: files,
     fileErrors: files.filter(f => !f.ok).concat(renames.filter(r => !r.ok)),
-    email: email
+    registry: registry,
+    email: email,
+    completionRequest: completion
   };
 }
 
-/* ================================ Intakes ================================= */
+/* ================================= Intake ================================= */
 
 /**
- * Append a new entry. Used by Siri, OCR and manual creation.
+ * Append a new entry. THE only way a row is born.
+ *
+ * The custom form, Siri and OCR are all callers of this — they differ in where
+ * the field values came from, and in nothing else. Adding a fourth intake
+ * means writing a caller, not touching anything here.
+ *
+ * A row is written even when it is incomplete, deliberately: a partial entry
+ * you can see and finish beats a capture that failed. Incompleteness comes
+ * back as ok:false with the missing labels, so the caller can send you to the
+ * completion step — but the row exists either way, and a caller must not
+ * retry on ok:false or it will duplicate the entry.
  *
  * @param {string} sectionKey key into SECTIONS
  * @param {Object} fields     keyed by COLUMN HEADER, matching the sheet
- * @param {string} source     'siri' | 'ocr' | 'manual'
+ * @param {string} source     'form' | 'siri' | 'ocr' | 'manual'
  */
 function createEntry(sectionKey, fields, source) {
   const section = getSection(sectionKey);
   const sheet = getSheet(section);
   const cols = resolveColumns(sheet);
 
-  const row = sheet.getLastRow() + 1;
-  Object.keys(fields || {}).forEach(header => {
+  const supplied = fields || {};
+  const headers = Object.keys(supplied);
+
+  // Every header checked BEFORE anything is written. Rejecting one part way
+  // through the loop would leave a half-written row with no status and no
+  // bookkeeping - and that row is then the one getLastRow() reports, so the
+  // next entry would land on top of it.
+  headers.forEach(header => {
     if (!cols[header]) throw new Error(`Unknown column "${header}" for ${sectionKey}`);
-    sheet.getRange(row, cols[header]).setValue(fields[header]);
+  });
+
+  const width = sheet.getLastColumn();
+
+  // Appending is the only moment two callers can collide, so the lock covers
+  // exactly that and nothing slow. Written as one range rather than a setValue
+  // per field, so the row is never briefly half-present.
+  const row = withLock(() => {
+    const target = sheet.getLastRow() + 1;
+    const values = new Array(width).fill('');
+
+    // safeCellValue matters here above all: this is the one path that accepts
+    // field values from outside, so a counterparty of "=IMPORTXML(...)" must be
+    // stored as text rather than executed.
+    headers.forEach(header => {
+      values[cols[header] - 1] = safeCellValue(supplied[header]);
+    });
+
+    sheet.getRange(target, 1, 1, width).setValues([values]);
+
+    // Committed before the lock is released, or the next caller's getLastRow()
+    // still returns the old value and picks the same row.
+    SpreadsheetApp.flush();
+    return target;
   });
 
   const result = initializeEntry(section, sheet, row, source || 'manual');
 
-  // Unlike a form submission, a programmatic caller can be told it got it
-  // wrong, so incompleteness is surfaced as an error rather than a warning.
   if (result.warnings.length) {
     result.ok = false;
     result.error = `Missing required: ${result.warnings.join(', ')}`;
   }
   return result;
-}
-
-/** Find the section whose sheet a form response landed in. */
-function sectionForSheet(sheetName) {
-  const key = Object.keys(SECTIONS).find(k => SECTIONS[k].sheet === sheetName);
-  return key ? { key: key, section: SECTIONS[key] } : null;
-}
-
-/**
- * Form submit trigger. Forms has already written the row, so this finalises it
- * rather than creating it.
- */
-function onFormSubmit(e) {
-  const sheet = e.range.getSheet();
-  const row = e.range.getRow();
-  if (row === 1) return;
-
-  const match = sectionForSheet(sheet.getName());
-  if (!match) {
-    Logger.log(`No section configured for sheet: ${sheet.getName()}`);
-    return;
-  }
-
-  const result = initializeEntry(match.section, sheet, row, 'form');
-  Logger.log(`${sheet.getName()} row ${row}: created via form${
-    result.fileErrors.length ? ` with ${result.fileErrors.length} file error(s)` : ''
-  }`);
-  return result;
-}
-
-/** Install the form submit trigger, replacing any existing ones. */
-function installFormTrigger() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  ScriptApp.getProjectTriggers()
-    .filter(t => t.getEventType() === ScriptApp.EventType.ON_FORM_SUBMIT)
-    .forEach(t => ScriptApp.deleteTrigger(t));
-
-  ScriptApp.newTrigger('onFormSubmit').forSpreadsheet(ss).onFormSubmit().create();
-  Logger.log('Form submit trigger installed for onFormSubmit()');
 }

@@ -42,12 +42,23 @@ const _columnCache = {};
  *
  * This is what lets the four sheets have different layouts without the code
  * caring, and it is why v2 has no magic column numbers.
+ *
+ * Cached per execution. Apps Script globals do not survive between runs, so
+ * this is only ever a within-run cache - but anything that ADDS a column mid-run
+ * must call clearColumnCache(), or subsequent lookups will miss it.
  */
 function resolveColumns(sheet) {
   const key = sheet.getName();
   if (_columnCache[key]) return _columnCache[key];
 
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const width = sheet.getLastColumn();
+  if (!width) {
+    throw new Error(
+      `Sheet "${key}" has no header row. Run bootstrap() to create the columns.`
+    );
+  }
+
+  const headers = sheet.getRange(1, 1, 1, width).getValues()[0];
   const map = {};
   headers.forEach((header, i) => {
     const name = (header || '').toString().trim();
@@ -58,10 +69,36 @@ function resolveColumns(sheet) {
   return map;
 }
 
+/** Forget cached header positions. Call after adding or renaming a column. */
+function clearColumnCache() {
+  Object.keys(_columnCache).forEach(key => delete _columnCache[key]);
+}
+
 function columnIndex(cols, sheetName, header) {
   const index = cols[header];
   if (!index) throw new Error(`Column "${header}" not found in ${sheetName}`);
   return index;
+}
+
+/**
+ * Neutralise a value that Sheets would otherwise treat as a formula.
+ *
+ * A cell whose text starts with =, +, - or @ becomes a formula, so a supplier
+ * name of "=IMPORTXML(...)" would execute on write rather than being stored.
+ * Prefixing with an apostrophe forces literal text; Sheets strips it again on
+ * read, so nothing downstream sees the difference.
+ *
+ * Genuine negative numbers are left alone - "-50" is data, not an attack, and
+ * escaping it would turn an amount into text.
+ *
+ * This matters most for the Siri endpoint, which accepts field values from
+ * anyone holding the device key. Principle 5: the client is never trusted.
+ */
+function safeCellValue(value) {
+  if (typeof value !== 'string') return value;
+  if (!/^[=+\-@\t\r]/.test(value)) return value;
+  if (value.trim() !== '' && isFinite(Number(value))) return value;
+  return `'${value}`;
 }
 
 function readCell(sheet, cols, row, header) {
@@ -69,7 +106,8 @@ function readCell(sheet, cols, row, header) {
 }
 
 function writeCell(sheet, cols, row, header, value) {
-  sheet.getRange(row, columnIndex(cols, sheet.getName(), header)).setValue(value);
+  sheet.getRange(row, columnIndex(cols, sheet.getName(), header))
+    .setValue(safeCellValue(value));
 }
 
 /* ================================= States ================================= */
@@ -92,6 +130,75 @@ function today() {
   return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
 }
 
+/** True for yyyy-MM-dd naming a date the calendar actually has. */
+function isValidDateISO(value) {
+  const text = (value === null || value === undefined) ? '' : value.toString().trim();
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+
+  // Rejects 2026-02-31, which Date would roll forward into March
+  return date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day;
+}
+
+/**
+ * Reject a bad date BEFORE anything is written.
+ *
+ * Without this a caller could put arbitrary text in a date column, and the
+ * failure would surface later inside buildSuffixChain - after the status and
+ * dates had already been written, leaving the row half-changed.
+ */
+function requireDateISO(value, label) {
+  if (!isValidDateISO(value)) {
+    throw new Error(`${label} must be a valid yyyy-MM-dd date, got "${value}"`);
+  }
+  return value.toString().trim();
+}
+
+/* ================================ Locking ================================= */
+
+/**
+ * Depth of the script lock held by THIS execution.
+ *
+ * Nested withLock() calls are a no-op rather than a second acquisition, because
+ * createEntry -> initializeEntry -> learnCounterparty -> recordSupplier would
+ * otherwise ask for a lock it already holds.
+ */
+let _lockDepth = 0;
+
+/**
+ * Run fn while holding the script lock.
+ *
+ * Needed anywhere a row is appended: every append computes its target from
+ * getLastRow(), so two callers arriving together - the form and Siri, or two
+ * Siri taps - would compute the same row and one would overwrite the other.
+ *
+ * Scope this as narrowly as the race requires. Slow work (Drive, Gmail) belongs
+ * outside it.
+ */
+function withLock(fn, timeoutMs) {
+  if (_lockDepth > 0) return fn();
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(timeoutMs || 20000)) {
+    throw new Error('Timed out waiting for the script lock; another write is in progress.');
+  }
+
+  _lockDepth++;
+  try {
+    return fn();
+  } finally {
+    _lockDepth--;
+    lock.releaseLock();
+  }
+}
+
 /* ========================= Drive folders and names ======================== */
 
 function extractFileId(fileRef) {
@@ -106,11 +213,21 @@ function childFolder(parent, name) {
   return existing.hasNext() ? existing.next() : parent.createFolder(name);
 }
 
-/** Resolve <root>/<Section>/<folderName>, creating anything missing. */
+/**
+ * Resolve <root>/<Section>/<folderName>, creating anything missing.
+ *
+ * Named from section.sheet, not section.label, so the folders match the sheet
+ * tabs: Work / IVA / Health / Income. label is a UI string - "Log Income" is a
+ * button, not a sensible place to keep files.
+ *
+ * Folders are matched BY NAME, so renaming one in Drive does not move the
+ * files here - it makes the next call create a fresh empty folder alongside.
+ * Change this only while the tree is empty.
+ */
 function sectionFolder(section, folderName) {
   const rootId = PropertiesService.getScriptProperties().getProperty(ROOT_FOLDER_PROPERTY);
   if (!rootId) throw new Error(`${ROOT_FOLDER_PROPERTY} not set in Script Properties`);
-  return childFolder(childFolder(DriveApp.getFolderById(rootId), section.label), folderName);
+  return childFolder(childFolder(DriveApp.getFolderById(rootId), section.sheet), folderName);
 }
 
 /** Where files for a given state belong. States with no folder use the inbox. */
@@ -154,9 +271,20 @@ function buildSuffixChain(section, sheet, cols, row, targetIndex) {
     if (i > targetIndex || !state.fileSuffix || !state.dateColumn) return;
     const value = readCell(sheet, cols, row, state.dateColumn);
     if (!value) return;
-    const stamp = Utilities.formatDate(
-      new Date(value), Session.getScriptTimeZone(), 'dd-MM-yyyy'
-    );
+
+    // Skipped rather than thrown: a date typed by hand into the sheet must not
+    // be able to abort a transition half way through, and the state itself is
+    // still recorded in the Status column either way.
+    const parsed = new Date(value);
+    if (isNaN(parsed.getTime())) {
+      Logger.log(
+        `${sheet.getName()} row ${row}: "${state.dateColumn}" holds "${value}", ` +
+        `which is not a date - omitted from the filename`
+      );
+      return;
+    }
+
+    const stamp = Utilities.formatDate(parsed, Session.getScriptTimeZone(), 'dd-MM-yyyy');
     chain += `_${state.fileSuffix}_${stamp}`;
   });
   return chain;
@@ -238,6 +366,11 @@ function setStatus(sectionKey, sheetRow, newState, dateISO) {
 
   const targetIndex = requireStateIndex(section, newState);
   const target = section.states[targetIndex];
+
+  // Validated up front, so a bad date cannot leave the row with its later
+  // dates already cleared
+  const requested = dateISO ? requireDateISO(dateISO, target.dateColumn || 'Date') : null;
+
   const previous = (readCell(sheet, cols, row, COMMON.status) || '').toString().trim();
 
   // Clear dates belonging to states later than the target
@@ -251,8 +384,8 @@ function setStatus(sectionKey, sheetRow, newState, dateISO) {
   let effectiveDate = null;
   if (target.dateColumn) {
     const existing = readCell(sheet, cols, row, target.dateColumn);
-    if (dateISO) {
-      effectiveDate = dateISO;
+    if (requested) {
+      effectiveDate = requested;
     } else if (!existing) {
       effectiveDate = today();
     } else {
@@ -299,6 +432,9 @@ function setEntryDate(sectionKey, sheetRow, dateColumn, dateISO) {
   const allowed = section.states.some(s => s.dateColumn === dateColumn);
   if (!allowed) throw new Error(`"${dateColumn}" is not a date column of ${sectionKey}`);
 
-  writeCell(sheet, cols, row, dateColumn, dateISO || '');
-  return { ok: true, section: sectionKey, row: row, column: dateColumn, date: dateISO || '' };
+  // Blank clears the date; anything else must be a real one
+  const value = dateISO ? requireDateISO(dateISO, dateColumn) : '';
+
+  writeCell(sheet, cols, row, dateColumn, value);
+  return { ok: true, section: sectionKey, row: row, column: dateColumn, date: value };
 }

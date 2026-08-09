@@ -1,0 +1,212 @@
+/**
+ * v2 — the live smoke test. Build order step 5.
+ *
+ * The Apps Script editor can only run functions that take no arguments, so
+ * "call createEntry() from the editor" needs a wrapper. This is it.
+ *
+ * It is the live counterpart of v2/test/run.js: the harness proves the logic
+ * against stand-ins, this proves it against real Sheets and real Drive, where
+ * quotas, authorisation and date coercion actually behave. Run it once, read
+ * the log, then delete the rows it made.
+ *
+ *   smokeTest()      creates one entry per section, cycles its status, checks
+ *                    the filenames and folders at each step, reports
+ *   smokeCleanup()   deletes the rows and files it created, and nothing else
+ *
+ * MAIL: it never sends a claim to a real claims address. Every section that mails
+ * on creation - Work and IVA - is given no document, so its claim defers by
+ * design, and that deferral is itself one of the things being checked. To test a
+ * claim mail for real, see the deployment notes: point that section's recipient
+ * property at yourself first.
+ *
+ * It DOES send one "more info needed" mail per mailing section, to
+ * COMPLETION_EMAIL_RECIPIENT. That is the point: it proves the address works.
+ * Expect two - one naming the Receipt as outstanding, one naming the Fatura.
+ */
+
+/** Marker written into Notes, so cleanup can find exactly these rows. */
+const SMOKE_MARKER = 'SMOKE TEST - safe to delete';
+
+/** Counterparty used throughout, so the registry entry it teaches is findable. */
+const SMOKE_COUNTERPARTY = 'Smoke Test Ltd';
+
+function _smokeFile(name) {
+  // A real Drive file, so renaming and moving are genuinely exercised
+  return DriveApp.createFile(Utilities.newBlob('smoke test placeholder', 'text/plain', name));
+}
+
+/**
+ * Create one entry per section, walk it through its states, and check what
+ * actually happened to the sheet and to Drive.
+ */
+function smokeTest() {
+  const results = [];
+  const checks = [];
+  const check = (label, ok, detail) => checks.push({ label: label, ok: !!ok, detail: detail });
+
+  const stamp = today();
+
+  Object.keys(SECTIONS).forEach(key => {
+    const section = SECTIONS[key];
+    const fields = {};
+
+    fields[COMMON.date] = stamp;
+    fields[COMMON.counterparty] = SMOKE_COUNTERPARTY;
+    fields[COMMON.amount] = 3.45;
+    fields[COMMON.currency] = 'EUR';
+    fields[COMMON.notes] = SMOKE_MARKER;
+
+    if (section.category) fields[section.category.header] = 'Smoke';
+    section.extraFields.forEach(field => {
+      if (!field.required) return;
+      fields[field.header] = field.type === 'date' ? stamp
+        : field.type === 'number' ? 1
+          : 'Smoke';
+    });
+
+    // Any section that mails on creation is left WITHOUT its document on
+    // purpose. A missing receipt is what makes the claim defer, and deferring is
+    // the only thing standing between a smoke test and a junk claim landing in
+    // a real work inbox. Driven off emailOnCreate rather than a section name, so
+    // giving another section a claim email cannot quietly re-arm this.
+    //
+    // The cost is that file naming and filing are not exercised for those
+    // sections - Health covers that path in full, with two documents, and the
+    // path is entirely generic.
+    const files = {};
+    if (!section.emailOnCreate) {
+      section.fileColumns.forEach(fileCol => {
+        const file = _smokeFile(`smoke_${key}_${fileCol.suffix}.txt`);
+        files[fileCol.header] = file;
+        fields[fileCol.header] = file.getId();
+      });
+    }
+
+    let created;
+    try {
+      created = createEntry(key, fields, 'manual');
+    } catch (error) {
+      check(`${key}: createEntry`, false, error.toString());
+      return;
+    }
+
+    check(`${key}: created`, created.ok === true, created.error || created.warnings);
+    check(`${key}: no file errors`, created.fileErrors.length === 0, created.fileErrors);
+    check(`${key}: registry learned`, !!created.registry, created.registry);
+    if (section.emailOnCreate) {
+      check(`${key}: claim mail deferred, not sent`,
+        created.email && created.email.deferred === true, created.email);
+      check(`${key}: asked for the missing document instead`,
+        created.completionRequest && created.completionRequest.ok === true,
+        created.completionRequest);
+    }
+
+    // Filenames and folders, at creation and then at each state
+    Object.keys(files).forEach(header => {
+      const file = DriveApp.getFileById(files[header].getId());
+      check(`${key}: ${header} named`, file.getName().indexOf('SmokeTestLtd_3-45') !== -1, file.getName());
+    });
+
+    section.states.slice(1).forEach(state => {
+      const moved = setStatus(key, created.row, state.name);
+      check(`${key}: -> ${state.name}`, moved.fileErrors.length === 0, moved.fileErrors);
+      if (state.fileSuffix) {
+        Object.keys(files).forEach(header => {
+          const file = DriveApp.getFileById(files[header].getId());
+          check(
+            `${key}: ${state.name} suffix on ${header}`,
+            file.getName().indexOf(`_${state.fileSuffix}_`) !== -1,
+            file.getName()
+          );
+          check(
+            `${key}: ${state.name} folder`,
+            file.getParents().next().getName() === (state.folder || INBOX_FOLDER),
+            file.getParents().next().getName()
+          );
+        });
+      }
+    });
+
+    // Back to the first state: the chain must shorten, not accumulate
+    const reverted = setStatus(key, created.row, section.states[0].name);
+    check(`${key}: reverted to ${section.states[0].name}`, reverted.ok === true, reverted);
+    Object.keys(files).forEach(header => {
+      const file = DriveApp.getFileById(files[header].getId());
+      const bare = section.states.every(s => !s.fileSuffix || file.getName().indexOf(`_${s.fileSuffix}_`) === -1);
+      check(`${key}: ${header} chain stripped on revert`, bare, file.getName());
+    });
+
+    results.push({ section: key, row: created.row, fileIds: Object.keys(files).map(h => files[h].getId()) });
+  });
+
+  const failed = checks.filter(c => !c.ok);
+  const report = {
+    ok: failed.length === 0,
+    passed: checks.length - failed.length,
+    failed: failed,
+    entries: results,
+    next: failed.length
+      ? 'Fix the failures above before building anything on top.'
+      : 'All good. Run smokeCleanup() to remove these rows and files.'
+  };
+
+  Logger.log(JSON.stringify(report, null, 2));
+  return report;
+}
+
+/**
+ * Remove what smokeTest() made.
+ *
+ * Only ever touches rows whose Notes hold SMOKE_MARKER, so it cannot take a
+ * real entry with it. Rows are deleted bottom-up, because deleting one shifts
+ * every row beneath it.
+ */
+function smokeCleanup() {
+  const removed = { rows: {}, files: 0, registry: null, warnings: [] };
+
+  Object.keys(SECTIONS).forEach(key => {
+    const section = SECTIONS[key];
+    const sheet = getSheet(section);
+    const cols = resolveColumns(sheet);
+    if (sheet.getLastRow() < 2) return;
+
+    const notesCol = columnIndex(cols, sheet.getName(), COMMON.notes);
+    const notes = sheet.getRange(2, notesCol, sheet.getLastRow() - 1, 1).getValues();
+
+    const targets = [];
+    notes.forEach((value, i) => {
+      if ((value[0] || '').toString().trim() === SMOKE_MARKER) targets.push(i + 2);
+    });
+
+    // Trash the documents before the row that points at them is gone
+    targets.forEach(row => {
+      section.fileColumns.forEach(fileCol => {
+        const fileId = extractFileId(readCell(sheet, cols, row, fileCol.header));
+        if (!fileId) return;
+        try {
+          DriveApp.getFileById(fileId).setTrashed(true);
+          removed.files++;
+        } catch (error) {
+          removed.warnings.push(`${key} row ${row}: ${error}`);
+        }
+      });
+    });
+
+    targets.slice().reverse().forEach(row => sheet.deleteRow(row));
+    removed.rows[key] = targets;
+  });
+
+  // The registry learns from every entry, including these, so the supplier it
+  // taught has to go too or "Smoke Test Ltd" autocompletes forever.
+  const registry = getOrCreateRegistrySheet();
+  const registryRow = loadRegistry().find(
+    entry => normalizeName(entry.name) === normalizeName(SMOKE_COUNTERPARTY)
+  );
+  if (registryRow) {
+    registry.deleteRow(registryRow.row);
+    removed.registry = SMOKE_COUNTERPARTY;
+  }
+
+  Logger.log(JSON.stringify(removed, null, 2));
+  return removed;
+}

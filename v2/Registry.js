@@ -26,6 +26,12 @@ const REGISTRY = {
   lastUsed: 'Last Used'
 };
 
+/** Header spine of the registry sheet, in reading order. */
+const REGISTRY_HEADERS = [
+  REGISTRY.name, REGISTRY.type, REGISTRY.nif,
+  REGISTRY.aliases, REGISTRY.timesUsed, REGISTRY.lastUsed
+];
+
 /**
  * Confidence at or above which a match may prefill data on its own.
  *
@@ -37,19 +43,23 @@ const REGISTRY_AUTOFILL_CONFIDENCE = 0.85;
 
 /* ================================ Storage ================================= */
 
+/**
+ * The registry sheet, with its headers guaranteed.
+ *
+ * Headers go through applyHeaders() on every call, not only on creation. A
+ * sheet that exists but is missing a column would otherwise read as undefined
+ * through loadRegistry() and then fail on the first write to it, in a way that
+ * points nowhere near the cause. applyHeaders only ever appends, so this is
+ * safe against a registry already in use.
+ */
 function getOrCreateRegistrySheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(REGISTRY_SHEET);
   if (!sheet) {
     sheet = ss.insertSheet(REGISTRY_SHEET);
-    const headers = [
-      REGISTRY.name, REGISTRY.type, REGISTRY.nif,
-      REGISTRY.aliases, REGISTRY.timesUsed, REGISTRY.lastUsed
-    ];
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    sheet.setFrozenRows(1);
     Logger.log(`Created "${REGISTRY_SHEET}"`);
   }
+  applyHeaders(sheet, REGISTRY_HEADERS);
   return sheet;
 }
 
@@ -75,7 +85,9 @@ function loadRegistry() {
   const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
 
   return values.map((rowValues, i) => {
-    const cell = header => rowValues[cols[header] - 1];
+    // columnIndex rather than cols[header]: a missing column would otherwise
+    // index by NaN and read as a blank string, silently losing every alias.
+    const cell = header => rowValues[columnIndex(cols, REGISTRY_SHEET, header) - 1];
     const aliases = (cell(REGISTRY.aliases) || '').toString()
       .split(',').map(a => a.trim()).filter(Boolean);
     return {
@@ -124,10 +136,12 @@ function similarity(a, b) {
  * Best registry match for a name, with a confidence and the reason for it.
  *
  * Tiers, strongest first:
- *   1.00  exact after normalising
- *   0.95  matches a recorded alias — the cure for repeated Siri mishearings
- *   0.80  one name contains the other ("white clinic" vs "the white clinic")
- *   ~     edit-distance similarity, for ordinary mishearings
+ *   1.00        exact after normalising
+ *   0.95        matches a recorded alias — the cure for repeated mishearings
+ *   0.75–0.95   one name contains the other, scaled by how much of the longer
+ *               one is accounted for ("white clinic" in "the white clinic"
+ *               scores 0.90; "uber" in "uber eats" only 0.84)
+ *   ~           edit-distance similarity, for ordinary mishearings
  *
  * Returns null when nothing is close, rather than offering a poor guess.
  */
@@ -172,7 +186,11 @@ function findSupplier(spokenName) {
   };
 }
 
-/** Registry entries matching a typed prefix, most-used first, for autocomplete. */
+/**
+ * Registry entries matching typed text, most-used first, for autocomplete.
+ * Matches anywhere in the name or an alias, not just at the start, so "luz"
+ * finds "Hospital da Luz". A blank prefix returns the most-used entries.
+ */
 function suggestSuppliers(prefix, limit) {
   const target = normalizeName(prefix);
   const matches = loadRegistry().filter(entry => {
@@ -186,6 +204,47 @@ function suggestSuppliers(prefix, limit) {
   return matches.slice(0, limit || 10).map(entry => ({
     name: entry.name, type: entry.type, nif: entry.nif
   }));
+}
+
+/**
+ * Look a counterparty up for a given section and say what may be prefilled.
+ *
+ * This is the half of the registry that Google Forms made impossible: "type
+ * FNAC, get its NIF". The form calls it as you type; Siri calls it with
+ * whatever it heard.
+ *
+ * prefill is keyed by COLUMN HEADER so a caller can pass it straight to
+ * createEntry() without translating anything. It is empty below the autofill
+ * threshold - the match is still returned, so the UI can offer it as a
+ * suggestion, but nothing is filled in on a guess.
+ *
+ * The canonical name is part of the prefill: correcting "wite clinic" to
+ * "White Clinic" is the most useful thing a confident match can do, and it
+ * stops near-miss spellings accumulating as separate registry entries.
+ */
+function lookupCounterparty(sectionKey, spokenName) {
+  const section = getSection(sectionKey);
+  const match = findSupplier(spokenName);
+  if (!match) return null;
+
+  const prefill = {};
+  if (match.autofill) {
+    prefill[COMMON.counterparty] = match.name;
+    if (section.registryTypeField && match.type) {
+      prefill[section.registryTypeField] = match.type;
+    }
+    if (section.registryNifField && match.nif) {
+      prefill[section.registryNifField] = match.nif;
+    }
+  }
+
+  return {
+    name: match.name,
+    confidence: match.confidence,
+    reason: match.reason,
+    autofill: match.autofill,
+    prefill: prefill
+  };
 }
 
 /* =============================== Learning ================================= */
@@ -204,64 +263,79 @@ function recordSupplier(name, details) {
   const clean = (name || '').toString().trim();
   if (!clean) return null;
 
-  const sheet = getOrCreateRegistrySheet();
-  const cols = resolveColumns(sheet);
-  const target = normalizeName(clean);
-
-  const existing = loadRegistry().find(entry =>
-    normalizeName(entry.name) === target ||
-    entry.aliases.some(alias => normalizeName(alias) === target)
-  );
-
   const type = ((details || {}).type || '').toString().trim();
   const nif = ((details || {}).nif || '').toString().trim();
 
-  if (!existing) {
-    const row = sheet.getLastRow() + 1;
-    sheet.getRange(row, cols[REGISTRY.name]).setValue(clean);
-    if (type) sheet.getRange(row, cols[REGISTRY.type]).setValue(type);
-    if (nif) sheet.getRange(row, cols[REGISTRY.nif]).setValue(nif);
-    sheet.getRange(row, cols[REGISTRY.timesUsed]).setValue(1);
-    sheet.getRange(row, cols[REGISTRY.lastUsed]).setValue(new Date());
-    Logger.log(`Registry: learned "${clean}"`);
-    return { created: true, name: clean, row: row };
-  }
+  // Locked for the same reason createEntry is: a new supplier is appended at
+  // getLastRow() + 1, and every write here goes through writeCell, so a name
+  // learned from a Siri field is stored as text rather than as a formula.
+  return withLock(() => {
+    const sheet = getOrCreateRegistrySheet();
+    const cols = resolveColumns(sheet);
+    const target = normalizeName(clean);
 
-  sheet.getRange(existing.row, cols[REGISTRY.timesUsed]).setValue(existing.timesUsed + 1);
-  sheet.getRange(existing.row, cols[REGISTRY.lastUsed]).setValue(new Date());
+    const existing = loadRegistry().find(entry =>
+      normalizeName(entry.name) === target ||
+      entry.aliases.some(alias => normalizeName(alias) === target)
+    );
 
-  if (nif && !existing.nif) {
-    sheet.getRange(existing.row, cols[REGISTRY.nif]).setValue(nif);
-  }
-  if (type) {
-    if (!existing.type) {
-      sheet.getRange(existing.row, cols[REGISTRY.type]).setValue(type);
-    } else if (existing.type !== type) {
-      // Conflicting types seen - stop guessing rather than guess wrongly
-      sheet.getRange(existing.row, cols[REGISTRY.type]).setValue('');
-      Logger.log(`Registry: "${existing.name}" seen as both ${existing.type} and ${type}; type default cleared`);
+    if (!existing) {
+      const row = sheet.getLastRow() + 1;
+      writeCell(sheet, cols, row, REGISTRY.name, clean);
+      if (type) writeCell(sheet, cols, row, REGISTRY.type, type);
+      if (nif) writeCell(sheet, cols, row, REGISTRY.nif, nif);
+      writeCell(sheet, cols, row, REGISTRY.timesUsed, 1);
+      writeCell(sheet, cols, row, REGISTRY.lastUsed, new Date());
+      SpreadsheetApp.flush();
+      Logger.log(`Registry: learned "${clean}"`);
+      return { created: true, name: clean, row: row };
     }
-  }
 
-  return { created: false, name: existing.name, row: existing.row };
+    writeCell(sheet, cols, existing.row, REGISTRY.timesUsed, existing.timesUsed + 1);
+    writeCell(sheet, cols, existing.row, REGISTRY.lastUsed, new Date());
+
+    if (nif && !existing.nif) {
+      writeCell(sheet, cols, existing.row, REGISTRY.nif, nif);
+    }
+    if (type) {
+      if (!existing.type) {
+        writeCell(sheet, cols, existing.row, REGISTRY.type, type);
+      } else if (existing.type !== type) {
+        // Conflicting types seen - stop guessing rather than guess wrongly
+        writeCell(sheet, cols, existing.row, REGISTRY.type, '');
+        Logger.log(`Registry: "${existing.name}" seen as both ${existing.type} and ${type}; type default cleared`);
+      }
+    }
+
+    return { created: false, name: existing.name, row: existing.row };
+  });
 }
 
 /** Attach an alias, so a recurring mishearing resolves next time. */
 function addSupplierAlias(name, alias) {
-  const sheet = getOrCreateRegistrySheet();
-  const cols = resolveColumns(sheet);
-  const target = normalizeName(name);
-
-  const entry = loadRegistry().find(e => normalizeName(e.name) === target);
-  if (!entry) throw new Error(`No registry entry named "${name}"`);
-
   const clean = (alias || '').toString().trim();
   if (!clean) throw new Error('Alias is required');
-  if (entry.aliases.some(a => normalizeName(a) === normalizeName(clean))) {
-    return { ok: false, error: `"${clean}" is already an alias of ${entry.name}` };
+
+  // Aliases share one cell, comma-separated, so an alias containing a comma
+  // would silently come back as two.
+  if (clean.indexOf(',') !== -1) {
+    throw new Error(`An alias cannot contain a comma: "${clean}"`);
   }
 
-  const updated = entry.aliases.concat([clean]);
-  sheet.getRange(entry.row, cols[REGISTRY.aliases]).setValue(updated.join(', '));
-  return { ok: true, name: entry.name, aliases: updated };
+  return withLock(() => {
+    const sheet = getOrCreateRegistrySheet();
+    const cols = resolveColumns(sheet);
+    const target = normalizeName(name);
+
+    const entry = loadRegistry().find(e => normalizeName(e.name) === target);
+    if (!entry) throw new Error(`No registry entry named "${name}"`);
+
+    if (entry.aliases.some(a => normalizeName(a) === normalizeName(clean))) {
+      return { ok: false, error: `"${clean}" is already an alias of ${entry.name}` };
+    }
+
+    const updated = entry.aliases.concat([clean]);
+    writeCell(sheet, cols, entry.row, REGISTRY.aliases, updated.join(', '));
+    return { ok: true, name: entry.name, aliases: updated };
+  });
 }

@@ -34,6 +34,18 @@ const COMMON = {
   notes: 'Notes'
 };
 
+/**
+ * Column recording when a section's claim was emailed. Present only in sections
+ * that have an emailOnCreate.
+ *
+ * This is what makes "email once, when the document arrives, and at no other
+ * time" a property of the data rather than of the call graph. Without it the
+ * guarantee rests on nobody ever calling the send path twice, and the completion
+ * step - which exists precisely to finish an entry whose receipt came later -
+ * has to call it a second time.
+ */
+const CLAIM_EMAILED_COLUMN = 'Claim Emailed';
+
 /** Valid values for the "Receipt State" column. */
 const RECEIPT_STATE = {
   attached: 'attached',
@@ -112,7 +124,13 @@ const SECTIONS = {
         options: ['Taxi', 'Train', 'Flight', 'Hotel', 'Meals', 'Parking', 'Fuel', 'Other']
       }
     ],
-    emailOnCreate: null
+    // v1 mailed every work expense on form submission, receipt attached. That
+    // is the claim being filed, so it carries forward - but tied to creation
+    // like IVA's, and only sent once the entry is actually complete.
+    emailOnCreate: {
+      recipientProperty: 'WORK_CLAIM_RECIPIENT',
+      attachReceipt: true
+    }
   },
 
   iva: {
@@ -239,6 +257,10 @@ const ARCHIVE_FOLDER = 'Archived';
 const DECIMAL_IN_FILENAME = '-';
 
 function formatAmountForFilename(amount) {
+  // A blank amount must produce nothing, not "0-00". Number('') is 0, so
+  // without this a partial Siri entry awaiting its amount would be filed under
+  // a figure it does not have.
+  if (amount === '' || amount === null || amount === undefined) return '';
   const n = Number(amount);
   if (!isFinite(n)) return '';
   return n.toFixed(2).replace('.', DECIMAL_IN_FILENAME);
@@ -259,6 +281,17 @@ const SCRIPT_PROPERTY_INFO = {
   IVA_CLAIM_RECIPIENT: {
     required: true, secret: false,
     description: 'Where an IVA claim is emailed when the entry is created'
+  },
+  WORK_CLAIM_RECIPIENT: {
+    required: true, secret: false,
+    description: 'Where a work expense claim is emailed when the entry is created. ' +
+      'v1 sent these from sendWorkExpenseEmail() to RECIPIENT_EMAIL'
+  },
+  COMPLETION_EMAIL_RECIPIENT: {
+    required: true, secret: false,
+    description: 'Where "more info needed" mail goes when an entry arrives incomplete. ' +
+      'Deliberately separate from IVA_CLAIM_RECIPIENT - this is a note to yourself ' +
+      'and must never reach whoever processes claims'
   },
   REF_JALLC_NIF: {
     required: false, secret: false,

