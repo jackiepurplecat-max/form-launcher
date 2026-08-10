@@ -236,6 +236,107 @@ function hardDeleteEntry(sectionKey, archiveSheetRow) {
   };
 }
 
+/* ================================== Edit ================================== */
+
+/**
+ * The fields an existing entry can be edited through: the form's, minus the
+ * state date columns.
+ *
+ * Those are edited through the date chips instead, because setEntryDate already
+ * refuses a date for a state the row has not reached — and duplicating that
+ * rule here is how the two would eventually disagree. Income is the only
+ * section this removes anything from.
+ */
+function uiEditFields(section) {
+  const stateDates = section.states.map(state => state.dateColumn).filter(Boolean);
+  return uiFormFields(section).filter(field => stateDates.indexOf(field.header) === -1);
+}
+
+/**
+ * Edit an existing entry in place.
+ *
+ * Runs the same validation as creating one, so an edited row can never be less
+ * valid than a created one — that is the plan's rule, and it holds because both
+ * call validateSubmitted() rather than because two functions currently agree.
+ *
+ * Two things follow from a value changing that are easy to forget:
+ *
+ *   - Documents are RENAMED. The filename is built from the date, counterparty
+ *     and amount, so an edit to any of those makes the existing name wrong.
+ *     nameAndFileDocuments() is the same path creation and status changes use.
+ *   - A document arriving now can release a claim email that was deferred at
+ *     creation. sendPendingClaim() re-runs the same gate, and the Claim Emailed
+ *     column stops it going twice.
+ *
+ * Unlike creating, a supplied blank CLEARS the field. That is the only way to
+ * empty a note or remove a value, and it is why edits send only the fields the
+ * form showed rather than everything.
+ */
+function uiUpdateEntry(sectionKey, sheetRow, payload) {
+  requireUiAccess();
+
+  const section = getSection(sectionKey);
+  const sheet = getSheet(section);
+  const row = resolveDataRow(sheet, sheetRow);
+  const cols = resolveColumns(sheet);
+
+  const submitted = (payload && payload.values) || {};
+  const uploads = (payload && payload.files) || [];
+
+  validateSubmitted(section, submitted, uiEditFields(section));
+
+  Object.keys(submitted).forEach(header => {
+    const value = submitted[header];
+    writeCell(sheet, cols, row, header,
+      value === null || value === undefined ? '' : value);
+  });
+
+  // A replacement is trashed rather than left in place: nothing would point at
+  // the old file any more, which is the orphan state checkDocuments() hunts for.
+  const replaced = [];
+  uploads.forEach(upload => {
+    const previous = extractFileId(readCell(sheet, cols, row, upload.header));
+    const file = uiStoreUpload(section, upload);
+    writeCell(sheet, cols, row, upload.header, file.getId());
+    if (previous && previous !== file.getId()) {
+      try {
+        DriveApp.getFileById(previous).setTrashed(true);
+        replaced.push({ column: upload.header, ok: true });
+      } catch (error) {
+        replaced.push({ column: upload.header, ok: false, error: error.toString() });
+      }
+    }
+  });
+
+  const status = (readCell(sheet, cols, row, COMMON.status) || '').toString().trim();
+  const documents = nameAndFileDocuments(
+    section, sheet, cols, row, Math.max(0, stateIndex(section, status))
+  );
+
+  writeCell(sheet, cols, row, COMMON.receiptState,
+    receiptStateFor(section, sheet, cols, row));
+
+  // Only where a claim is actually sent, and only ever once - the gate and the
+  // Claim Emailed stamp are sendPendingClaim's, not this function's.
+  const claim = section.emailOnCreate ? sendPendingClaim(sectionKey, row) : null;
+
+  const warnings = missingFields(section, sheet, cols, row);
+  const fileErrors = documents.files.filter(f => !f.ok)
+    .concat(documents.renames.filter(r => !r.ok))
+    .concat(replaced.filter(r => !r.ok));
+
+  return {
+    ok: warnings.length === 0,
+    error: warnings.length ? `Missing required: ${warnings.join(', ')}` : null,
+    section: sectionKey,
+    row: row,
+    warnings: warnings,
+    fileErrors: fileErrors,
+    claim: claim,
+    entry: uiEntry(sectionKey, row)
+  };
+}
+
 /* ============================== UI wrappers =============================== */
 
 /** Delete from the table: archives, removes nothing. */

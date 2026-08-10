@@ -644,6 +644,7 @@
       }
 
       cells += '<td class="rowActions">' +
+        '<button type="button" data-edit="' + row.row + '">Edit</button> ' +
         '<button type="button" data-delete="' + row.row + '">Delete</button></td>';
 
       return '<tr data-row="' + row.row + '">' + cells + '</tr>';
@@ -925,18 +926,34 @@
        courtesy, not the check. */
     var MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
-    function openForm() {
+    /**
+     * The new-entry form, and the edit form, are the same form.
+     *
+     * Editing is not a special mode — the fields come from the same config and
+     * the server runs the same validation, so an edited row cannot end up less
+     * valid than a created one. The only differences here are which field list
+     * is used, what is prefilled, and which function Save calls.
+     */
+    function openForm(editRow) {
       if (!app.meta) return;
-      app.form = { busy: false, saveAnyway: false };
+      var row = editRow ? findRow(editRow) : null;
+      if (editRow && !row) return;
 
-      el('formTitle').textContent = 'New — ' + app.meta.label;
+      app.form = { busy: false, saveAnyway: false, row: row ? row.row : null };
+      var fields = row ? app.meta.edit : app.meta.form;
+
+      el('formTitle').textContent = row
+        ? 'Edit — ' + app.meta.label
+        : 'New — ' + app.meta.label;
       el('formNote').className = '';
       // Reset here rather than after a save. A successful save closes the form,
       // so resetting on the way out of saveForm() would have to be repeated on
       // every exit path - and the one it was missing from was the successful
       // one, which left the next form opening with the button reading "Saving…".
       el('formSave').textContent = 'Save';
-      el('formFields').innerHTML = app.meta.form.map(fieldHtml).join('');
+      el('formFields').innerHTML = fields.map(function (field) {
+        return fieldHtml(field, row);
+      }).join('');
       el('formOverlay').className = 'open';
 
       // The values already in use, so an expense reason is a pick rather than a
@@ -969,45 +986,63 @@
       return String(header).replace(/[^A-Za-z0-9]/g, '_');
     }
 
-    function fieldHtml(field) {
+    function fieldHtml(field, row) {
       var id = 'f_' + cssId(field.header);
       var listId = 'list_' + cssId(field.header);
       var label = '<label for="' + id + '">' + escapeHtml(field.label) +
         (field.required ? '<span class="req">*</span>' : '') + '</label>';
 
+      // Editing prefills from the row; creating prefills from config.
+      var existing = row ? row.cells[field.header] : undefined;
+      if (existing === undefined || existing === null) existing = '';
+
       var input;
+      var hint = '';
       if (field.type === 'file') {
         input = '<input type="file" id="' + id + '" data-header="' +
           escapeHtml(field.header) + '">';
+        if (row) {
+          var attached = (row.files || []).filter(function (f) {
+            return f.label === field.label;
+          })[0];
+          hint = attached
+            ? 'Attached already. Choosing a file replaces it, and the old one goes to Drive\'s trash.'
+            : 'Not attached yet.';
+        }
 
       } else if (field.type === 'choice') {
         input = '<select id="' + id + '" data-header="' + escapeHtml(field.header) + '">' +
           '<option value=""></option>' +
           (field.options || []).map(function (option) {
-            return '<option value="' + escapeHtml(option) + '">' + escapeHtml(option) + '</option>';
+            return '<option value="' + escapeHtml(option) + '"' +
+              (String(existing) === option ? ' selected' : '') + '>' +
+              escapeHtml(option) + '</option>';
           }).join('') + '</select>';
 
       } else if (field.type === 'date') {
         // Native, so iOS opens the system wheel — same reason as the date dialog.
-        var value = field.header === 'Date' ? app.today : '';
+        var value = row ? String(existing)
+          : (field.header === 'Date' ? app.today : '');
         input = '<input type="date" id="' + id + '" data-header="' +
           escapeHtml(field.header) + '" value="' + escapeHtml(value) + '">';
 
       } else if (field.type === 'number') {
         input = '<input type="number" step="0.01" inputmode="decimal" id="' + id +
-          '" data-header="' + escapeHtml(field.header) + '">';
+          '" data-header="' + escapeHtml(field.header) + '" value="' +
+          escapeHtml(existing) + '">';
 
       } else {
         var suggest = (field.role === 'counterparty' || field.role === 'category');
         input = '<input type="text" id="' + id + '" data-header="' + escapeHtml(field.header) + '"' +
           (field.role ? ' data-role="' + escapeHtml(field.role) + '"' : '') +
           (suggest ? ' list="' + listId + '" autocomplete="off"' : '') +
-          ' value="' + escapeHtml(field.defaultValue || '') + '">' +
+          ' value="' + escapeHtml(row ? existing : (field.defaultValue || '')) + '">' +
           (suggest ? '<datalist id="' + listId + '"></datalist>' : '');
       }
 
       return '<div class="field" data-field="' + escapeHtml(field.header) + '">' + label + input +
-        '<div class="hint" id="hint_' + cssId(field.header) + '"></div></div>';
+        '<div class="hint" id="hint_' + cssId(field.header) + '">' + escapeHtml(hint) +
+        '</div></div>';
     }
 
     /** The counterparty field, found by role rather than by position. */
@@ -1079,21 +1114,35 @@
 
     /* -------------------------------- saving ------------------------------- */
 
+    function formFields() {
+      return (app.form && app.form.row) ? app.meta.edit : app.meta.form;
+    }
+
+    /**
+     * Read the form.
+     *
+     * Editing sends every field including the blanks, because a blank is how
+     * you clear a value — the server treats a supplied blank as "clear this".
+     * Creating omits them, so a new row is not written full of empty strings.
+     */
     function collectValues() {
+      var editing = !!(app.form && app.form.row);
       var values = {};
-      app.meta.form.forEach(function (field) {
+      formFields().forEach(function (field) {
         if (field.type === 'file') return;
         var input = fieldInput(field.header);
         if (!input) return;
         var value = input.value;
-        if (value === null || value === undefined || String(value).trim() === '') return;
-        values[field.header] = field.type === 'number' ? Number(value) : String(value).trim();
+        var blank = (value === null || value === undefined || String(value).trim() === '');
+        if (blank && !editing) return;
+        values[field.header] = (!blank && field.type === 'number')
+          ? Number(value) : String(value === null || value === undefined ? '' : value).trim();
       });
       return values;
     }
 
     function missingRequired(values) {
-      return app.meta.form.filter(function (field) {
+      return formFields().filter(function (field) {
         return field.required && field.type !== 'file' &&
           (values[field.header] === undefined || values[field.header] === '');
       });
@@ -1101,7 +1150,7 @@
 
     /** Read every chosen file as base64, in parallel. */
     function collectFiles() {
-      var fileFields = app.meta.form.filter(function (field) { return field.type === 'file'; });
+      var fileFields = formFields().filter(function (field) { return field.type === 'file'; });
       var reads = [];
 
       fileFields.forEach(function (field) {
@@ -1166,18 +1215,28 @@
       app.form.busy = true;
       el('formSave').textContent = 'Saving…';
 
+      var editingRow = app.form.row;
+
       collectFiles()
         .then(function (files) {
-          return call('uiCreateEntry', app.current, { values: values, files: files });
+          var payload = { values: values, files: files };
+          return editingRow
+            ? call('uiUpdateEntry', app.current, editingRow, payload)
+            : call('uiCreateEntry', app.current, payload);
         })
         .then(function (result) {
           closeForm();
           load();
-          if (result.ok === false) {
+          if (result.fileErrors && result.fileErrors.length) {
+            toast('Saved, but a document could not be filed:\n' +
+              result.fileErrors.map(function (f) {
+                return f.column + ': ' + (f.error || 'unknown error');
+              }).join('\n'), 'warn');
+          } else if (result.ok === false) {
             toast('Saved, but incomplete — ' + (result.error || 'missing fields') +
-              '\nA completion request has been emailed.', 'warn');
+              (editingRow ? '' : '\nA completion request has been emailed.'), 'warn');
           } else {
-            toast('Saved');
+            toast(editingRow ? 'Updated' : 'Saved');
           }
         })
         .catch(function (error) {
@@ -1199,6 +1258,7 @@
       if (target.id === 'newEntry') return openForm();
       if (target.id === 'showArchive') return setArchive(!app.archive);
       if (target.id === 'archiveBack') return setArchive(false);
+      if (target.dataset.edit) return openForm(Number(target.dataset.edit));
       if (target.dataset.delete) return deleteEntry(Number(target.dataset.delete));
       if (target.dataset.restore) return restoreRow(Number(target.dataset.restore));
       if (target.dataset.purge) return purgeEntry(Number(target.dataset.purge));

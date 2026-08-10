@@ -1278,6 +1278,108 @@ check('the live row is untouched whatever happened',
 check('because the row number was resolved against the archive, not the section',
   mocks._ss.getSheetByName('Work Archive').getLastRow() <= archiveHeight || !!reachedLive);
 
+/* --------------------------- edit in place -------------------------------- */
+section('editing runs the same validation as creating');
+['work', 'iva', 'health', 'income'].forEach(key => {
+  const s = G.getSection(key);
+  const stateDates = s.states.map(st => st.dateColumn).filter(Boolean);
+  check(`${key}: edit drops the state dates, which the chips own`,
+    G.uiEditFields(s).every(f => stateDates.indexOf(f.header) === -1),
+    G.uiEditFields(s).map(f => f.header).filter(h => stateDates.indexOf(h) !== -1));
+  check(`${key}: and keeps everything else the form asks for`,
+    G.uiEditFields(s).length ===
+    G.uiFormFields(s).filter(f => stateDates.indexOf(f.header) === -1).length);
+});
+
+const edited = G.uiCreateEntry('work', {
+  values: { 'Date': '2026-11-01', 'Counterparty': 'Typo Ltd', 'Expense Reason': 'wrong',
+            'Amount': 10, 'Notes': 'first' },
+  files: [{ header: 'Receipt URL', name: 'e.pdf', mimeType: 'application/pdf', data: b64 }]
+});
+const editedFile = mocks.DriveApp.getFileById(G.extractFileId(
+  mocks._ss.getSheetByName('Work').getRange(edited.row, wcols['Receipt URL']).getValue()));
+check('the document starts named after the original values',
+  editedFile.getName() === '261101_TypoLtd_10-00_receipt.pdf', editedFile.getName());
+
+const afterEdit = G.uiUpdateEntry('work', edited.row, {
+  values: { 'Counterparty': 'Fixed Ltd', 'Amount': 25.5, 'Date': '2026-11-02', 'Notes': '' }
+});
+check('the edit reports ok', afterEdit.ok === true, afterEdit);
+check('values changed', afterEdit.entry.cells['Counterparty'] === 'Fixed Ltd' &&
+  afterEdit.entry.cells['Amount'] === 25.5, afterEdit.entry.cells);
+// Unlike creating, a blank CLEARS - otherwise there is no way to empty a note.
+check('a supplied blank clears the field', afterEdit.entry.cells['Notes'] === '',
+  afterEdit.entry.cells['Notes']);
+check('a field that was not sent is left alone',
+  afterEdit.entry.cells['Expense Reason'] === 'wrong', afterEdit.entry.cells);
+// The filename is built from date, counterparty and amount, so editing any of
+// them makes the existing name wrong.
+check('the document was renamed to match the edited row',
+  editedFile.getName() === '261102_FixedLtd_25-50_receipt.pdf', editedFile.getName());
+
+section('editing refuses exactly what creating refuses');
+[
+  [{ 'Nonsense': 1 }, /not a field/, 'an unknown field'],
+  [{ 'Receipt URL': 'https://drive.google.com/file/d/aaaaaaaaaaaaaaaaaaaaaaaaaaa/view' },
+    /cannot be set directly/, 'a document as a value'],
+  [{ 'Date': '02/11/2026' }, /valid yyyy-MM-dd/, 'a badly formatted date'],
+  [{ 'Type': 'Submarine' }, /must be one of/, 'a choice off its list']
+].forEach(([values, pattern, what]) => {
+  let refused = null;
+  try { G.uiUpdateEntry('work', edited.row, { values: values }); } catch (e) { refused = e.message; }
+  check(`${what} is refused`, pattern.test(refused || ''), refused);
+});
+
+// A state date sent through the edit path would bypass setEntryDate's rule that
+// a date cannot be set for a state the row has not reached.
+let stateDateViaEdit = null;
+try {
+  G.uiUpdateEntry('income', G.uiListEntries('income').rows[0].row,
+    { values: { 'Logged Date': '2026-11-05' } });
+} catch (e) { stateDateViaEdit = e.message; }
+check('a state date cannot be smuggled through the edit path',
+  /not a field/.test(stateDateViaEdit || ''), stateDateViaEdit);
+
+section('attaching a document later releases the deferred claim');
+// The Siri case: the entry is made without its receipt, so the claim is held.
+const deferred = G.uiCreateEntry('iva', {
+  values: { 'Date': '2026-11-03', 'Counterparty': 'FNAC', 'Número': 'B9',
+            'Emitente NIF': '500000000', 'IVA Amount': 1, 'Amount': 6 }
+});
+const ed_mailBefore = mocks.MailApp.sent.length;
+check('nothing claimed yet, because the document is not there',
+  G.uiEntry('iva', deferred.row).claimEmailed === false,
+  G.uiEntry('iva', deferred.row).claimEmailed);
+
+const attached = G.uiUpdateEntry('iva', deferred.row, {
+  values: {},
+  files: [{ header: 'Receipt URL', name: 'late.pdf', mimeType: 'application/pdf', data: b64 }]
+});
+check('now it is attached', attached.entry.receiptState === 'attached', attached.entry.receiptState);
+check('and the claim went out', mocks.MailApp.sent.length === ed_mailBefore + 1,
+  mocks.MailApp.sent.length - ed_mailBefore);
+check('stamped, so it cannot go twice', attached.entry.claimEmailed === true);
+const mailAfter = mocks.MailApp.sent.length;
+G.uiUpdateEntry('iva', deferred.row, { values: { 'Notes': 'edited again' } });
+check('editing again sends nothing further', mocks.MailApp.sent.length === mailAfter,
+  mocks.MailApp.sent.length - mailAfter);
+
+section('replacing a document does not strand the old one');
+const oldFileId = G.extractFileId(
+  mocks._ss.getSheetByName('Work').getRange(edited.row, wcols['Receipt URL']).getValue());
+G.uiUpdateEntry('work', edited.row, {
+  values: {},
+  files: [{ header: 'Receipt URL', name: 'replacement.pdf', mimeType: 'application/pdf', data: b64 }]
+});
+const newFileId = G.extractFileId(
+  mocks._ss.getSheetByName('Work').getRange(edited.row, wcols['Receipt URL']).getValue());
+check('the row points at the new document', newFileId !== oldFileId);
+check('and the replaced one is in the trash, not left as an orphan',
+  mocks.DriveApp.getFileById(oldFileId).isTrashed() === true);
+check('the new one is named from the row like any other',
+  mocks.DriveApp.getFileById(newFileId).getName() === '261102_FixedLtd_25-50_receipt.pdf',
+  mocks.DriveApp.getFileById(newFileId).getName());
+
 section('management functions check the caller');
 mocks.Session._setActiveUser('someone.else@example.test');
 [

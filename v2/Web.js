@@ -254,7 +254,11 @@ function uiSectionMeta(sectionKey) {
     // not another round trip. Its dynamic part - the values already in use in a
     // category column - is fetched separately, because that changes as you type
     // entries and this does not.
-    form: uiFormFields(section)
+    form: uiFormFields(section),
+    // Editing drops the state dates, which are the date chips' job - see
+    // uiEditFields. Sent separately so the page never has to work out the
+    // difference for itself.
+    edit: uiEditFields(section)
   };
 }
 

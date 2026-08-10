@@ -152,6 +152,31 @@ Confirmations exist for these two actions and nowhere else — deleting is
 reversible but not obviously so, and `Delete forever` is not reversible at all.
 Status changes still have none, deliberately.
 
+**Editing is built — step 9b, version 11.** `Edit` on any row opens **the same
+form** the new-entry button does, prefilled. Not a similar form: the same
+function, the same field list from `SECTIONS`, and the same
+`validateSubmitted()` on the server. That is what makes the plan's rule —
+an edited row can never be less valid than a created one — true by construction
+rather than by two code paths currently agreeing.
+
+- **Editing a value renames the documents.** The filename is built from date,
+  counterparty and amount, so changing any of them makes the existing name
+  wrong. `nameAndFileDocuments()` is now shared by creation, editing and status
+  changes, so the naming rule exists once.
+- **A supplied blank clears the field**, which creating does not do — otherwise
+  a note could never be emptied. So editing sends every field it showed and
+  creating omits the empty ones.
+- **Attaching a document later releases a deferred claim.** This is the Siri
+  case: the entry is made without its receipt, the claim is held, and it goes
+  out when the file lands. `sendPendingClaim()` re-runs the same gate and the
+  `Claim Emailed` column stops it going twice.
+- **Replacing a document trashes the one it replaced**, rather than leaving a
+  file nothing points at — the orphan state again.
+- **State dates are not editable through the form.** They belong to the date
+  chips, where `setEntryDate` already refuses a date for a state the row has not
+  reached. Duplicating that rule in the edit path is how the two would come to
+  disagree, so `uiEditFields()` drops them and the server refuses them by name.
+
 ### The two URLs, and the accounts problem
 
 There are two endpoints and they behave differently. Confusing them cost a
@@ -269,7 +294,7 @@ for a state the row had not reached (see Settled since).
 | `v2/Index.html` | The page. No templating — it fetches everything through `google.script.run` |
 | `v2/test/` | The harness, and `verify-push.js`. Local only — `.claspignore` keeps it out of the push |
 
-**Not written yet:** edit-in-place, Siri endpoint, OCR intake. There is no `doPost`,
+**Not written yet:** Siri endpoint, OCR intake. There is no `doPost`,
 so the only outside surface is the signed-in UI.
 
 **The new account** — address in `.env` as `V2_CLASP_ACCOUNT`, since this repo is
@@ -1006,11 +1031,10 @@ Each step should leave the system working.
 8. **Custom form** — **built and deployed, untested by hand.** `v2/Form.js` and
    the form view in `v2/Index.html`: fields rendered from `SECTIONS`, file
    upload, registry autocomplete and prefill. Version 5.
-9. **Management module.** Delete-to-archive, restore and hard delete are
-   **built and deployed** (`v2/Manage.js`, version 10) — **run `bootstrap()`
+9. **Management module — done.** Edit in place, delete-to-archive, restore and
+   hard delete, in `v2/Manage.js`, deployed as version 11. **Run `bootstrap()`
    once** to create the four archive sheets. Category lists are handled: closed
-   ones are config, open ones populate themselves. **Edit-in-place is the
-   remaining piece.**
+   ones are config, open ones populate themselves.
 10. **Cutover** — see below.
 11. **Siri Shortcut** in its own Apps Script project — not a second deployment
     of this one. See Security: anonymous access is per project, and it blanks the

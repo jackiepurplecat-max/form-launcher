@@ -382,22 +382,9 @@ function initializeEntry(section, sheet, row, source) {
   const receiptState = receiptStateFor(section, sheet, cols, row);
   writeCell(sheet, cols, row, COMMON.receiptState, receiptState);
 
-  // Name each document, then let applyFileState move it to the state folder.
-  const renames = [];
-  section.fileColumns.forEach(fileCol => {
-    const fileId = extractFileId(readCell(sheet, cols, row, fileCol.header));
-    if (!fileId) return;
-    try {
-      const file = DriveApp.getFileById(fileId);
-      const ext = splitExtension(file.getName()).ext;
-      file.setName(`${buildBaseFilename(sheet, cols, row, fileCol)}${ext}`);
-      renames.push({ column: fileCol.header, ok: true, name: file.getName() });
-    } catch (error) {
-      renames.push({ column: fileCol.header, ok: false, error: error.toString() });
-    }
-  });
-
-  const files = applyFileState(section, sheet, cols, row, 0);
+  const documents = nameAndFileDocuments(section, sheet, cols, row, 0);
+  const renames = documents.renames;
+  const files = documents.files;
   const warnings = missingFields(section, sheet, cols, row);
   const registry = learnCounterparty(section, sheet, cols, row);
   const email = sendCreationEmail(section, sheet, cols, row, warnings);
@@ -421,6 +408,33 @@ function initializeEntry(section, sheet, row, source) {
     email: email,
     completionRequest: completion
   };
+}
+
+/**
+ * Give every document its name from the row, then file it for a given state.
+ *
+ * The base name is rebuilt from the row's CURRENT values, so this is also what
+ * makes an edit correct: change the date, the counterparty or the amount and
+ * the filenames follow. applyFileState then appends the state suffix chain and
+ * moves the file, so the whole naming rule lives in one place whether the row
+ * was just created, just edited, or just changed state.
+ */
+function nameAndFileDocuments(section, sheet, cols, row, targetIndex) {
+  const renames = [];
+  section.fileColumns.forEach(fileCol => {
+    const fileId = extractFileId(readCell(sheet, cols, row, fileCol.header));
+    if (!fileId) return;
+    try {
+      const file = DriveApp.getFileById(fileId);
+      const ext = splitExtension(file.getName()).ext;
+      file.setName(`${buildBaseFilename(sheet, cols, row, fileCol)}${ext}`);
+      renames.push({ column: fileCol.header, ok: true, name: file.getName() });
+    } catch (error) {
+      renames.push({ column: fileCol.header, ok: false, error: error.toString() });
+    }
+  });
+
+  return { renames: renames, files: applyFileState(section, sheet, cols, row, targetIndex) };
 }
 
 /* ================================= Intake ================================= */

@@ -260,6 +260,55 @@ function uiStoreUpload(section, upload) {
   return sectionFolder(section, INBOX_FOLDER).createFile(blob);
 }
 
+/* ============================= Validation ================================= */
+
+/**
+ * Check a submitted set of values against a field list, and throw on the first
+ * problem with the field named.
+ *
+ * Shared by creating and editing on purpose. The plan's rule is that editing is
+ * not a special mode — an edited row must never be able to be less valid than a
+ * created one — and the only way to guarantee that is for both to run the same
+ * function rather than two that look alike today.
+ */
+function validateSubmitted(section, submitted, fields) {
+  const writable = fields.filter(f => f.type !== 'file').map(f => f.header);
+  const fileHeaders = section.fileColumns.map(col => col.header);
+
+  Object.keys(submitted).forEach(header => {
+    if (fileHeaders.indexOf(header) !== -1) {
+      throw new Error(`"${header}" is a document and cannot be set directly`);
+    }
+    if (writable.indexOf(header) === -1) {
+      throw new Error(`"${header}" is not a field of ${section.sheet}`);
+    }
+  });
+
+  // Dates are checked here rather than left to the sheet, so a typo is refused
+  // with the field named instead of landing as text in a date column.
+  fields.filter(field => field.type === 'date').forEach(field => {
+    const value = (submitted[field.header] || '').toString().trim();
+    if (value && !isValidDateISO(value)) {
+      throw new Error(`${field.label} must be a valid yyyy-MM-dd date`);
+    }
+  });
+
+  // A closed list is only closed if the server says so. The page renders a
+  // dropdown, but google.script.run does not have to go through the page - and
+  // the whole point of Patient being a list is that one misspelling would
+  // silently become a second patient, splitting that person's claims in two.
+  fields
+    .filter(field => field.type === 'choice' && field.options && field.options.length)
+    .forEach(field => {
+      const value = (submitted[field.header] || '').toString().trim();
+      if (value && field.options.indexOf(value) === -1) {
+        throw new Error(
+          `${field.label} must be one of: ${field.options.join(', ')} — got "${value}"`
+        );
+      }
+    });
+}
+
 /* ============================== Create ==================================== */
 
 /**
@@ -277,41 +326,7 @@ function uiCreateEntry(sectionKey, payload) {
   const submitted = (payload && payload.values) || {};
   const uploads = (payload && payload.files) || [];
 
-  const writable = uiWritableHeaders(section);
-  const fileHeaders = section.fileColumns.map(col => col.header);
-
-  Object.keys(submitted).forEach(header => {
-    if (fileHeaders.indexOf(header) !== -1) {
-      throw new Error(`"${header}" is a document and cannot be set directly`);
-    }
-    if (writable.indexOf(header) === -1) {
-      throw new Error(`"${header}" is not a field of ${section.sheet}`);
-    }
-  });
-
-  // Dates are validated here rather than being left to the sheet, so a typo is
-  // refused with the field named instead of landing as text in a date column.
-  uiFormFields(section).filter(field => field.type === 'date').forEach(field => {
-    const value = (submitted[field.header] || '').toString().trim();
-    if (value && !isValidDateISO(value)) {
-      throw new Error(`${field.label} must be a valid yyyy-MM-dd date`);
-    }
-  });
-
-  // A closed list is only closed if the server says so. The page renders a
-  // dropdown, but google.script.run does not have to go through the page - and
-  // the whole point of Patient being a list is that one misspelling would
-  // silently become a second patient, splitting that person's claims in two.
-  uiFormFields(section)
-    .filter(field => field.type === 'choice' && field.options && field.options.length)
-    .forEach(field => {
-      const value = (submitted[field.header] || '').toString().trim();
-      if (value && field.options.indexOf(value) === -1) {
-        throw new Error(
-          `${field.label} must be one of: ${field.options.join(', ')} — got "${value}"`
-        );
-      }
-    });
+  validateSubmitted(section, submitted, uiFormFields(section));
 
   const values = {};
   Object.keys(submitted).forEach(header => {
