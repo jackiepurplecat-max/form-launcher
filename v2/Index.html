@@ -704,6 +704,11 @@
       el('formTitle').textContent = 'New — ' + app.meta.label;
       el('formNote').className = '';
       el('formSaveAnyway').style.display = 'none';
+      // Reset here rather than after a save. A successful save closes the form,
+      // so resetting on the way out of saveForm() would have to be repeated on
+      // every exit path - and the one it was missing from was the successful
+      // one, which left the next form opening with the button reading "Saving…".
+      el('formSave').textContent = 'Save';
       el('formFields').innerHTML = app.meta.form.map(fieldHtml).join('');
       el('formOverlay').className = 'open';
 
