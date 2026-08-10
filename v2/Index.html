@@ -179,10 +179,10 @@
       padding: 0 .2rem; font-size: .75rem; text-decoration: underline; }
     #formCard .actions { margin-top: 1.1rem; }
     #formCard .actions .secondary {
-      display: flex; justify-content: space-between; align-items: center; margin-top: .6rem;
+      display: flex; justify-content: center; margin-top: .6rem;
     }
     #formNote { font-size: .8rem; margin-bottom: .8rem; display: none; }
-    #formNote.show { display: block; color: var(--err); background: var(--err-bg);
+    #formNote.show { display: block; color: var(--warn); background: var(--warn-bg);
       border-radius: 8px; padding: .5rem .6rem; }
 
     #toast {
@@ -246,12 +246,12 @@
       <div id="formNote"></div>
       <div id="formFields"></div>
       <div class="actions">
+        <!-- One control. After a warning this button relabels itself to
+             "Save incomplete", so what pressing it will do is written on it -
+             rather than a second, link-styled button that reads as a caption. -->
         <button class="primary" id="formSave" type="button">Save</button>
         <div class="secondary">
           <button class="link" id="formCancel" type="button">Cancel</button>
-          <button class="link" id="formSaveAnyway" type="button" style="display:none">
-            Save incomplete anyway
-          </button>
         </div>
       </div>
     </div>
@@ -703,7 +703,6 @@
 
       el('formTitle').textContent = 'New — ' + app.meta.label;
       el('formNote').className = '';
-      el('formSaveAnyway').style.display = 'none';
       // Reset here rather than after a save. A successful save closes the form,
       // so resetting on the way out of saveForm() would have to be repeated on
       // every exit path - and the one it was missing from was the successful
@@ -923,8 +922,11 @@
         });
         el('formNote').className = 'show';
         el('formNote').textContent = 'Still needed: ' +
-          missing.map(function (f) { return f.label; }).join(', ');
-        el('formSaveAnyway').style.display = '';
+          missing.map(function (f) { return f.label; }).join(', ') +
+          '. Press again to save it incomplete.';
+        // The button now says what pressing it does. Fill the fields in and it
+        // saves a complete entry regardless - this is a relabel, not a mode.
+        el('formSave').textContent = 'Save incomplete';
         app.form.saveAnyway = true;
         return;
       }
@@ -963,7 +965,7 @@
       if (target.parentNode === el('tabs')) return select(target.dataset.key);
       if (target.id === 'refresh') return load();
       if (target.id === 'newEntry') return openForm();
-      if (target.id === 'formSave' || target.id === 'formSaveAnyway') return saveForm();
+      if (target.id === 'formSave') return saveForm();
       if (target.id === 'formCancel') return closeForm();
       if (target.dataset.useName) return useSuggestedName(target.dataset.useName);
       if (target.dataset.copy !== undefined) return copyValue(target.dataset.copy);
