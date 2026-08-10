@@ -181,6 +181,31 @@
     #formCard .actions .secondary {
       display: flex; justify-content: center; margin-top: .6rem;
     }
+    #confirmOverlay {
+      position: fixed; inset: 0; background: rgba(20, 22, 26, .45);
+      display: none; align-items: center; justify-content: center; padding: 1rem; z-index: 30;
+    }
+    #confirmOverlay.open { display: flex; }
+    #confirmCard { background: var(--card); border-radius: 16px; padding: 1.25rem;
+      width: 100%; max-width: 22rem; text-align: center; }
+    #confirmCard h2 { margin: 0 0 .5rem; font-size: 1.05rem; }
+    #confirmCard p { margin: 0 0 1rem; font-size: .87rem; color: var(--muted); }
+    #confirmCard .extra { margin-top: .75rem; }
+    #confirmCard button.primary.destructive {
+      background: var(--err); border-color: var(--err);
+    }
+
+    /* Archive view: same table, visibly not the live one. */
+    body.archive #tableCard { border-color: var(--warn); }
+    #archiveBar { display: none; align-items: center; gap: .6rem; margin-bottom: 1rem;
+      padding: .55rem .8rem; border-radius: 10px;
+      background: var(--warn-bg); color: var(--warn); font-size: .85rem; }
+    body.archive #archiveBar { display: flex; }
+    #archiveBar .grow { margin-left: auto; }
+    td.rowActions { white-space: nowrap; }
+    td.rowActions button { font-size: .78rem; padding: .25rem .5rem; }
+    button.danger { color: var(--err); border-color: var(--err); }
+
     #formNote { font-size: .8rem; margin-bottom: .8rem; display: none; }
     #formNote.show { display: block; color: var(--warn); background: var(--warn-bg);
       border-radius: 8px; padding: .5rem .6rem; }
@@ -203,6 +228,7 @@
     <h1>HelpfulForms</h1>
     <span class="who" id="who"></span>
     <button id="newEntry" type="button">New</button>
+    <button id="showArchive" type="button">Archive</button>
     <button id="refresh" type="button">Refresh</button>
   </header>
 
@@ -213,6 +239,12 @@
       <h2>For the claim form</h2>
       <div class="items" id="referenceItems"></div>
     </section>
+
+    <div id="archiveBar">
+      <span id="archiveCount"></span>
+      <span class="grow"></span>
+      <button id="archiveBack" type="button">Back to entries</button>
+    </div>
 
     <div id="filters"></div>
 
@@ -257,6 +289,17 @@
     </div>
   </div>
 
+  <!-- Confirmations are reserved for the two actions that are not freely
+       reversible. Status changes deliberately have none. -->
+  <div id="confirmOverlay">
+    <div id="confirmCard" role="dialog" aria-modal="true">
+      <h2 id="confirmTitle"></h2>
+      <p id="confirmBody"></p>
+      <button class="primary" id="confirmOk" type="button"></button>
+      <div class="extra"><button class="link" id="confirmCancel" type="button">Cancel</button></div>
+    </div>
+  </div>
+
   <div id="toast"></div>
 
   <script>
@@ -270,7 +313,9 @@
       rows: [],           // rows as the server last reported them
       filters: { status: '', category: '' },
       dialog: null,       // what the open dialog will do when accepted
-      form: null          // non-null while the new-entry form is open
+      form: null,         // non-null while the new-entry form is open
+      archive: false,     // showing the archive rather than the live entries
+      confirm: null       // what the open confirmation will do when accepted
     };
 
     var el = function (id) { return document.getElementById(id); };
@@ -357,6 +402,7 @@
     function select(key) {
       // A form left open would still be showing the previous section's fields.
       if (app.form) closeForm();
+      if (app.confirm) closeConfirm();
       app.current = key;
       app.meta = null;
       app.rows = [];
@@ -373,19 +419,36 @@
 
     function load() {
       var key = app.current;
+      var archive = app.archive;
       showState('loading', 'Loading…');
-      call('uiListEntries', key).then(function (data) {
-        if (app.current !== key) return;  // a tab changed while this was in flight
-        app.today = data.today;
+      document.body.className = archive ? 'archive' : '';
+
+      call(archive ? 'uiListArchive' : 'uiListEntries', key).then(function (data) {
+        // A tab or view changed while this was in flight
+        if (app.current !== key || app.archive !== archive) return;
+        if (data.today) app.today = data.today;
         app.meta = data.meta;
         app.rows = data.rows;
         renderReference();
         renderFilters();
         renderTable();
+        if (archive) {
+          el('archiveCount').textContent = data.rows.length
+            ? data.rows.length + (data.rows.length === 1 ? ' archived entry' : ' archived entries') +
+              ' — deleted rows land here, and nothing is removed until you say so'
+            : 'Nothing archived in ' + app.meta.label;
+        }
       }).catch(function (error) {
-        if (app.current !== key) return;
+        if (app.current !== key || app.archive !== archive) return;
         showState('error', message(error));
       });
+    }
+
+    function setArchive(on) {
+      app.archive = on;
+      el('showArchive').textContent = on ? 'Entries' : 'Archive';
+      el('newEntry').style.display = on ? 'none' : '';
+      load();
     }
 
     /* ------------------------------ reference ----------------------------- */
@@ -493,7 +556,8 @@
         if (state.dateColumn) head += '<th>' + escapeHtml(state.dateColumn) + '</th>';
       });
       if (app.meta.files.length) head += '<th>Documents</th>';
-      head += '</tr>';
+      if (app.archive) head += '<th>Archived</th>';
+      head += '<th></th></tr>';
 
       el('table').innerHTML = head + rows.map(rowHtml).join('');
       showState('rows');
@@ -510,6 +574,33 @@
         var text = column.type === 'date' ? dayLabelOrRaw(value) : value;
         return '<td' + cls + '>' + escapeHtml(text) + '</td>';
       }).join('');
+
+      // An archived row has no transitions, so its status is a fact rather than
+      // a control. Offering a selector that cannot do anything would be worse
+      // than showing none.
+      if (app.archive) {
+        cells += '<td>' + escapeHtml(row.status || '') + '</td>';
+        app.meta.states.forEach(function (state) {
+          if (!state.dateColumn) return;
+          var iso = row.dates[state.dateColumn] || '';
+          cells += '<td>' + (iso ? escapeHtml(dayLabel(iso)) : '—') + '</td>';
+        });
+        if (app.meta.files.length) {
+          cells += '<td class="docs">' + (row.files.length
+            ? row.files.map(function (file) {
+                return '<a href="' + escapeHtml(file.url) + '" target="_blank" rel="noopener">' +
+                  escapeHtml(file.label) + '</a>';
+              }).join('')
+            : '<span class="none">—</span>') + '</td>';
+        }
+        cells += '<td>' + escapeHtml(row.archivedAt ? dayLabel(row.archivedAt) : '') +
+          (row.reason ? ' <span class="chip">' + escapeHtml(row.reason) + '</span>' : '') + '</td>';
+        cells += '<td class="rowActions">' +
+          '<button type="button" data-restore="' + row.row + '">Restore</button> ' +
+          '<button type="button" class="danger" data-purge="' + row.row + '">Delete forever</button>' +
+          '</td>';
+        return '<tr data-row="' + row.row + '">' + cells + '</tr>';
+      }
 
       // The status selector, not Done/Undo: three states cannot be a two-way
       // toggle, and going back is just picking an earlier one.
@@ -551,6 +642,9 @@
           : '<span class="none' + (row.receiptState === 'awaiting' ? ' awaiting' : '') + '">' +
             escapeHtml(row.receiptState || 'none') + '</span>') + '</td>';
       }
+
+      cells += '<td class="rowActions">' +
+        '<button type="button" data-delete="' + row.row + '">Delete</button></td>';
 
       return '<tr data-row="' + row.row + '">' + cells + '</tr>';
     }
@@ -685,6 +779,122 @@
           setBusy(rowNumber, false);
           toast(message(error), 'error');
         });
+    }
+
+    /* --------------------- archive, restore, destroy ---------------------- */
+
+    /**
+     * Confirmations exist here and nowhere else.
+     *
+     * Status changes have none, deliberately — every one is reversible, and a
+     * confirmation on a frequent action only trains you to tap through it.
+     * These two are the exceptions: deleting is reversible but not obviously
+     * so, and Delete forever is not reversible at all.
+     */
+    function openConfirm(spec) {
+      app.confirm = spec;
+      el('confirmTitle').textContent = spec.title;
+      el('confirmBody').textContent = spec.body;
+      el('confirmOk').textContent = spec.okLabel;
+      el('confirmOk').className = 'primary' + (spec.destructive ? ' destructive' : '');
+      el('confirmOverlay').className = 'open';
+    }
+
+    function closeConfirm() {
+      app.confirm = null;
+      el('confirmOverlay').className = '';
+    }
+
+    function acceptConfirm() {
+      var spec = app.confirm;
+      if (!spec) return;
+      closeConfirm();
+      spec.apply();
+    }
+
+    function deleteEntry(rowNumber) {
+      var row = findRow(rowNumber);
+      if (!row) return;
+      var who = row.cells[app.meta.counterpartyLabel] || row.cells['Counterparty'] || 'this entry';
+
+      openConfirm({
+        title: 'Delete this entry?',
+        body: who + ' moves to the archive, and its documents to the Archived folder. ' +
+          'Nothing is removed — you can restore it, or delete it for good from there.',
+        okLabel: 'Delete',
+        destructive: false,
+        apply: function () {
+          setBusy(rowNumber, true);
+          call('uiArchiveEntry', app.current, rowNumber)
+            .then(function (result) {
+              load();
+              if (result.fileErrors && result.fileErrors.length) {
+                toast('Archived, but a document could not be moved:\n' +
+                  result.fileErrors.map(function (f) {
+                    return f.column + ': ' + (f.error || 'unknown error');
+                  }).join('\n'), 'warn');
+              } else {
+                toast('Moved to the archive');
+              }
+            })
+            .catch(function (error) {
+              setBusy(rowNumber, false);
+              toast(message(error), 'error');
+            });
+        }
+      });
+    }
+
+    function restoreRow(rowNumber) {
+      setBusy(rowNumber, true);
+      call('uiRestoreEntry', app.current, rowNumber)
+        .then(function (result) {
+          load();
+          if (result.fileErrors && result.fileErrors.length) {
+            toast('Restored, but a document could not be re-filed:\n' +
+              result.fileErrors.map(function (f) {
+                return f.column + ': ' + (f.error || 'unknown error');
+              }).join('\n'), 'warn');
+          } else {
+            toast('Restored');
+          }
+        })
+        .catch(function (error) {
+          setBusy(rowNumber, false);
+          toast(message(error), 'error');
+        });
+    }
+
+    function purgeEntry(rowNumber) {
+      var row = findRow(rowNumber);
+      var who = row ? (row.cells['Counterparty'] || 'this entry') : 'this entry';
+
+      openConfirm({
+        title: 'Delete forever?',
+        body: who + ' and its documents are removed. Documents go to Drive\'s trash, ' +
+          'where they last 30 days; the row itself cannot be recovered.',
+        okLabel: 'Delete forever',
+        destructive: true,
+        apply: function () {
+          setBusy(rowNumber, true);
+          call('uiHardDeleteEntry', app.current, rowNumber)
+            .then(function (result) {
+              load();
+              if (result.fileErrors && result.fileErrors.length) {
+                toast('Row deleted, but a document could not be trashed:\n' +
+                  result.fileErrors.map(function (f) {
+                    return f.column + ': ' + (f.error || 'unknown error');
+                  }).join('\n'), 'warn');
+              } else {
+                toast('Deleted');
+              }
+            })
+            .catch(function (error) {
+              setBusy(rowNumber, false);
+              toast(message(error), 'error');
+            });
+        }
+      });
     }
 
     function copyValue(value) {
@@ -987,6 +1197,13 @@
       if (target.parentNode === el('tabs')) return select(target.dataset.key);
       if (target.id === 'refresh') return load();
       if (target.id === 'newEntry') return openForm();
+      if (target.id === 'showArchive') return setArchive(!app.archive);
+      if (target.id === 'archiveBack') return setArchive(false);
+      if (target.dataset.delete) return deleteEntry(Number(target.dataset.delete));
+      if (target.dataset.restore) return restoreRow(Number(target.dataset.restore));
+      if (target.dataset.purge) return purgeEntry(Number(target.dataset.purge));
+      if (target.id === 'confirmOk') return acceptConfirm();
+      if (target.id === 'confirmCancel') return closeConfirm();
       if (target.id === 'formSave') return saveForm();
       if (target.id === 'formCancel') return closeForm();
       if (target.dataset.useName) return useSuggestedName(target.dataset.useName);
@@ -1017,7 +1234,15 @@
       }
     });
 
+    el('confirmOverlay').addEventListener('click', function (event) {
+      if (event.target === el('confirmOverlay')) closeConfirm();
+    });
+
     document.addEventListener('keydown', function (event) {
+      if (app.confirm) {
+        if (event.key === 'Escape') { event.preventDefault(); closeConfirm(); }
+        return;
+      }
       if (app.form) {
         if (event.key === 'Escape' && !app.form.busy) {
           // preventDefault for the same reason as the date dialog: without it

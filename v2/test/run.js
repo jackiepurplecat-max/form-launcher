@@ -17,7 +17,7 @@ const path = require('path');
 
 const mocks = require('./mocks.js');
 const DIR = path.join(__dirname, '..');
-const FILES = ['Config.js', 'Core.js', 'Entries.js', 'Registry.js', 'Setup.js', 'Smoke.js', 'Web.js', 'Form.js'];
+const FILES = ['Config.js', 'Core.js', 'Entries.js', 'Registry.js', 'Setup.js', 'Smoke.js', 'Web.js', 'Form.js', 'Manage.js'];
 
 const sandbox = Object.assign({ console }, mocks);
 sandbox.globalThis = sandbox;
@@ -1175,15 +1175,151 @@ check('stored escaped, never evaluated',
     .getValue().toString().indexOf("'=") === 0,
   mocks._ss.getSheetByName('Work').getRange(injected.row, wcols['Counterparty']).getValue());
 
+/* ====================== step 9: archive and deletion ====================== */
+/*
+ * Deleting removes nothing. The safeguard on permanent deletion is structural -
+ * hardDeleteEntry() cannot see the live sheet - so most of what is worth
+ * testing is that the structure holds, not that a dialog appeared.
+ */
+section('bootstrap() creates an archive sheet per section');
+['Work', 'IVA', 'Health', 'Income'].forEach(name => {
+  check(`${name} Archive exists`, !!mocks._ss.getSheetByName(name + ' Archive'));
+});
+check('its headers are the section spine plus the archive columns',
+  G.archiveHeaders(G.getSection('income')).slice(-2).join() === 'Archived,Archive Reason',
+  G.archiveHeaders(G.getSection('income')));
+check('generated from the same sectionHeaders(), so the pair cannot drift',
+  G.archiveHeaders(G.getSection('health')).slice(0, -2).join() ===
+  G.sectionHeaders(G.getSection('health')).join());
+check('archive sheets are not reported as unrecognised tabs',
+  G.bootstrap().unrecognisedSheets.every(name => !/Archive$/.test(name)),
+  G.bootstrap().unrecognisedSheets);
+
+section('delete archives the row rather than removing it');
+const toArchive = G.uiCreateEntry('work', {
+  values: { 'Date': '2026-10-01', 'Counterparty': 'Doomed Ltd', 'Expense Reason': 'gone',
+            'Amount': 8, 'Notes': 'archive me' },
+  files: [{ header: 'Receipt URL', name: 'doomed.pdf', mimeType: 'application/pdf', data: b64 }]
+});
+const doomedFile = mocks.DriveApp.getFileById(G.extractFileId(
+  mocks._ss.getSheetByName('Work').getRange(toArchive.row, wcols['Receipt URL']).getValue()));
+const liveRowsBefore = G.uiListEntries('work').rows.length;
+
+const archived = G.uiArchiveEntry('work', toArchive.row);
+check('reported ok', archived.ok === true, archived);
+check('gone from the live table', G.uiListEntries('work').rows.length === liveRowsBefore - 1);
+check('and no live row still carries it',
+  !G.uiListEntries('work').rows.some(r => r.cells['Counterparty'] === 'Doomed Ltd'));
+check('the document moved to Archived, not to the trash',
+  doomedFile.parent.getName() === 'Archived' && !doomedFile.isTrashed(),
+  [doomedFile.parent.getName(), doomedFile.isTrashed()]);
+
+const archiveList = G.uiListArchive('work');
+const archivedRow = archiveList.rows.filter(r => r.cells['Counterparty'] === 'Doomed Ltd')[0];
+check('it is in the archive', !!archivedRow, archiveList.rows.map(r => r.cells['Counterparty']));
+check('with every field carried across',
+  archivedRow.cells['Amount'] === 8 && archivedRow.cells['Notes'] === 'archive me',
+  archivedRow.cells);
+check('stamped with when, and why', !!archivedRow.archivedAt && archivedRow.reason === 'deleted',
+  [archivedRow.archivedAt, archivedRow.reason]);
+check('offering no status transitions, because there are none',
+  archivedRow.options.length === 0, archivedRow.options);
+
+section('restore puts it back, and re-files the document');
+const restored = G.uiRestoreEntry('work', archivedRow.row);
+check('reported ok', restored.ok === true, restored);
+check('back in the live table',
+  G.uiListEntries('work').rows.some(r => r.cells['Counterparty'] === 'Doomed Ltd'));
+check('and out of the archive',
+  !G.uiListArchive('work').rows.some(r => r.cells['Counterparty'] === 'Doomed Ltd'),
+  G.uiListArchive('work').rows.map(r => r.cells['Counterparty']));
+// Re-filed by applyFileState rather than moved back to where it came from, so
+// the folder and the suffix chain are both rebuilt from the row's own dates.
+check('the document is filed by its status again, not left in Archived',
+  doomedFile.parent.getName() === 'Inbox', doomedFile.parent.getName());
+check('nothing was lost on the way round',
+  restored.entry.cells['Notes'] === 'archive me' && restored.entry.cells['Amount'] === 8,
+  restored.entry.cells);
+
+section('hard delete reaches the archive and nothing else');
+const toDestroy = G.uiCreateEntry('work', {
+  values: { 'Date': '2026-10-02', 'Counterparty': 'Really Doomed', 'Expense Reason': 'x', 'Amount': 3 },
+  files: [{ header: 'Receipt URL', name: 'rd.pdf', mimeType: 'application/pdf', data: b64 }]
+});
+const destroyFile = mocks.DriveApp.getFileById(G.extractFileId(
+  mocks._ss.getSheetByName('Work').getRange(toDestroy.row, wcols['Receipt URL']).getValue()));
+G.uiArchiveEntry('work', toDestroy.row);
+const destroyRow = G.uiListArchive('work')
+  .rows.filter(r => r.cells['Counterparty'] === 'Really Doomed')[0];
+
+const destroyed = G.uiHardDeleteEntry('work', destroyRow.row);
+check('reported ok', destroyed.ok === true, destroyed);
+check('gone from the archive too',
+  !G.uiListArchive('work').rows.some(r => r.cells['Counterparty'] === 'Really Doomed'));
+// Trashed, not purged: 30 days in Drive's trash is the difference between a
+// mistake and a loss.
+check('the document is in Drive\'s trash, not obliterated',
+  destroyFile.isTrashed() === true && destroyed.filesTrashed === 1, destroyed);
+
+/*
+ * The safeguard that matters. Live data cannot be destroyed in one action
+ * because the function that destroys things operates on the archive sheet -
+ * a row number that means something live is simply a different row there.
+ */
+section('hard delete cannot reach a live row');
+const liveTarget = G.uiListEntries('work').rows[0];
+const liveCounterparty = liveTarget.cells['Counterparty'];
+const archiveHeight = mocks._ss.getSheetByName('Work Archive').getLastRow();
+let reachedLive = null;
+try { G.uiHardDeleteEntry('work', liveTarget.row); } catch (e) { reachedLive = e.message; }
+check('the live row is untouched whatever happened',
+  G.uiListEntries('work').rows.some(r => r.cells['Counterparty'] === liveCounterparty),
+  liveCounterparty);
+check('because the row number was resolved against the archive, not the section',
+  mocks._ss.getSheetByName('Work Archive').getLastRow() <= archiveHeight || !!reachedLive);
+
+section('management functions check the caller');
+mocks.Session._setActiveUser('someone.else@example.test');
+[
+  ['uiArchiveEntry', ['work', 2]],
+  ['uiRestoreEntry', ['work', 2]],
+  ['uiHardDeleteEntry', ['work', 2]],
+  ['uiListArchive', ['work']]
+].forEach(([name, args]) => {
+  let refused = null;
+  try { G[name].apply(null, args); } catch (e) { refused = e.message; }
+  check(`${name} is gated`, /Not authorized/.test(refused || ''), refused);
+});
+mocks.Session._setActiveUser(mocks.Session._owner);
+
+// Income has no documents at all, so archiving must not go looking for a folder.
+section('archiving a section with no documents asks Drive for nothing');
+const incomeToGo = G.uiCreateEntry('income', {
+  values: { 'Date': '2026-10-03', 'Counterparty': 'Client X', 'Amount': 500 }
+});
+const incomeArchived = G.uiArchiveEntry('income', incomeToGo.row);
+check('archived cleanly', incomeArchived.ok === true && incomeArchived.files.length === 0,
+  incomeArchived);
+check('and it is in the Income archive',
+  G.uiListArchive('income').rows.some(r => r.cells['Counterparty'] === 'Client X'));
+
 /*
  * The page reaches the server by name through google.script.run, so a renamed
  * function fails at the tap rather than at build time. Nothing else in this
  * harness would notice - it exercises the server directly.
  */
 section('every function the page calls exists, and is gated');
+/*
+ * Matched on any 'uiXxx' STRING LITERAL rather than on `call('uiXxx'`, because
+ * the narrower pattern silently stopped covering things. The page now picks its
+ * list function with `call(archive ? 'uiListArchive' : 'uiListEntries', key)`,
+ * which matched neither - so both names dropped out of this test without a
+ * single failure to say so. A test that quietly covers less than it claims is
+ * worse than no test, so this one errs towards catching too much.
+ */
 const pageSource = G.doGet().getContent();
 const calledNames = [];
-pageSource.replace(/call\('([A-Za-z0-9_]+)'/g, (whole, name) => {
+pageSource.replace(/'(ui[A-Z][A-Za-z0-9_]*)'/g, (whole, name) => {
   if (calledNames.indexOf(name) === -1) calledNames.push(name);
   return whole;
 });

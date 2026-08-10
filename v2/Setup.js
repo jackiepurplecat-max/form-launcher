@@ -198,12 +198,24 @@ function bootstrap() {
       );
     }
 
+    // The archive: same spine plus its own two columns, generated from the same
+    // sectionHeaders() so the pair cannot drift. Deleting a row moves it here,
+    // so it has to exist before anything can be deleted.
+    const archiveName = archiveSheetName(section);
+    let archive = ss.getSheetByName(archiveName);
+    const archiveIsNew = !archive;
+    if (archiveIsNew) archive = ss.insertSheet(archiveName);
+    const archiveHeaderResult = applyHeaders(archive, archiveHeaders(section));
+
     report.sections[key] = {
       sheet: section.sheet,
       sheetCreated: isNew,
       headersWritten: headers.created,
       headersAdded: headers.added,
-      unrecognisedColumns: headers.extra
+      unrecognisedColumns: headers.extra,
+      archiveSheet: archiveName,
+      archiveCreated: archiveIsNew,
+      archiveHeadersAdded: archiveHeaderResult.added
     };
   });
 
@@ -231,7 +243,10 @@ function bootstrap() {
   // English name only would silently miss it, so report any tab that is not one
   // this code knows about. Reported rather than removed, in case it is the one
   // holding your notes.
-  const known = Object.keys(SECTIONS).map(key => SECTIONS[key].sheet).concat([REGISTRY_SHEET]);
+  const known = Object.keys(SECTIONS)
+    .map(key => SECTIONS[key].sheet)
+    .concat(Object.keys(SECTIONS).map(key => archiveSheetName(SECTIONS[key])))
+    .concat([REGISTRY_SHEET]);
   const leftover = ss.getSheets()
     .map(sheet => sheet.getName())
     .filter(name => known.indexOf(name) === -1);
