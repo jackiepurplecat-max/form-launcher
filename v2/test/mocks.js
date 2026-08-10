@@ -39,7 +39,12 @@ const Utilities = {
     if (!map[fmt]) throw new Error('unhandled format ' + fmt);
     return map[fmt];
   },
-  newBlob(content, type, name) { return { content, type, name }; }
+  newBlob(content, type, name) { return { content, type, name }; },
+  // The harness never needs the real bytes - what it checks is that an upload
+  // reaches Drive with the right name, extension and folder - so this is
+  // deliberately an identity. Anything asserting on decoded content would be
+  // asserting on this stand-in rather than on v2.
+  base64Decode(data) { return String(data); }
 };
 
 /* ------------------------------- Sheets ---------------------------------- */
@@ -137,6 +142,13 @@ class DFolder {
   getId() { return this.id; }
   getUrl() { return 'https://drive.test/' + this.id; }
   createFolder(n) { const f = new DFolder(n); this.children.push(f); _folders[f.id] = f; return f; }
+  // How the form's uploads arrive: straight into a folder, rather than into
+  // Drive's root followed by a move.
+  createFile(blob) {
+    const f = new DFile(blob && blob.name ? blob.name : 'untitled', this);
+    _files[f.id] = f;
+    return f;
+  }
   getFoldersByName(n) {
     const hits = this.children.filter(c => c instanceof DFolder && c.name === n);
     let i = 0;

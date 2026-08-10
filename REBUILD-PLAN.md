@@ -14,10 +14,9 @@ every state and back, filenames and folders confirmed at each step, then
 **The web UI is live.** `v2/Web.js` and `v2/Index.html` are step 7: listing, the
 status control and the date dialog, served as one page. Pushed, deployed,
 authorised for the added `userinfo.email` scope, and driven by hand in a browser.
-`npm run v2:test` covers the server side — 284 assertions now, up from 161 —
-including the access check from both sides, the generated table columns, the
-dialog's Today-versus-Keep wording and a status change that reports a failed
-rename instead of a tick. What the harness cannot reach is the browser itself:
+`npm run v2:test` covers the server side — the access check from both sides, the
+generated table columns, the dialog's Today-versus-Keep wording and a status
+change that reports a failed rename instead of a tick. What the harness cannot reach is the browser itself:
 the CSS, the tap-to-copy and the iOS date wheel are confirmed by hand.
 
 To redeploy after a change: `npm run v2:push`, **`npm run v2:verify`**, then a
@@ -64,6 +63,50 @@ cd v2 && clasp --user v2 deploy -i <id> -d "what changed"
 Pass `-i <deploymentId>`. **Without it clasp creates a second deployment with a
 different URL** and leaves the old one live, which is how you end up debugging a
 page that no longer exists.
+
+**The custom form is built — step 8, deployed as version 5, not yet used by
+hand.** `v2/Form.js` is its server side and the form view lives in the same
+page. Fields, order, labels, which are required, which offer a list and which
+accept a document are all derived from `SECTIONS`, so adding a field remains a
+config change plus a re-run of `bootstrap()`. `npm run v2:test` is 348
+assertions, up from 284.
+
+What it does that a Google Form could not, which is the whole reason Forms went:
+typing `Worten` fills in its NIF. Below 0.85 confidence nothing is filled — the
+page offers *"Did you mean FNAC?"* as a button instead, because a wrong NIF is a
+rejected claim and a blank field is not.
+
+Four things worth knowing about it:
+
+- **Required-ness is asserted, not asserted-to.** The form's `required` flags and
+  `missingFields()` are generated from the same config and the harness compares
+  them per section. If they ever disagree, every entry made through the form
+  reports itself incomplete and mails a completion request about a field the
+  form never asked for.
+- **Incomplete is allowed, but takes a second tap.** Missing required fields are
+  highlighted with `Save incomplete anyway` offered underneath. Partial entries
+  are the safety net, so refusing them outright would be wrong; making them the
+  path of least resistance would be worse.
+- **Uploads happen before the row, and are trashed if it fails.** A failed
+  upload aborts creation — you are holding the receipt, so being told beats a
+  receipt-less row and an email about a file you already have. A file that lands
+  and is then orphaned by a failed write is exactly the state `checkDocuments()`
+  exists to find, so it is cleaned up rather than left.
+- **An upload with no extension gets one from its MIME type.** Directly the
+  problem behind today's mystery orphan: `splitExtension` carries the extension
+  over from the original name on every rename, so one lost at upload stays lost.
+
+**Income's state dates are form fields**, via `stateDatesInForm` in config — which
+settles the open question about `Invoiced Date` being stamped with today when
+blank. No other section offers its state dates at creation, because `setStatus`
+clears the dates of every state after the target and a `Claimed Date` typed at
+creation would be wiped by the first transition.
+
+**Category values populate themselves for now.** `uiCategoryValues()` returns
+what is already in use, most-used first, and free text is still accepted — the
+registry's approach applied to Patient and Expense Reason. Step 9 adds the
+managed list on top; until then there is no list to maintain before the form
+works, and adding a patient is typing it once.
 
 ### The two URLs, and the accounts problem
 
@@ -176,11 +219,12 @@ for a state the row had not reached (see Settled since).
 | `v2/Registry.js` | Self-populating supplier registry, fuzzy matching, lookup |
 | `v2/Setup.js` | `bootstrap()`, `setupScriptProperties()`, `checkScriptProperties()` |
 | `v2/Smoke.js` | `smokeTest()` / `smokeCleanup()` — the live smoke test, run from the editor |
+| `v2/Form.js` | The form server side: fields from `SECTIONS`, uploads, registry lookup, `uiCreateEntry` |
 | `v2/Web.js` | `doGet`, the access check, `uiBootstrap` / `uiListEntries` / `uiSetStatus` / `uiSetEntryDate` |
 | `v2/Index.html` | The page. No templating — it fetches everything through `google.script.run` |
 | `v2/test/` | The harness, and `verify-push.js`. Local only — `.claspignore` keeps it out of the push |
 
-**Not written yet:** the custom form (step 8), management module (edit / archive
+**Not written yet:** management module (edit / archive
 / hard delete / category lists), Siri endpoint, OCR intake. There is no `doPost`,
 so the only outside surface is the signed-in UI.
 
@@ -915,8 +959,9 @@ Each step should leave the system working.
    filters are still unchecked (see State of play). Nothing can create a row from
    the UI until step 8, so use `smokeTest()` for rows to click on and
    `smokeCleanup()` afterwards.
-8. **Custom form** as a view in the same app: fields rendered from `SECTIONS`,
-   file upload, registry autocomplete and prefill.
+8. **Custom form** — **built and deployed, untested by hand.** `v2/Form.js` and
+   the form view in `v2/Index.html`: fields rendered from `SECTIONS`, file
+   upload, registry autocomplete and prefill. Version 5.
 9. **Management module**: edit, delete-to-archive, hard delete, category lists.
 10. **Cutover** — see below.
 11. **Siri Shortcut** in its own Apps Script project — not a second deployment

@@ -213,6 +213,15 @@ const SECTIONS = {
     // The reason is currently fixed per payer, so let the registry remember it
     // rather than asking every time
     registryTypeField: 'Reason',
+    // Income's three dates are business facts rather than bookkeeping: an
+    // invoice is usually backdated, and money can arrive before the row is
+    // made. So the form asks for them as ordinary fields, as well as the status
+    // control filling them. No other section does this - a new entry is in the
+    // first state, and setStatus clears the dates of every state after the
+    // target, so a Claimed Date typed at creation would be wiped by the first
+    // transition. That is also the answer to the plan's open question about
+    // Invoiced Date being stamped with today when blank: now it can be entered.
+    stateDatesInForm: true,
     states: [
       { name: 'Invoiced', dateColumn: 'Invoiced Date' },
       { name: 'Received', dateColumn: 'Received Date' },
@@ -255,6 +264,14 @@ const ARCHIVE_FOLDER = 'Archived';
  * reintroducing that ambiguity.
  */
 const DECIMAL_IN_FILENAME = '-';
+
+/**
+ * Currency the form starts with, and the one Siri will not ask about.
+ *
+ * A default rather than a fixed value: the column still accepts anything, but
+ * almost every entry is euros and typing it each time is three taps for nothing.
+ */
+const DEFAULT_CURRENCY = 'EUR';
 
 function formatAmountForFilename(amount) {
   // A blank amount must produce nothing, not "0-00". Number('') is 0, so

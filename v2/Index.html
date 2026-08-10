@@ -149,6 +149,42 @@
     #dialog .pick input { flex: 1; }
     #dialog .extra { margin-top: .75rem; display: flex; justify-content: center; gap: 1rem; }
 
+    /* The form. Same overlay treatment as the date dialog, but scrollable and
+       left-aligned, because it is a column of fields rather than one choice. */
+    #formOverlay {
+      position: fixed; inset: 0; background: rgba(20, 22, 26, .45);
+      display: none; align-items: flex-start; justify-content: center;
+      padding: 1rem; z-index: 25; overflow-y: auto;
+    }
+    #formOverlay.open { display: flex; }
+    #formCard {
+      background: var(--card); border-radius: 16px; padding: 1.1rem;
+      width: 100%; max-width: 30rem; margin: auto;
+    }
+    #formCard h2 { margin: 0 0 .9rem; font-size: 1.05rem; }
+    #formCard .field { margin-bottom: .8rem; }
+    #formCard label {
+      display: block; font-size: .78rem; color: var(--muted);
+      margin-bottom: .25rem; font-weight: 600;
+    }
+    #formCard label .req { color: var(--err); margin-left: .15rem; }
+    #formCard input, #formCard select { width: 100%; padding: .55rem .6rem; }
+    #formCard input[type="file"] { padding: .45rem; background: #fbfcfd; }
+    #formCard .field.missing input, #formCard .field.missing select { border-color: var(--err); }
+    /* What the registry thinks, when it is not confident enough to fill it in.
+       Shown rather than applied, because a wrong NIF is worse than a blank. */
+    #formCard .hint { font-size: .75rem; color: var(--muted); margin-top: .25rem; }
+    #formCard .hint.suggest { color: var(--warn); }
+    #formCard .hint button { border: 0; background: none; color: var(--accent);
+      padding: 0 .2rem; font-size: .75rem; text-decoration: underline; }
+    #formCard .actions { margin-top: 1.1rem; }
+    #formCard .actions .secondary {
+      display: flex; justify-content: space-between; align-items: center; margin-top: .6rem;
+    }
+    #formNote { font-size: .8rem; margin-bottom: .8rem; display: none; }
+    #formNote.show { display: block; color: var(--err); background: var(--err-bg);
+      border-radius: 8px; padding: .5rem .6rem; }
+
     #toast {
       position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%);
       max-width: min(30rem, calc(100vw - 2rem));
@@ -166,6 +202,7 @@
   <header>
     <h1>HelpfulForms</h1>
     <span class="who" id="who"></span>
+    <button id="newEntry" type="button">New</button>
     <button id="refresh" type="button">Refresh</button>
   </header>
 
@@ -201,6 +238,25 @@
     </div>
   </div>
 
+  <!-- Built from meta.form, which the server derives from SECTIONS. Nothing
+       section-specific is written here. -->
+  <div id="formOverlay">
+    <div id="formCard" role="dialog" aria-modal="true">
+      <h2 id="formTitle"></h2>
+      <div id="formNote"></div>
+      <div id="formFields"></div>
+      <div class="actions">
+        <button class="primary" id="formSave" type="button">Save</button>
+        <div class="secondary">
+          <button class="link" id="formCancel" type="button">Cancel</button>
+          <button class="link" id="formSaveAnyway" type="button" style="display:none">
+            Save incomplete anyway
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="toast"></div>
 
   <script>
@@ -213,7 +269,8 @@
       meta: null,         // metadata for the current section
       rows: [],           // rows as the server last reported them
       filters: { status: '', category: '' },
-      dialog: null        // what the open dialog will do when accepted
+      dialog: null,       // what the open dialog will do when accepted
+      form: null          // non-null while the new-entry form is open
     };
 
     var el = function (id) { return document.getElementById(id); };
@@ -298,6 +355,8 @@
     }
 
     function select(key) {
+      // A form left open would still be showing the previous section's fields.
+      if (app.form) closeForm();
       app.current = key;
       app.meta = null;
       app.rows = [];
@@ -631,6 +690,265 @@
       document.body.removeChild(field);
     }
 
+    /* -------------------------------- form -------------------------------- */
+
+    /* Mirrors MAX_UPLOAD_BYTES in Form.js, so an oversized file is refused here
+       rather than after a slow upload. The server still enforces it — this is
+       courtesy, not the check. */
+    var MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+    function openForm() {
+      if (!app.meta) return;
+      app.form = { busy: false, saveAnyway: false };
+
+      el('formTitle').textContent = 'New — ' + app.meta.label;
+      el('formNote').className = '';
+      el('formSaveAnyway').style.display = 'none';
+      el('formFields').innerHTML = app.meta.form.map(fieldHtml).join('');
+      el('formOverlay').className = 'open';
+
+      // The values already in use, so a patient or an expense reason is a pick
+      // rather than a retype. Fetched on open because it changes as you enter
+      // entries, unlike the field list itself.
+      if (app.meta.category) {
+        call('uiCategoryValues', app.current).then(function (values) {
+          var list = el('list_' + cssId(app.meta.category.header));
+          if (list) {
+            list.innerHTML = values.map(function (value) {
+              return '<option value="' + escapeHtml(value) + '"></option>';
+            }).join('');
+          }
+        }).catch(function () { /* suggestions are optional; typing still works */ });
+      }
+    }
+
+    function closeForm() {
+      app.form = null;
+      el('formOverlay').className = '';
+      el('formFields').innerHTML = '';
+    }
+
+    /** A DOM-safe id for a header that may contain spaces or accents. */
+    function cssId(header) {
+      return String(header).replace(/[^A-Za-z0-9]/g, '_');
+    }
+
+    function fieldHtml(field) {
+      var id = 'f_' + cssId(field.header);
+      var listId = 'list_' + cssId(field.header);
+      var label = '<label for="' + id + '">' + escapeHtml(field.label) +
+        (field.required ? '<span class="req">*</span>' : '') + '</label>';
+
+      var input;
+      if (field.type === 'file') {
+        input = '<input type="file" id="' + id + '" data-header="' +
+          escapeHtml(field.header) + '">';
+
+      } else if (field.type === 'choice') {
+        input = '<select id="' + id + '" data-header="' + escapeHtml(field.header) + '">' +
+          '<option value=""></option>' +
+          (field.options || []).map(function (option) {
+            return '<option value="' + escapeHtml(option) + '">' + escapeHtml(option) + '</option>';
+          }).join('') + '</select>';
+
+      } else if (field.type === 'date') {
+        // Native, so iOS opens the system wheel — same reason as the date dialog.
+        var value = field.header === 'Date' ? app.today : '';
+        input = '<input type="date" id="' + id + '" data-header="' +
+          escapeHtml(field.header) + '" value="' + escapeHtml(value) + '">';
+
+      } else if (field.type === 'number') {
+        input = '<input type="number" step="0.01" inputmode="decimal" id="' + id +
+          '" data-header="' + escapeHtml(field.header) + '">';
+
+      } else {
+        var suggest = (field.role === 'counterparty' || field.role === 'category');
+        input = '<input type="text" id="' + id + '" data-header="' + escapeHtml(field.header) + '"' +
+          (field.role ? ' data-role="' + escapeHtml(field.role) + '"' : '') +
+          (suggest ? ' list="' + listId + '" autocomplete="off"' : '') +
+          ' value="' + escapeHtml(field.defaultValue || '') + '">' +
+          (suggest ? '<datalist id="' + listId + '"></datalist>' : '');
+      }
+
+      return '<div class="field" data-field="' + escapeHtml(field.header) + '">' + label + input +
+        '<div class="hint" id="hint_' + cssId(field.header) + '"></div></div>';
+    }
+
+    /** The counterparty field, found by role rather than by position. */
+    function counterpartyHeader() {
+      var field = app.meta.form.filter(function (f) { return f.role === 'counterparty'; })[0];
+      return field ? field.header : '';
+    }
+
+    function fieldInput(header) {
+      return el('f_' + cssId(header));
+    }
+
+    /* ------------------------- registry, as you type ----------------------- */
+
+    var suggestTimer = null;
+    function counterpartySuggest(text) {
+      clearTimeout(suggestTimer);
+      suggestTimer = setTimeout(function () {
+        if (!app.form) return;
+        call('uiSuggestCounterparty', text, 8).then(function (matches) {
+          if (!app.form) return;
+          var list = el('list_' + cssId(counterpartyHeader()));
+          if (!list) return;
+          list.innerHTML = matches.map(function (match) {
+            return '<option value="' + escapeHtml(match.name) + '"></option>';
+          }).join('');
+        }).catch(function () { /* suggestions are optional */ });
+      }, 180);
+    }
+
+    /**
+     * Ask the registry what it knows once a name is settled.
+     *
+     * Below the confidence bar nothing is filled in — the suggestion is offered
+     * as a button instead. A wrong NIF means a rejected claim, which is worse
+     * than a blank field, so guessing is not on the table.
+     */
+    function counterpartyLookup(text) {
+      var hint = el('hint_' + cssId(counterpartyHeader()));
+      if (!text || !hint) return;
+
+      call('uiLookupCounterparty', app.current, text).then(function (match) {
+        if (!app.form || !match) { if (hint) hint.textContent = ''; return; }
+
+        if (match.autofill) {
+          var filled = [];
+          Object.keys(match.prefill).forEach(function (header) {
+            var input = fieldInput(header);
+            if (!input || input.value) return;   // never overwrite what you typed
+            input.value = match.prefill[header];
+            filled.push(header);
+          });
+          hint.className = 'hint';
+          hint.textContent = filled.length ? 'Filled ' + filled.join(', ') + ' from the registry' : '';
+        } else {
+          hint.className = 'hint suggest';
+          hint.innerHTML = 'Did you mean <button type="button" data-use-name="' +
+            escapeHtml(match.name) + '">' + escapeHtml(match.name) + '</button>?';
+        }
+      }).catch(function () { /* the registry is an aid, never a blocker */ });
+    }
+
+    function useSuggestedName(name) {
+      var input = fieldInput(counterpartyHeader());
+      if (!input) return;
+      input.value = name;
+      counterpartyLookup(name);
+    }
+
+    /* -------------------------------- saving ------------------------------- */
+
+    function collectValues() {
+      var values = {};
+      app.meta.form.forEach(function (field) {
+        if (field.type === 'file') return;
+        var input = fieldInput(field.header);
+        if (!input) return;
+        var value = input.value;
+        if (value === null || value === undefined || String(value).trim() === '') return;
+        values[field.header] = field.type === 'number' ? Number(value) : String(value).trim();
+      });
+      return values;
+    }
+
+    function missingRequired(values) {
+      return app.meta.form.filter(function (field) {
+        return field.required && field.type !== 'file' &&
+          (values[field.header] === undefined || values[field.header] === '');
+      });
+    }
+
+    /** Read every chosen file as base64, in parallel. */
+    function collectFiles() {
+      var fileFields = app.meta.form.filter(function (field) { return field.type === 'file'; });
+      var reads = [];
+
+      fileFields.forEach(function (field) {
+        var input = fieldInput(field.header);
+        if (!input || !input.files || !input.files.length) return;
+        var file = input.files[0];
+
+        if (file.size > MAX_UPLOAD_BYTES) {
+          reads.push(Promise.reject(new Error(
+            field.label + ': ' + Math.round(file.size / 1024 / 1024) + ' MB is too large (limit ' +
+            Math.round(MAX_UPLOAD_BYTES / 1024 / 1024) + ' MB)')));
+          return;
+        }
+
+        reads.push(new Promise(function (resolve, reject) {
+          var reader = new FileReader();
+          reader.onload = function () {
+            resolve({
+              header: field.header,
+              name: file.name,
+              mimeType: file.type || 'application/octet-stream',
+              data: String(reader.result).split(',')[1] || ''
+            });
+          };
+          reader.onerror = function () { reject(new Error(field.label + ': could not be read')); };
+          reader.readAsDataURL(file);
+        }));
+      });
+
+      return Promise.all(reads);
+    }
+
+    function saveForm() {
+      if (!app.form || app.form.busy) return;
+
+      var values = collectValues();
+      var missing = missingRequired(values);
+
+      Array.prototype.forEach.call(el('formFields').children, function (node) {
+        node.className = 'field';
+      });
+
+      // Not a hard block: an entry you cannot complete yet is still worth having,
+      // and the server writes it and says what is outstanding. But it is not the
+      // normal case, so it takes a second, deliberate tap.
+      if (missing.length && !app.form.saveAnyway) {
+        missing.forEach(function (field) {
+          var node = el('formFields').querySelector('[data-field="' + field.header + '"]');
+          if (node) node.className = 'field missing';
+        });
+        el('formNote').className = 'show';
+        el('formNote').textContent = 'Still needed: ' +
+          missing.map(function (f) { return f.label; }).join(', ');
+        el('formSaveAnyway').style.display = '';
+        app.form.saveAnyway = true;
+        return;
+      }
+
+      app.form.busy = true;
+      el('formSave').textContent = 'Saving…';
+
+      collectFiles()
+        .then(function (files) {
+          return call('uiCreateEntry', app.current, { values: values, files: files });
+        })
+        .then(function (result) {
+          closeForm();
+          load();
+          if (result.ok === false) {
+            toast('Saved, but incomplete — ' + (result.error || 'missing fields') +
+              '\nA completion request has been emailed.', 'warn');
+          } else {
+            toast('Saved');
+          }
+        })
+        .catch(function (error) {
+          if (!app.form) return;
+          app.form.busy = false;
+          el('formSave').textContent = 'Save';
+          toast(message(error), 'error');
+        });
+    }
+
     /* ------------------------------- events ------------------------------- */
 
     document.addEventListener('click', function (event) {
@@ -639,6 +957,10 @@
 
       if (target.parentNode === el('tabs')) return select(target.dataset.key);
       if (target.id === 'refresh') return load();
+      if (target.id === 'newEntry') return openForm();
+      if (target.id === 'formSave' || target.id === 'formSaveAnyway') return saveForm();
+      if (target.id === 'formCancel') return closeForm();
+      if (target.dataset.useName) return useSuggestedName(target.dataset.useName);
       if (target.dataset.copy !== undefined) return copyValue(target.dataset.copy);
       if (target.dataset.dateRow) return editDate(target.dataset.dateRow, target.dataset.dateColumn);
       if (target.id === 'dialogPrimary') return acceptDialog(el('dialogDate').value);
@@ -651,7 +973,31 @@
       if (event.target === el('overlay')) closeDialog(true);
     });
 
+    el('formOverlay').addEventListener('click', function (event) {
+      // Only the backdrop closes it. A half-filled form thrown away by a stray
+      // tap inside the card would be worse than one extra tap on Cancel.
+      if (event.target === el('formOverlay') && app.form && !app.form.busy) closeForm();
+    });
+
+    // Typing in the counterparty box: suggest while typing, look up once it
+    // settles. Both are debounced by the browser's own change semantics.
+    document.addEventListener('input', function (event) {
+      if (!app.form) return;
+      if (event.target.dataset && event.target.dataset.role === 'counterparty') {
+        counterpartySuggest(event.target.value);
+      }
+    });
+
     document.addEventListener('keydown', function (event) {
+      if (app.form) {
+        if (event.key === 'Escape' && !app.form.busy) {
+          // preventDefault for the same reason as the date dialog: without it
+          // the browser also leaves fullscreen, which reads as the window going.
+          event.preventDefault();
+          closeForm();
+        }
+        return;
+      }
       if (!app.dialog) return;
       if (event.key === 'Escape') {
         // Without this the browser also acts on Escape — leaving fullscreen,
@@ -667,6 +1013,9 @@
 
     document.addEventListener('change', function (event) {
       var target = event.target;
+      if (app.form && target.dataset && target.dataset.role === 'counterparty') {
+        return counterpartyLookup(target.value);
+      }
       if (target.classList.contains('status')) {
         return changeStatus(target.dataset.row, target.value);
       }
