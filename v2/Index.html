@@ -405,15 +405,33 @@
 
     /* ------------------------------- filters ------------------------------ */
 
+    /**
+     * Options for the category filter: the declared list first, then anything
+     * the rows actually hold that is not in it.
+     *
+     * The two halves are there for different reasons. The declared values make
+     * the dropdown STABLE — the same reason the status filter is built from the
+     * states rather than from the data, which is what stopped v1 growing one
+     * option per claim date. The used-but-undeclared values are there because a
+     * row holding an old value still exists and you have to be able to find it.
+     *
+     * Note this is the opposite of what the FORM does with the same list: the
+     * form offers only declared values, because offering a stale one would
+     * re-enter it. Here, hiding it would hide the row.
+     */
     function categoryValues() {
       if (!app.meta.category) return [];
       var header = app.meta.category.header;
-      var seen = {};
+      var values = (app.meta.category.options || []).slice();
+
+      var extra = {};
       app.rows.forEach(function (row) {
         var value = row.cells[header];
-        if (value !== '' && value !== null && value !== undefined) seen[value] = true;
+        if (value === '' || value === null || value === undefined) return;
+        if (values.indexOf(value) === -1) extra[value] = true;
       });
-      return Object.keys(seen).sort();
+
+      return values.concat(Object.keys(extra).sort());
     }
 
     function renderFilters() {

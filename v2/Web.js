@@ -231,7 +231,13 @@ function uiSectionMeta(sectionKey) {
     sheet: section.sheet,
     counterpartyLabel: counterpartyLabel(section),
     category: section.category
-      ? { header: section.category.header, label: section.category.label }
+      ? {
+          header: section.category.header,
+          label: section.category.label,
+          // Declared values, where there are any. The filter offers these plus
+          // whatever the rows actually hold - see the note in the page.
+          options: (section.category.options || []).slice()
+        }
       : null,
     columns: uiColumns(section),
     states: section.states.map(state => ({

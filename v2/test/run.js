@@ -1098,6 +1098,16 @@ check('Work\'s Expense Reason stays free text with suggestions',
 check('uiCategoryValues returns the declared list for a closed category',
   G.uiCategoryValues('health').join() === 'J,K,A,P', G.uiCategoryValues('health'));
 
+// The page's filter needs the declared values to be stable the way the status
+// filter is - built from config rather than from whatever the rows happen to
+// hold, which is what stopped v1 growing one option per claim date.
+check('the section metadata carries the declared values for the filter',
+  G.uiSectionMeta('health').category.options.join() === 'J,K,A,P',
+  G.uiSectionMeta('health').category);
+check('an open category declares none, so the filter falls back to the data',
+  G.uiSectionMeta('work').category.options.length === 0,
+  G.uiSectionMeta('work').category);
+
 // The page renders a dropdown; google.script.run does not have to go through
 // the page, so the list is only closed if the server closes it.
 let notAPatient = null;
