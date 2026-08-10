@@ -260,25 +260,29 @@ for a state the row had not reached (see Settled since).
 
 **Still outstanding — pick this up first:**
 
-- **An extra document in `Health/Inbox`.** Two receipt-ish files, one without a
-  `.txt` extension, after one `Justification URL` was deliberately broken during
-  testing. The likely reading is an orphan: nothing points at that file any more,
-  so transitions stopped renaming it while the receipt kept being renamed. Run
-  **`checkDocuments()`** from the editor — it reports every file reference and
-  whether it opens, plus any file in the tree that no row refers to. Unconfirmed
-  either way.
-- **Whether that is the whole story.** If `checkDocuments()` reports no orphans,
-  the extra file came from somewhere else — check `rows` for two Health entries,
-  i.e. `smokeTest()` having run twice.
-- **`smokeCleanup()` only trashes files a row still references.** A broken
-  reference leaves its file behind and reports it in `warnings`, so repair the
-  cell before cleaning up.
-- **Confirm the account hint fixed the broken links** (see Settled since). The
-  links now carry `authuser`; what has not been checked is whether they open in
-  the browser that showed them broken.
-- **Not yet tested at all:** the phone (iOS date wheel, scrolling), tap-to-copy
-  on the IVA reference block, the status and category filters, and Income's
-  `Invoiced / Received / Logged` vocabulary rendering.
+- **Re-run `bootstrap()`.** It now creates a `<Section> Archive` sheet per
+  section. Nothing in step 9 works until they exist, and delete fails with a
+  clear message saying so. This is the one blocking item.
+- **Steps 8 and 9 have barely been used by hand.** Creating works; editing,
+  deleting, restoring and permanent deletion have never been tapped. Also
+  untried: attaching a document to an existing entry, which is what releases a
+  deferred claim email — the Siri path working before Siri exists.
+- **One IVA entry with a receipt, end to end**, exercising the claim email with
+  its attachment, the `Emitente NIF` prefill and the filename chain. The mail
+  goes to Jax, so a test entry is harmless.
+- **Whether `authuser` actually fixes a document link.** Still never confirmed:
+  every attempt was stopped by the web app's own gate first, which turned out to
+  be the real cause of what looked like broken links all along.
+- **The phone.** Parked deliberately — see the accounts section. Needs either a
+  second browser signed in only as the v2 account, or opening `webapp.access`
+  and guarding the globals first.
+- **Work's `Type` list** is still the proposed one, never checked against real
+  claims. It is a `TODO` in `Config.js` and a dropdown on every work entry.
+
+**Settled, so no longer carry these:** the Health orphan (both files explained —
+one was the deliberately broken `Justification URL`, the other a native Google
+file with no extension), `checkDocuments()` reporting `ok: true`, the filters,
+tap-to-copy, and the revert dialog's `Keep` wording.
 
 | File | Contains |
 |---|---|
