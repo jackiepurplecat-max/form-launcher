@@ -86,10 +86,29 @@ and the account that owns v2 is not the default one.** That is a permanent
 condition of this setup, not a temporary state, so it has to be designed around
 rather than worked around:
 
-- **Every URL needs the account naming itself.** Append
-  `?authuser=<the v2 address>` to `/exec`, and to anything else handed to a
-  browser. Without it the default account answers, and the failure looks like a
-  missing file or a missing permission rather than the wrong identity.
+- **An Apps Script web app cannot be pointed at an account by URL.** Tested on
+  the iPhone: `?authuser=<address>`, `/u/0/`, `/u/1/`, `/u/3/` — five variants,
+  all refused identically, while the same `/exec` URL loads on the desktop. The
+  `/macros/s/…` endpoint uses **the browser's default account** and ignores both
+  forms. On a query string it is worse than useless: Google passes it through to
+  `doGet` as `e.parameter.authuser` and does nothing with it.
+- **So the phone is parked, deliberately.** Safari there has four accounts and
+  the v2 one is not the default. The fix is not a URL: it is either a second
+  browser signed in only as the v2 account, or opening `webapp.access` — see
+  below. Desktop works, which is enough to keep building; revisit when the form
+  exists and you actually want it in your hand.
+- **If `webapp.access` is ever opened to `ANYONE`, guard the globals first.**
+  It would let any signed-in Google user with the URL load a page from this
+  project, and `google.script.run` reaches *any* global — `bootstrap()`,
+  `smokeTest()`, `smokeCleanup()` — none of which check their caller. Only the
+  `ui*` functions do. An owner-only check on those five is the price of that
+  option, and it must be paid before the manifest changes, not after.
+- **`authuser` on a *Drive* URL is a different question and still unanswered.**
+  Nothing has yet tested `uiFileUrl`'s output, because every attempt was stopped
+  by the web app's own gate first. Drive URLs do honour the parameter where
+  Apps Script endpoints do not, so the fix stands — but it is untested, and if
+  it turns out Drive wants `drive.google.com/u/N/file/d/<id>/view` instead, that
+  is a one-line change with the harness already around it.
 - **This is why document links carry `authuser`** (see Settled since). Anything
   built later that emits a Google URL — the completion link, the Siri
   confirmation, an OCR result — must do the same, or it will work on the desktop
