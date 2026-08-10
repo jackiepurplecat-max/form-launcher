@@ -202,7 +202,7 @@ section('Health — two documents');
 const just = mocks.DriveApp._addFile('presc.pdf');
 const paid = mocks.DriveApp._addFile('receipt.jpg');
 const health = G.createEntry('health', {
-  'Date': '2026-01-05', 'Counterparty': 'White Clinic', 'Patient': 'Phoenix',
+  'Date': '2026-01-05', 'Counterparty': 'White Clinic', 'Patient': 'P',
   'Amount': 70, 'Currency': 'EUR', 'Invoice Date': '2026-01-06', 'Type': 'Dentist',
   'Justification URL': just.id, 'Receipt URL': paid.id
 }, 'form');
@@ -216,7 +216,7 @@ check('both moved', just.parent.getName() === 'Claimed' && paid.parent.getName()
 section('Health accents + alias matching');
 const acc = mocks.DriveApp._addFile('x.pdf');
 G.createEntry('health', {
-  'Date': '2026-01-07', 'Counterparty': 'Farmácia Sá', 'Patient': 'Phoenix', 'Amount': 12.5,
+  'Date': '2026-01-07', 'Counterparty': 'Farmácia Sá', 'Patient': 'P', 'Amount': 12.5,
   'Currency': 'EUR', 'Invoice Date': '2026-01-07', 'Receipt URL': acc.id
 }, 'form');
 check('accents flattened in filename', acc.getName() === '260107_FarmaciaSa_12-50_justification.pdf' || acc.getName() === '260107_FarmaciaSa_12-50_receipt.pdf', acc.getName());
@@ -277,7 +277,7 @@ section('"more info needed" mail — separate address, only when incomplete');
 const mailBefore = mocks.MailApp.sent.length;
 
 const partial = G.createEntry('health', {
-  'Date': '2026-06-01', 'Counterparty': 'White Clinic', 'Patient': 'Phoenix', 'Amount': 40, 'Currency': 'EUR'
+  'Date': '2026-06-01', 'Counterparty': 'White Clinic', 'Patient': 'P', 'Amount': 40, 'Currency': 'EUR'
 }, 'siri');
 check('incomplete entry is ok:false', partial.ok === false, partial.error);
 check('more-info mail sent', partial.completionRequest && partial.completionRequest.ok === true, partial.completionRequest);
@@ -1014,21 +1014,37 @@ check('an oversized upload is refused before it is decoded',
 check('and nothing was left in Drive',
   Object.keys(mocks._files).filter(id => !mocks._files[id].trashed).length === filesBefore);
 
-// If the row cannot be written after a file has landed, the file must not be
-// left behind - that is precisely the orphan checkDocuments() hunts for.
+/*
+ * If something fails after a file has landed, the file must not be left behind -
+ * that is precisely the orphan checkDocuments() hunts for.
+ *
+ * The failure has to happen AFTER an upload for this to test anything. An
+ * earlier version of this test used a bad header, which is refused by the
+ * whitelist BEFORE any upload runs, so it compared an unchanged file count and
+ * passed while exercising nothing. Health has two documents, so a good one
+ * followed by an oversized one lands a file and then fails, for real.
+ */
 section('a failed creation leaves no orphan behind');
-const liveBefore = Object.keys(mocks._files).filter(id => !mocks._files[id].trashed).length;
+const liveFiles = () => Object.keys(mocks._files).filter(id => !mocks._files[id].trashed).length;
+const liveBefore = liveFiles();
 let rolledBack = null;
 try {
   G.uiCreateEntry('health', {
-    values: { 'Date': '2026-09-03', 'Counterparty': 'X', 'Patient': 'Y', 'Amount': 1, 'Nonsense': 1 },
-    files: [{ header: 'Receipt URL', name: 'r.pdf', mimeType: 'application/pdf', data: b64 }]
+    values: { 'Date': '2026-09-03', 'Counterparty': 'X', 'Patient': 'K',
+              'Invoice Date': '2026-09-03', 'Amount': 1 },
+    files: [
+      { header: 'Justification URL', name: 'j.pdf', mimeType: 'application/pdf', data: b64 },
+      { header: 'Receipt URL', name: 'huge.pdf', mimeType: 'application/pdf',
+        data: 'x'.repeat(20 * 1024 * 1024) }
+    ]
   });
 } catch (e) { rolledBack = e.message; }
-check('the creation failed', !!rolledBack, rolledBack);
-check('and the uploaded file was trashed rather than stranded',
-  Object.keys(mocks._files).filter(id => !mocks._files[id].trashed).length === liveBefore,
-  Object.keys(mocks._files).filter(id => !mocks._files[id].trashed).length - liveBefore);
+check('the second document failed', /too large/.test(rolledBack || ''), rolledBack);
+check('and the first one, which HAD landed, was trashed rather than stranded',
+  liveFiles() === liveBefore, liveFiles() - liveBefore);
+check('no half-made row was left either',
+  !G.uiListEntries('health').rows.some(r => r.cells['Counterparty'] === 'X'),
+  G.uiListEntries('health').rows.map(r => r.cells['Counterparty']));
 
 /* ------------------------- incomplete, on purpose ------------------------- */
 // Partial entries are the safety net, not an error: the row exists, and what is
@@ -1058,9 +1074,64 @@ check('suggestions come back for a prefix',
 check('an unknown section is refused before any sheet is touched',
   (() => { try { G.uiLookupCounterparty('nope', 'x'); return false; } catch (e) { return true; } })());
 
-section('category values populate themselves from what is used');
-const patients = G.uiCategoryValues('health');
-check('values in use are offered', patients.indexOf('Y') !== -1 || patients.length > 0, patients);
+/*
+ * Health's Patient is a closed list where Work's Expense Reason is not, and the
+ * difference is the point: a trip is new most times it is asked for, whereas
+ * "Pheonix" typed once becomes a second patient forever and splits that
+ * person's claims across two values with nothing to warn you.
+ */
+section('a category with a declared list is a closed choice');
+const patientField = G.uiFormFields(G.getSection('health'))
+  .filter(f => f.header === 'Patient')[0];
+check('rendered as a choice, not free text', patientField.type === 'choice', patientField);
+check('carrying the family, as initials', (patientField.options || []).join() === 'J,K,A,P',
+  patientField.options);
+check('and it is still required', patientField.required === true);
+check('no autocomplete role, because there is nothing to guess at',
+  !patientField.role, patientField.role);
+
+const reasonField = G.uiFormFields(G.getSection('work'))
+  .filter(f => f.header === 'Expense Reason')[0];
+check('Work\'s Expense Reason stays free text with suggestions',
+  reasonField.type === 'text' && reasonField.role === 'category', reasonField);
+
+check('uiCategoryValues returns the declared list for a closed category',
+  G.uiCategoryValues('health').join() === 'J,K,A,P', G.uiCategoryValues('health'));
+
+// The page renders a dropdown; google.script.run does not have to go through
+// the page, so the list is only closed if the server closes it.
+let notAPatient = null;
+try {
+  G.uiCreateEntry('health', {
+    values: { 'Date': '2026-09-10', 'Counterparty': 'White Clinic', 'Patient': 'Q',
+              'Invoice Date': '2026-09-10', 'Amount': 40 }
+  });
+} catch (e) { notAPatient = e.message; }
+check('a patient off the list is refused, and the list is named',
+  /must be one of/.test(notAPatient || '') && /J, K, A, P/.test(notAPatient || ''), notAPatient);
+
+const realPatient = G.uiCreateEntry('health', {
+  values: { 'Date': '2026-09-10', 'Counterparty': 'White Clinic', 'Patient': 'P',
+            'Invoice Date': '2026-09-10', 'Amount': 40 }
+});
+check('one on the list goes through', realPatient.ok === true, realPatient.error);
+
+// The same rule generically, which is what makes it worth having on the server:
+// Type is a choice in Work and Health and was previously unchecked.
+let badType = null;
+try {
+  G.uiCreateEntry('work', {
+    values: { 'Date': '2026-09-10', 'Counterparty': 'Bolt', 'Expense Reason': 'trip',
+              'Type': 'Submarine', 'Amount': 5 }
+  });
+} catch (e) { badType = e.message; }
+check('any choice field is checked, not just the category',
+  /Type must be one of/.test(badType || ''), badType);
+
+section('an open category populates itself from what is used');
+const reasons = G.uiCategoryValues('work');
+check('a value entered earlier comes back as a suggestion',
+  reasons.indexOf('Lisbon trip') !== -1, reasons);
 check('a section with no category offers nothing', G.uiCategoryValues('iva').length === 0);
 
 /* -------------------------------- gating --------------------------------- */

@@ -711,10 +711,14 @@
       el('formFields').innerHTML = app.meta.form.map(fieldHtml).join('');
       el('formOverlay').className = 'open';
 
-      // The values already in use, so a patient or an expense reason is a pick
-      // rather than a retype. Fetched on open because it changes as you enter
-      // entries, unlike the field list itself.
-      if (app.meta.category) {
+      // The values already in use, so an expense reason is a pick rather than a
+      // retype. Fetched on open because it changes as you enter entries, unlike
+      // the field list itself. A category with a declared list is already a
+      // dropdown and needs no round trip.
+      var categoryField = app.meta.form.filter(function (f) {
+        return f.role === 'category';
+      })[0];
+      if (app.meta.category && categoryField) {
         call('uiCategoryValues', app.current).then(function (values) {
           var list = el('list_' + cssId(app.meta.category.header));
           if (list) {

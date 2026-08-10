@@ -175,7 +175,22 @@ const SECTIONS = {
     label: 'Health Claim',
     sheet: 'Health',
     counterpartyLabel: 'Provider',
-    category: { header: 'Patient', label: 'Patient', managed: true },
+    // A closed list, unlike Work's Expense Reason. The patients are the family
+    // and the set does not drift, so this is a dropdown rather than free text
+    // with suggestions: one misspelling typed once becomes a second patient
+    // forever and splits that person's claims across two values, with nothing
+    // to warn you. Adding someone is a line here plus a push - deliberately a
+    // change to the configuration rather than something a keystroke can do.
+    //
+    // INITIALS, on purpose. This repository is public, and these are family
+    // members attached to health claims. The initials are unambiguous to the
+    // one person who uses this and meaningless to anyone else, which is the
+    // same reasoning that keeps the NIFs in Script Properties - with the
+    // difference that a list this short stays readable in version control.
+    category: {
+      header: 'Patient', label: 'Patient', managed: true,
+      options: ['J', 'K', 'A', 'P']
+    },
     // White Clinic is usually Dentist, so remember it
     registryTypeField: 'Type',
     states: [

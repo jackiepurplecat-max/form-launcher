@@ -81,12 +81,17 @@ function uiFormFields(section) {
   ];
 
   if (section.category) {
+    // A category with a declared option list is a closed choice - Health's
+    // Patient. One without is free text with suggestions, because Work's
+    // Expense Reason is a new trip most times it is asked for.
+    const closed = !!(section.category.options && section.category.options.length);
     fields.push({
       header: section.category.header,
       label: section.category.label,
-      type: 'text',
+      type: closed ? 'choice' : 'text',
       required: section.category.required !== false,
-      role: 'category'
+      options: closed ? section.category.options : null,
+      role: closed ? null : 'category'
     });
   }
 
@@ -157,6 +162,14 @@ function uiCategoryValues(sectionKey) {
 
   const section = getSection(sectionKey);
   if (!section.category) return [];
+
+  // A declared list is the answer, and the only answer. Appending whatever
+  // happens to be in the column would quietly re-open a list whose whole
+  // purpose is being closed - a misspelling already in the sheet would come
+  // back as a suggestion and get picked again.
+  if (section.category.options && section.category.options.length) {
+    return section.category.options.slice();
+  }
 
   const sheet = getSheet(section);
   const cols = resolveColumns(sheet);
@@ -284,6 +297,21 @@ function uiCreateEntry(sectionKey, payload) {
       throw new Error(`${field.label} must be a valid yyyy-MM-dd date`);
     }
   });
+
+  // A closed list is only closed if the server says so. The page renders a
+  // dropdown, but google.script.run does not have to go through the page - and
+  // the whole point of Patient being a list is that one misspelling would
+  // silently become a second patient, splitting that person's claims in two.
+  uiFormFields(section)
+    .filter(field => field.type === 'choice' && field.options && field.options.length)
+    .forEach(field => {
+      const value = (submitted[field.header] || '').toString().trim();
+      if (value && field.options.indexOf(value) === -1) {
+        throw new Error(
+          `${field.label} must be one of: ${field.options.join(', ')} — got "${value}"`
+        );
+      }
+    });
 
   const values = {};
   Object.keys(submitted).forEach(header => {

@@ -102,11 +102,27 @@ blank. No other section offers its state dates at creation, because `setStatus`
 clears the dates of every state after the target and a `Claimed Date` typed at
 creation would be wiped by the first transition.
 
-**Category values populate themselves for now.** `uiCategoryValues()` returns
-what is already in use, most-used first, and free text is still accepted — the
-registry's approach applied to Patient and Expense Reason. Step 9 adds the
-managed list on top; until then there is no list to maintain before the form
-works, and adding a patient is typing it once.
+**Two kinds of category, and the difference is deliberate.** A category that
+declares `options` in config is a **closed dropdown**; one that does not is free
+text with suggestions.
+
+- **Health's `Patient` is closed.** The patients are the family and the set does
+  not drift, so one misspelling typed once would become a second patient forever
+  and split that person's claims across two values with nothing to warn you.
+  Held as **initials** — the repository is public, and initials are unambiguous
+  to the one person using this and meaningless to anyone else. Adding someone is
+  a line in `Config.js` plus a push, which is the right amount of friction.
+- **Work's `Expense Reason` is open**, because a trip is new most times it is
+  asked for. `uiCategoryValues()` returns what is already in use, most-used
+  first, so it populates itself the way the registry does.
+
+**Choice fields are validated on the server**, generically — the category and
+every `type: 'choice'` extra field, `Type` included. The page renders a dropdown,
+but `google.script.run` does not have to go through the page, and a list is only
+closed if the server closes it.
+
+Step 9 can still add a managed list on top for the open ones. It is no longer
+blocking anything.
 
 ### The two URLs, and the accounts problem
 
