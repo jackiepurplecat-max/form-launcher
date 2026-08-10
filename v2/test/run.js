@@ -17,7 +17,7 @@ const path = require('path');
 
 const mocks = require('./mocks.js');
 const DIR = path.join(__dirname, '..');
-const FILES = ['Config.js', 'Core.js', 'Entries.js', 'Registry.js', 'Setup.js', 'Smoke.js'];
+const FILES = ['Config.js', 'Core.js', 'Entries.js', 'Registry.js', 'Setup.js', 'Smoke.js', 'Web.js'];
 
 const sandbox = Object.assign({ console }, mocks);
 sandbox.globalThis = sandbox;
@@ -448,6 +448,361 @@ check('real suppliers survived cleanup', G.findSupplier('FNAC').nif === '5000000
 });
 check('cleanup left the real rows alone', mocks._ss.getSheetByName('Work').getRange(2, 4).getValue() === 'Hospital da Luz',
   mocks._ss.getSheetByName('Work').getRange(2, 4).getValue());
+
+/* ========================= step 7: the web UI ============================= */
+/*
+ * The first code with a surface outside the editor, so the access check is
+ * tested before anything it protects.
+ */
+section('doGet() — who may load the page');
+
+const ownerPage = G.doGet();
+check('owner gets the app page', /google\.script\.run/.test(ownerPage.getContent()), ownerPage.getContent().slice(0, 60));
+check('page calls the real server functions',
+  /uiBootstrap/.test(ownerPage.getContent()) && /uiListEntries/.test(ownerPage.getContent()));
+check('page is titled', ownerPage.getTitle() === 'HelpfulForms', ownerPage.getTitle());
+check('viewport meta added for the phone',
+  ownerPage.metaTags.some(t => t.name === 'viewport'), ownerPage.metaTags);
+// Nothing is interpolated into the HTML, so no sheet value or property can
+// arrive as markup - and no address can leak into a cached page.
+check('served page contains no configured address or key',
+  ['claims@example.test', 'me@example.test', 'work@example.test', 'super-secret-key-value']
+    .every(secret => ownerPage.getContent().indexOf(secret) === -1));
+
+mocks.Session._setActiveUser('someone.else@example.test');
+const strangerPage = G.doGet();
+check('a different signed-in account is refused',
+  /Not authorized/.test(strangerPage.getContent()), strangerPage.getContent());
+check('and is not served the app', !/google\.script\.run/.test(strangerPage.getContent()));
+let strangerCall = null;
+try { G.uiBootstrap(); } catch (e) { strangerCall = e.message; }
+check('google.script.run is gated too, not just doGet', /Not authorized/.test(strangerCall || ''), strangerCall);
+check('the denial says nothing about who IS allowed',
+  (strangerCall || '').indexOf('owner@example.test') === -1, strangerCall);
+let strangerList = null;
+try { G.uiListEntries('work'); } catch (e) { strangerList = e.message; }
+check('listing is gated', /Not authorized/.test(strangerList || ''), strangerList);
+let strangerStatus = null;
+try { G.uiSetStatus('work', 2, 'Claimed', '2026-03-01'); } catch (e) { strangerStatus = e.message; }
+check('the status control is gated', /Not authorized/.test(strangerStatus || ''), strangerStatus);
+check('and it changed nothing',
+  mocks._ss.getSheetByName('Work').getRange(2, wcols['Status']).getValue() === 'To Do',
+  mocks._ss.getSheetByName('Work').getRange(2, wcols['Status']).getValue());
+
+// An anonymous deployment - which is what the Siri endpoint would force - makes
+// getActiveUser() blank for EVERYONE. Failing closed is correct; it is also why
+// Siri needs its own project rather than a second deployment of this one.
+mocks.Session._setActiveUser('');
+check('anonymous is refused', /Not authorized/.test(G.doGet().getContent()));
+check('anonymous reason recorded', G.uiAccessCheck().reason === 'no identifiable signed-in user',
+  G.uiAccessCheck());
+
+mocks.Session._setActiveUser(mocks.Session._owner);
+check('owner allowed again', G.uiAccessCheck().ok === true, G.uiAccessCheck());
+
+section('checkUiAccess() — the editor-runnable diagnostic');
+const diagnosis = G.checkUiAccess();
+check('reports ok for the owner', diagnosis.ok === true, diagnosis);
+check('names the active and effective users separately',
+  diagnosis.activeUser === mocks.Session._owner &&
+  diagnosis.effectiveUser === mocks.Session._owner, diagnosis);
+check('says where the allowed list came from',
+  diagnosis.allowedFrom === 'the account the script runs as', diagnosis.allowedFrom);
+mocks.Session._setActiveUser('');
+const blankDiagnosis = G.checkUiAccess();
+check('a blank caller is described, not shown as an empty string',
+  /blank/.test(blankDiagnosis.activeUser), blankDiagnosis);
+check('and distinguished from being unlisted',
+  blankDiagnosis.reason === 'no identifiable signed-in user', blankDiagnosis.reason);
+mocks.Session._setActiveUser(mocks.Session._owner);
+
+section('UI_ALLOWED_EMAILS overrides the default of "only me"');
+mocks._props.UI_ALLOWED_EMAILS = 'Helper@Example.test , second@example.test';
+check('a listed address is allowed (case and spacing ignored)',
+  (() => { mocks.Session._setActiveUser('helper@example.test'); return G.uiAccessCheck().ok === true; })(),
+  G.uiAccessCheck());
+check('an unlisted address is refused even if it owns the script',
+  (() => { mocks.Session._setActiveUser(mocks.Session._owner); return G.uiAccessCheck().ok === false; })(),
+  G.uiAccessCheck());
+delete mocks._props.UI_ALLOWED_EMAILS;
+check('unset falls back to the account it runs as', G.uiAccessCheck().ok === true, G.uiAccessCheck());
+check('UI_ALLOWED_EMAILS is a declared property, not an unknown one',
+  G.checkScriptProperties().unknown.indexOf('UI_ALLOWED_EMAILS') === -1,
+  G.checkScriptProperties().unknown);
+
+/* ------------------------------ uiBootstrap ------------------------------- */
+section('uiBootstrap() — one round trip describes all four sections');
+mocks._props.REF_JALLC_NIF = '600000000';
+mocks._props.REF_MY_NIF = '200000000';
+mocks._props.REF_IVA_TIPO = 'Despesas gerais familiares';
+
+const boot = G.uiBootstrap();
+check('reports the signed-in user', boot.user === mocks.Session._owner, boot.user);
+check('today is ISO', /^\d{4}-\d{2}-\d{2}$/.test(boot.today), boot.today);
+check('four sections, in config order',
+  boot.sections.map(s => s.key).join(',') === 'work,iva,health,income',
+  boot.sections.map(s => s.key));
+
+const metaOf = key => boot.sections.find(s => s.key === key);
+check('counterparty labels come from config',
+  ['work:Supplier', 'iva:Retailer', 'health:Provider', 'income:Paid by']
+    .every(pair => metaOf(pair.split(':')[0]).counterpartyLabel === pair.split(':')[1]),
+  boot.sections.map(s => [s.key, s.counterpartyLabel]));
+check('category shown only where it exists',
+  !!metaOf('work').category && metaOf('iva').category === null && !!metaOf('health').category,
+  boot.sections.map(s => [s.key, s.category]));
+check('IVA reference block filled from Script Properties',
+  metaOf('iva').reference.length === 3 &&
+  metaOf('iva').reference.some(r => r.label === 'Tipo' && r.value === 'Despesas gerais familiares'),
+  metaOf('iva').reference);
+check('other sections have no reference block',
+  ['work', 'health', 'income'].every(k => metaOf(k).reference.length === 0));
+check('a blank reference property is dropped rather than shown empty',
+  (() => {
+    const kept = mocks._props.REF_MY_NIF;
+    delete mocks._props.REF_MY_NIF;
+    const n = G.uiSectionMeta('iva').reference.length;
+    mocks._props.REF_MY_NIF = kept;
+    return n === 2;
+  })());
+check('health declares two documents', metaOf('health').files.length === 2, metaOf('health').files);
+check('income declares none', metaOf('income').files.length === 0);
+check('states carry their date column',
+  metaOf('work').states.map(s => `${s.name}:${s.dateColumn}`).join(',') ===
+    'To Do:null,Claimed:Claimed Date,Settled:Settled Date',
+  metaOf('work').states.map(s => [s.name, s.dateColumn]));
+check('income states are its own three',
+  metaOf('income').states.map(s => s.name).join(',') === 'Invoiced,Received,Logged',
+  metaOf('income').states);
+
+section('table columns are generated from SECTIONS, and only real ones');
+['work', 'iva', 'health', 'income'].forEach(key => {
+  const meta = metaOf(key);
+  const sheet = mocks._ss.getSheetByName(G.getSection(key).sheet);
+  const cols = G.resolveColumns(sheet);
+  check(`${key}: every displayed column exists in the sheet`,
+    meta.columns.every(c => !!cols[c.header]),
+    meta.columns.filter(c => !cols[c.header]).map(c => c.header));
+  // Status, the state dates and the documents are controls, not text columns,
+  // and Timestamp / Receipt State / Claim Emailed are bookkeeping.
+  check(`${key}: bookkeeping columns are not in the table`,
+    meta.columns.every(c => ['Status', 'Timestamp', 'Source', 'Receipt State', 'Claim Emailed',
+      'Claimed Date', 'Settled Date', 'Invoiced Date', 'Received Date', 'Logged Date']
+      .indexOf(c.header) === -1),
+    meta.columns.map(c => c.header));
+});
+check('work shows Expense Reason and Type',
+  ['Expense Reason', 'Type'].every(h => metaOf('work').columns.some(c => c.header === h)),
+  metaOf('work').columns.map(c => c.header));
+check("IVA shows Número, Emitente NIF and the VAT figure's own label",
+  ['Número', 'Emitente NIF', 'IVA Amount'].every(h => metaOf('iva').columns.some(c => c.header === h)) &&
+  metaOf('iva').columns.find(c => c.header === 'IVA Amount').label === 'Valor do IVA',
+  metaOf('iva').columns.map(c => c.header));
+
+/* ------------------------------ uiListEntries ----------------------------- */
+section('uiListEntries()');
+const listed = G.uiListEntries('work');
+check('ok with rows', listed.ok === true && listed.rows.length > 0, listed.rows.length);
+check('newest first',
+  listed.rows.every((row, i) => i === 0 || listed.rows[i - 1].row > row.row),
+  listed.rows.map(r => r.row));
+check('row numbers are real sheet rows', listed.rows.every(r => r.row >= 2));
+check('every displayed column has a cell',
+  listed.rows.every(row => listed.meta.columns.every(c => row.cells[c.header] !== undefined)));
+// google.script.run must not have to serialise Date objects, and the harness
+// would not catch a Date leaking through any other way.
+check('cells are strings and numbers only, never Dates',
+  listed.rows.every(row => Object.keys(row.cells).every(h => {
+    const v = row.cells[h];
+    return typeof v === 'string' || typeof v === 'number';
+  })), listed.rows.map(r => r.cells));
+check('dates come back as ISO text or blank',
+  listed.rows.every(row => Object.keys(row.dates)
+    .every(col => row.dates[col] === '' || /^\d{4}-\d{2}-\d{2}$/.test(row.dates[col]))),
+  listed.rows.map(r => r.dates));
+
+const luz = listed.rows.find(r => r.cells['Counterparty'] === 'Hospital da Luz');
+check('the first work entry is listed', !!luz, listed.rows.map(r => r.cells['Counterparty']));
+check('its amount stayed a number', luz.cells['Amount'] === 3.45, luz.cells['Amount']);
+check('its date is ISO', luz.cells['Date'] === '2026-01-15', luz.cells['Date']);
+check('a bare file ID becomes a Drive link',
+  luz.files.length === 1 && /^https:\/\/drive\.google\.com\/file\/d\//.test(luz.files[0].url),
+  luz.files);
+check('the document keeps its configured label', luz.files[0].label === 'Receipt', luz.files[0]);
+check('receipt state passed through', luz.receiptState === 'attached', luz.receiptState);
+// Reaches the page as inert text. Real Sheets strips the leading apostrophe on
+// read and these stand-ins do not, so this asserts only what is true in both:
+// the cell is a string containing the formula, never an evaluated result.
+check('an escaped formula name comes back as text',
+  listed.rows.some(r => typeof r.cells['Counterparty'] === 'string' &&
+    r.cells['Counterparty'].indexOf('=IMPORTXML') !== -1),
+  listed.rows.map(r => r.cells['Counterparty']));
+
+const incomeList = G.uiListEntries('income');
+check('income rows carry no documents',
+  incomeList.rows.every(r => r.files.length === 0 && r.receiptState === 'none required'),
+  incomeList.rows.map(r => [r.files.length, r.receiptState]));
+check('income rows have no Claim Emailed flag', incomeList.rows.every(r => r.claimEmailed === null));
+check('work rows do', listed.rows.every(r => typeof r.claimEmailed === 'boolean'));
+
+// A row deleted by hand in the sheet leaves a gap. Rendering it as an empty line
+// with a live status selector would invite a status change on nothing.
+const workSheet = mocks._ss.getSheetByName('Work');
+const gapRow = workSheet.getLastRow() + 1;
+workSheet.getRange(gapRow, wcols['Notes']).setValue('leftover');
+check('a row with no entry in it is skipped',
+  G.uiListEntries('work').rows.every(r => r.row !== gapRow),
+  G.uiListEntries('work').rows.map(r => r.row));
+workSheet.getRange(gapRow, wcols['Notes']).setValue('');
+
+/* --------------------------- the status control --------------------------- */
+section('the status control, through the UI');
+const target = G.uiListEntries('work').rows.find(r => r.cells['Counterparty'] === 'Hospital da Luz');
+check('starts in To Do', target.status === 'To Do' && target.statusIndex === 0, target.status);
+
+// This is what the date dialog reads: no date yet, so it offers today.
+const toClaimed = target.options.find(o => o.state === 'Claimed');
+check('dialog would offer Today for a state with no date yet',
+  toClaimed.keepExisting === false && toClaimed.existingDate === '', toClaimed);
+check('a state with no date column of its own needs no dialog',
+  target.options.find(o => o.state === 'To Do').dateColumn === null);
+
+const uiClaim = G.uiSetStatus('work', target.row, 'Claimed', '2026-03-05');
+check('claimed', uiClaim.ok === true && uiClaim.entry.status === 'Claimed', uiClaim);
+check('date recorded on the row', uiClaim.entry.dates['Claimed Date'] === '2026-03-05', uiClaim.entry.dates);
+check('date returned as text, not a Date', typeof uiClaim.date === 'string', uiClaim.date);
+check('no file errors', uiClaim.fileErrors.length === 0, uiClaim.fileErrors);
+check('file renamed and filed', receipt.getName().includes('_Claimed_05-03-2026') &&
+  receipt.parent.getName() === 'Claimed', receipt.getName());
+check('the returned row is re-read from the sheet, not assumed',
+  uiClaim.entry.cells['Counterparty'] === 'Hospital da Luz', uiClaim.entry.cells);
+
+// Now the revert case, which is the reason the dialog wording is computed here.
+const claimedAgain = G.uiListEntries('work').rows.find(r => r.row === target.row);
+const backToClaimed = claimedAgain.options.find(o => o.state === 'Claimed');
+check('dialog would offer "Keep 5 Mar" once the state has a date',
+  backToClaimed.keepExisting === true && backToClaimed.existingDate === '2026-03-05', backToClaimed);
+
+G.uiSetStatus('work', target.row, 'Settled', '2026-03-20');
+const reverted = G.uiSetStatus('work', target.row, 'Claimed');
+check('reverting keeps the original date', reverted.entry.dates['Claimed Date'] === '2026-03-05',
+  reverted.entry.dates);
+check('and clears the later one', reverted.entry.dates['Settled Date'] === '', reverted.entry.dates);
+check('and shortens the filename chain',
+  receipt.getName() === '260115_HospitalDaLuz_3-45_receipt_Claimed_05-03-2026.HEIC', receipt.getName());
+
+section('the UI is told when a file operation failed');
+const ghost = G.uiListEntries('work').rows.find(r => r.cells['Counterparty'] === 'Ghost');
+const ghostResult = G.uiSetStatus('work', ghost.row, 'Settled', '2026-04-09');
+check('status moved', ghostResult.entry.status === 'Settled', ghostResult.entry.status);
+check('but the failure is reported alongside it', ghostResult.fileErrors.length > 0, ghostResult.fileErrors);
+check('with the column that failed', !!ghostResult.fileErrors[0].column, ghostResult.fileErrors[0]);
+
+section('editing a date without changing state');
+const dateEdit = G.uiSetEntryDate('work', target.row, 'Claimed Date', '2026-03-09');
+check('date changed', dateEdit.entry.dates['Claimed Date'] === '2026-03-09', dateEdit.entry.dates);
+check('state untouched', dateEdit.entry.status === 'Claimed', dateEdit.entry.status);
+const dateCleared = G.uiSetEntryDate('work', target.row, 'Claimed Date', '');
+check('blank clears it', dateCleared.entry.dates['Claimed Date'] === '', dateCleared.entry.dates);
+let uiBadCol = null;
+try { G.uiSetEntryDate('work', target.row, 'Amount', '2026-01-01'); } catch (e) { uiBadCol = e.message; }
+check('a non-date column is still refused', /not a date column/.test(uiBadCol || ''), uiBadCol);
+
+let uiBadDate = null;
+try { G.uiSetStatus('work', target.row, 'Claimed', 'today please'); } catch (e) { uiBadDate = e.message; }
+check('a bad date is still refused', /valid yyyy-MM-dd/.test(uiBadDate || ''), uiBadDate);
+
+// Found by clicking: a Claimed Date could be set on a row still in To Do, and
+// setStatus would clear it on the next transition. Accepting a value that
+// quietly disappears is worse than refusing it.
+section('a date cannot be set for a state the row has not reached');
+G.uiSetStatus('work', target.row, 'To Do');
+const workSheetNow = mocks._ss.getSheetByName('Work');
+let unreached = null;
+try { G.uiSetEntryDate('work', target.row, 'Settled Date', '2026-05-01'); }
+catch (e) { unreached = e.message; }
+check('refused', /has not reached/.test(unreached || ''), unreached);
+check('names the state and the current one',
+  /Settled/.test(unreached || '') && /"To Do"/.test(unreached || ''), unreached);
+check('and wrote nothing',
+  workSheetNow.getRange(target.row, wcols['Settled Date']).getValue() === '',
+  workSheetNow.getRange(target.row, wcols['Settled Date']).getValue());
+check('clearing an unreached date is still allowed',
+  G.uiSetEntryDate('work', target.row, 'Settled Date', '').ok === true);
+check('the current state\'s own date is still editable',
+  (() => {
+    G.uiSetStatus('work', target.row, 'Claimed', '2026-05-02');
+    return G.uiSetEntryDate('work', target.row, 'Claimed Date', '2026-05-03')
+      .entry.dates['Claimed Date'] === '2026-05-03';
+  })());
+check('an earlier state\'s date is editable from a later state',
+  (() => {
+    G.uiSetStatus('work', target.row, 'Settled', '2026-05-10');
+    return G.uiSetEntryDate('work', target.row, 'Claimed Date', '2026-05-04')
+      .entry.dates['Claimed Date'] === '2026-05-04';
+  })());
+// A hand-typed Status must not lock the row: the UI is the only place anyone
+// would notice it, so it has to remain repairable from there.
+check('a row with an unrecognised status can still have its dates fixed',
+  (() => {
+    workSheetNow.getRange(target.row, wcols['Status']).setValue('Pending');
+    const fixed = G.uiSetEntryDate('work', target.row, 'Settled Date', '2026-05-11');
+    return fixed.ok === true && fixed.entry.dates['Settled Date'] === '2026-05-11';
+  })());
+check('and that row reports its status as off-vocabulary',
+  G.uiEntry('work', target.row).statusIndex === -1, G.uiEntry('work', target.row).status);
+G.uiSetStatus('work', target.row, 'Claimed', '2026-05-02');
+
+// Format is checked before the reached-state rule, so a typo reports as a typo
+// rather than as a state problem.
+let wrongFormat = null;
+try { G.uiSetEntryDate('work', target.row, 'Settled Date', '31/05/2026'); }
+catch (e) { wrongFormat = e.message; }
+check('a date in the wrong format reports the format, not the state',
+  /valid yyyy-MM-dd/.test(wrongFormat || ''), wrongFormat);
+
+section('every section lists through the same code path');
+['work', 'iva', 'health', 'income'].forEach(key => {
+  const data = G.uiListEntries(key);
+  check(`${key}: lists`, data.ok === true && data.meta.key === key, data.ok);
+  check(`${key}: rows carry one option per state`,
+    data.rows.every(r => r.options.length === G.getSection(key).states.length),
+    data.rows.map(r => r.options.length));
+  check(`${key}: every option names a real state`,
+    data.rows.every(r => r.options.every(o => G.stateIndex(G.getSection(key), o.state) !== -1)));
+});
+
+/* ---------------------------- checkDocuments ----------------------------- */
+// Written to answer a question Drive's own listing cannot: of two similarly
+// named files in one folder, which is the sheet actually pointing at?
+section('checkDocuments() — references and orphans, both directions');
+const docs = G.checkDocuments();
+check('checked every non-empty file reference', docs.checked > 0, docs.checked);
+check('sections with no documents contribute nothing',
+  docs.rows.every(r => r.section !== 'income'), docs.rows.map(r => r.section));
+check('an intact reference reports the real filename and folder',
+  docs.rows.some(r => r.opens === true && /_receipt/.test(r.name || '') && !!r.folder),
+  docs.rows.filter(r => r.opens).slice(0, 3));
+check('a dead reference is reported as not opening',
+  docs.rows.some(r => r.opens === false && !!r.error), docs.rows.filter(r => !r.opens));
+check('and counted', docs.brokenReferences > 0, docs.brokenReferences);
+check('the row and column of a bad reference are named',
+  docs.rows.filter(r => !r.opens).every(r => r.row >= 2 && !!r.column),
+  docs.rows.filter(r => !r.opens));
+
+// A file nothing refers to is exactly what a broken reference leaves behind, and
+// it is indistinguishable from a live one by name alone.
+const strayFile = mocks.DriveApp._addFile('260810_SmokeTestLtd_3-45_justification.txt');
+strayFile.moveTo(G.sectionFolder(G.getSection('health'), 'Inbox'));
+const withOrphan = G.checkDocuments();
+check('an unreferenced file in the tree is flagged as an orphan',
+  withOrphan.orphans.some(o => o.id === strayFile.getId()), withOrphan.orphans);
+check('the orphan report names its folder and section',
+  withOrphan.orphans.every(o => !!o.folder && !!o.section), withOrphan.orphans);
+check('a referenced file is never called an orphan',
+  withOrphan.orphans.every(o => !docs.rows.some(r => r.id === o.id)), withOrphan.orphans);
+check('ok is false while either problem exists', withOrphan.ok === false, withOrphan.ok);
+strayFile.setTrashed(true);
 
 console.log('\n--- Suppliers sheet ---\n' + dump('Suppliers'));
 console.log('\n--- Work sheet ---\n' + dump('Work'));

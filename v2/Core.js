@@ -422,6 +422,19 @@ function setStatus(sectionKey, sheetRow, newState, dateISO) {
 /**
  * Correct a date without changing state.
  * Only date columns declared by this section's states may be written.
+ *
+ * A date for a state the row has NOT reached is refused. setStatus clears the
+ * dates of every state after the target, so such a date is wiped by the next
+ * transition — accepting it means writing something that quietly disappears,
+ * which is worse than saying no. Selecting the state is how its date gets set,
+ * and that is the one path that keeps status and dates agreeing.
+ *
+ * Two deliberate exceptions:
+ *   - Clearing is always allowed. Removing a date can never create the
+ *     inconsistency this guards against.
+ *   - A row whose Status is not a recognised state is allowed through, because
+ *     refusing would leave no way to repair it from the UI - which is the only
+ *     place a hand-edited sheet gets noticed.
  */
 function setEntryDate(sectionKey, sheetRow, dateColumn, dateISO) {
   const section = getSection(sectionKey);
@@ -429,11 +442,25 @@ function setEntryDate(sectionKey, sheetRow, dateColumn, dateISO) {
   const row = resolveDataRow(sheet, sheetRow);
   const cols = resolveColumns(sheet);
 
-  const allowed = section.states.some(s => s.dateColumn === dateColumn);
-  if (!allowed) throw new Error(`"${dateColumn}" is not a date column of ${sectionKey}`);
+  const targetIndex = section.states.findIndex(s => s.dateColumn === dateColumn);
+  if (targetIndex === -1) {
+    throw new Error(`"${dateColumn}" is not a date column of ${sectionKey}`);
+  }
 
   // Blank clears the date; anything else must be a real one
   const value = dateISO ? requireDateISO(dateISO, dateColumn) : '';
+
+  if (value) {
+    const status = (readCell(sheet, cols, row, COMMON.status) || '').toString().trim();
+    const currentIndex = stateIndex(section, status);
+    if (currentIndex !== -1 && targetIndex > currentIndex) {
+      throw new Error(
+        `"${dateColumn}" belongs to ${section.states[targetIndex].name}, which this ` +
+        `entry has not reached - it is "${status}". Select that state instead; ` +
+        `it asks for the date.`
+      );
+    }
+  }
 
   writeCell(sheet, cols, row, dateColumn, value);
   return { ok: true, section: sectionKey, row: row, column: dateColumn, date: value };

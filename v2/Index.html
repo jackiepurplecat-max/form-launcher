@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <!--
+    v2 — the one page.
+
+    Driven entirely by what uiBootstrap() and uiListEntries() return: the tabs,
+    the table columns, the status options and the date dialog all come from
+    SECTIONS on the server. There is no per-section code in here, which is the
+    whole reason v1's four near-identical loadX/renderX/toggleX sets are gone.
+
+    Three rules this page keeps:
+      - Loading, empty and error are distinct states. A failure must never look
+        like "no data", which is how v1 hid its load failures.
+      - A status change reports what actually happened. setStatus can move the
+        status and still fail to rename a file; that shows as a warning, not a
+        tick.
+      - No confirmation on a status change, because every one is reversible.
+        Confirmations on frequent actions only train you to tap through them.
+  -->
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --card: #ffffff;
+      --line: #e2e5ea;
+      --text: #1c1f24;
+      --muted: #6b7280;
+      --accent: #1a73e8;
+      --warn: #b26a00;
+      --warn-bg: #fff4e0;
+      --err: #b3261e;
+      --err-bg: #fdecea;
+      --ok: #1e7d45;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      margin: 0;
+      font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      padding-bottom: 3rem;
+    }
+
+    header {
+      display: flex; align-items: baseline; gap: .75rem;
+      padding: .85rem 1rem;
+      background: var(--card);
+      border-bottom: 1px solid var(--line);
+      position: sticky; top: 0; z-index: 5;
+    }
+    header h1 { font-size: 1.05rem; margin: 0; font-weight: 600; }
+    header .who { color: var(--muted); font-size: .8rem; margin-left: auto; }
+    header button { margin-left: .5rem; }
+
+    button, select, input {
+      font: inherit; color: inherit;
+      border: 1px solid var(--line); border-radius: 8px;
+      background: var(--card); padding: .4rem .6rem;
+    }
+    button { cursor: pointer; }
+    button.primary {
+      background: var(--accent); color: #fff; border-color: var(--accent);
+      font-weight: 600; padding: .7rem 1rem; width: 100%;
+    }
+    button.link { border: 0; background: none; color: var(--accent); padding: .2rem; }
+
+    nav#tabs {
+      display: flex; gap: .4rem; overflow-x: auto;
+      padding: .6rem 1rem; background: var(--card);
+      border-bottom: 1px solid var(--line);
+    }
+    nav#tabs button {
+      white-space: nowrap; border-radius: 999px; padding: .4rem .85rem;
+      color: var(--muted);
+    }
+    nav#tabs button[aria-selected="true"] {
+      background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
+    }
+
+    main { padding: 1rem; max-width: 1100px; margin: 0 auto; }
+
+    .card {
+      background: var(--card); border: 1px solid var(--line);
+      border-radius: 12px; padding: .85rem; margin-bottom: 1rem;
+    }
+
+    /* Reference block: identifiers you retype into Finanças, so tap to copy. */
+    #reference { display: none; }
+    #reference h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em;
+      color: var(--muted); margin: 0 0 .5rem; }
+    #reference .items { display: flex; flex-wrap: wrap; gap: .5rem; }
+    #reference button {
+      display: flex; flex-direction: column; align-items: flex-start;
+      gap: .1rem; padding: .5rem .7rem; text-align: left;
+    }
+    #reference .label { font-size: .7rem; color: var(--muted); }
+    #reference .value { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+    #filters { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: 1rem; }
+    #filters label { font-size: .8rem; color: var(--muted); }
+    #filters .count { margin-left: auto; font-size: .8rem; color: var(--muted); }
+
+    #state { padding: 2rem 1rem; text-align: center; color: var(--muted); }
+    #state.error { color: var(--err); background: var(--err-bg); border-radius: 12px; text-align: left; }
+    #state.error strong { display: block; margin-bottom: .3rem; }
+    #state.hidden, #tableCard.hidden { display: none; }
+
+    #tableCard { background: var(--card); border: 1px solid var(--line);
+      border-radius: 12px; overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+    th, td { text-align: left; padding: .55rem .7rem; border-bottom: 1px solid var(--line);
+      white-space: nowrap; vertical-align: middle; }
+    th { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em;
+      color: var(--muted); font-weight: 600; background: #fbfcfd; position: sticky; top: 0; }
+    tr:last-child td { border-bottom: 0; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    td.notes { white-space: normal; min-width: 12rem; color: var(--muted); }
+    tr.busy { opacity: .5; }
+
+    select.status { font-size: .85rem; padding: .3rem .4rem; }
+    .chip {
+      border: 1px solid var(--line); border-radius: 999px;
+      padding: .2rem .55rem; font-size: .78rem; background: #fbfcfd;
+    }
+    button.chip { cursor: pointer; }
+    button.chip.blank { color: var(--muted); border-style: dashed; }
+    /* A state the row has not reached: shown so the column still lines up, but
+       not offered, because the server will not write it. */
+    span.chip.unreached { color: var(--muted); border: 0; background: none; opacity: .5; }
+    .awaiting { color: var(--warn); }
+    .docs a { color: var(--accent); text-decoration: none; font-size: .8rem; }
+    .docs a + a { margin-left: .4rem; }
+    .docs .none { color: var(--muted); font-size: .8rem; }
+
+    /* Dialog: one tap to accept, but the date is always seen before it is
+       written, because Claimed / Settled / Received are usually backdated. */
+    #overlay {
+      position: fixed; inset: 0; background: rgba(20, 22, 26, .45);
+      display: none; align-items: center; justify-content: center; padding: 1rem; z-index: 20;
+    }
+    #overlay.open { display: flex; }
+    #dialog { background: var(--card); border-radius: 16px; padding: 1.25rem;
+      width: 100%; max-width: 22rem; text-align: center; }
+    #dialog h2 { margin: 0 0 1rem; font-size: 1.05rem; }
+    #dialog .or { color: var(--muted); font-size: .8rem; margin: .9rem 0 .5rem; }
+    #dialog .pick { display: flex; gap: .5rem; }
+    #dialog .pick input { flex: 1; }
+    #dialog .extra { margin-top: .75rem; display: flex; justify-content: center; gap: 1rem; }
+
+    #toast {
+      position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%);
+      max-width: min(30rem, calc(100vw - 2rem));
+      background: var(--text); color: #fff; padding: .7rem .9rem; border-radius: 10px;
+      font-size: .85rem; opacity: 0; pointer-events: none; transition: opacity .18s;
+      z-index: 30; white-space: pre-line;
+    }
+    #toast.show { opacity: 1; }
+    #toast.warn { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn); }
+    #toast.error { background: var(--err-bg); color: var(--err); border: 1px solid var(--err); }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>HelpfulForms</h1>
+    <span class="who" id="who"></span>
+    <button id="refresh" type="button">Refresh</button>
+  </header>
+
+  <nav id="tabs" role="tablist"></nav>
+
+  <main>
+    <section class="card" id="reference">
+      <h2>For the claim form</h2>
+      <div class="items" id="referenceItems"></div>
+    </section>
+
+    <div id="filters"></div>
+
+    <div id="state">Loading…</div>
+    <div id="tableCard" class="hidden"><table id="table"></table></div>
+  </main>
+
+  <div id="overlay">
+    <div id="dialog" role="dialog" aria-modal="true">
+      <h2 id="dialogTitle"></h2>
+      <button class="primary" id="dialogPrimary" type="button"></button>
+      <p class="or">or pick a date</p>
+      <div class="pick">
+        <!-- Native date input, so iOS opens the system wheel rather than
+             anything hand-built. -->
+        <input type="date" id="dialogDate">
+        <button id="dialogOk" type="button">OK</button>
+      </div>
+      <div class="extra">
+        <button class="link" id="dialogClear" type="button">Clear date</button>
+        <button class="link" id="dialogCancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    /* ------------------------------- state -------------------------------- */
+
+    var app = {
+      today: '',
+      sections: [],       // metadata from the server, in SECTIONS order
+      current: null,      // section key on screen
+      meta: null,         // metadata for the current section
+      rows: [],           // rows as the server last reported them
+      filters: { status: '', category: '' },
+      dialog: null        // what the open dialog will do when accepted
+    };
+
+    var el = function (id) { return document.getElementById(id); };
+
+    /* ----------------------------- utilities ------------------------------ */
+
+    function escapeHtml(value) {
+      return String(value === null || value === undefined ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    /** "2026-08-08" -> "8 Aug". Anything unparseable comes back verbatim. */
+    function dayLabel(iso) {
+      var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+      if (!m) return String(iso || '');
+      return Number(m[3]) + ' ' + MONTHS[Number(m[2]) - 1];
+    }
+
+    var toastTimer = null;
+    function toast(message, kind) {
+      var node = el('toast');
+      node.textContent = message;
+      node.className = 'show' + (kind ? ' ' + kind : '');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { node.className = ''; }, kind === 'error' ? 9000 : 5000);
+    }
+
+    /** Loading / empty / error are distinct, and only one is ever on screen. */
+    function showState(kind, message) {
+      var state = el('state');
+      var table = el('tableCard');
+      if (kind === 'rows') {
+        state.className = 'hidden';
+        table.className = '';
+        return;
+      }
+      table.className = 'hidden';
+      state.className = kind === 'error' ? 'error' : '';
+      state.innerHTML = kind === 'error'
+        ? '<strong>Could not load this section.</strong>' + escapeHtml(message)
+        : escapeHtml(message);
+    }
+
+    function call(name) {
+      var args = Array.prototype.slice.call(arguments, 1);
+      return new Promise(function (resolve, reject) {
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(reject)
+          [name].apply(null, args);
+      });
+    }
+
+    /* -------------------------------- boot -------------------------------- */
+
+    function boot() {
+      showState('loading', 'Loading…');
+      call('uiBootstrap').then(function (data) {
+        app.today = data.today;
+        app.sections = data.sections;
+        el('who').textContent = data.user;
+        renderTabs();
+        select(data.sections[0].key);
+      }).catch(function (error) {
+        showState('error', message(error));
+      });
+    }
+
+    function message(error) {
+      return (error && error.message) ? error.message : String(error);
+    }
+
+    function renderTabs() {
+      el('tabs').innerHTML = app.sections.map(function (section) {
+        return '<button type="button" role="tab" data-key="' + escapeHtml(section.key) + '"' +
+          ' aria-selected="false">' + escapeHtml(section.label) + '</button>';
+      }).join('');
+    }
+
+    function select(key) {
+      app.current = key;
+      app.meta = null;
+      app.rows = [];
+      app.filters = { status: '', category: '' };
+
+      Array.prototype.forEach.call(el('tabs').children, function (tab) {
+        tab.setAttribute('aria-selected', String(tab.dataset.key === key));
+      });
+
+      el('reference').style.display = 'none';
+      el('filters').innerHTML = '';
+      load();
+    }
+
+    function load() {
+      var key = app.current;
+      showState('loading', 'Loading…');
+      call('uiListEntries', key).then(function (data) {
+        if (app.current !== key) return;  // a tab changed while this was in flight
+        app.today = data.today;
+        app.meta = data.meta;
+        app.rows = data.rows;
+        renderReference();
+        renderFilters();
+        renderTable();
+      }).catch(function (error) {
+        if (app.current !== key) return;
+        showState('error', message(error));
+      });
+    }
+
+    /* ------------------------------ reference ----------------------------- */
+
+    function renderReference() {
+      var box = el('reference');
+      var items = app.meta.reference || [];
+      if (!items.length) { box.style.display = 'none'; return; }
+
+      el('referenceItems').innerHTML = items.map(function (item) {
+        return '<button type="button" data-copy="' + escapeHtml(item.value) + '">' +
+          '<span class="label">' + escapeHtml(item.label) + '</span>' +
+          '<span class="value">' + escapeHtml(item.value) + '</span></button>';
+      }).join('');
+      box.style.display = 'block';
+    }
+
+    /* ------------------------------- filters ------------------------------ */
+
+    function categoryValues() {
+      if (!app.meta.category) return [];
+      var header = app.meta.category.header;
+      var seen = {};
+      app.rows.forEach(function (row) {
+        var value = row.cells[header];
+        if (value !== '' && value !== null && value !== undefined) seen[value] = true;
+      });
+      return Object.keys(seen).sort();
+    }
+
+    function renderFilters() {
+      // Three stable options per section rather than one per claim date, which
+      // is what v1's dropdowns grew into.
+      var html = '<label for="statusFilter">Status</label>' +
+        '<select id="statusFilter"><option value="">All</option>' +
+        app.meta.states.map(function (state) {
+          return '<option value="' + escapeHtml(state.name) + '">' +
+            escapeHtml(state.name) + '</option>';
+        }).join('') + '</select>';
+
+      if (app.meta.category) {
+        var values = categoryValues();
+        html += '<label for="categoryFilter">' + escapeHtml(app.meta.category.label) + '</label>' +
+          '<select id="categoryFilter"><option value="">All</option>' +
+          values.map(function (value) {
+            return '<option value="' + escapeHtml(value) + '">' + escapeHtml(value) + '</option>';
+          }).join('') + '</select>';
+      }
+
+      html += '<span class="count" id="count"></span>';
+      el('filters').innerHTML = html;
+
+      el('statusFilter').value = app.filters.status;
+      if (el('categoryFilter')) el('categoryFilter').value = app.filters.category;
+    }
+
+    /* -------------------------------- table ------------------------------- */
+
+    function visibleRows() {
+      return app.rows.filter(function (row) {
+        if (app.filters.status && row.status !== app.filters.status) return false;
+        if (app.filters.category && app.meta.category &&
+            row.cells[app.meta.category.header] !== app.filters.category) return false;
+        return true;
+      });
+    }
+
+    function renderTable() {
+      var rows = visibleRows();
+      var counter = el('count');
+
+      if (!app.rows.length) {
+        showState('empty', 'No entries in ' + app.meta.label + ' yet.');
+        if (counter) counter.textContent = '';
+        return;
+      }
+      if (!rows.length) {
+        showState('empty', 'No entries match the current filter.');
+        if (counter) counter.textContent = '0 of ' + app.rows.length;
+        return;
+      }
+
+      var head = '<tr>' + app.meta.columns.map(function (column) {
+        return '<th>' + escapeHtml(column.label) + '</th>';
+      }).join('') + '<th>Status</th>';
+      app.meta.states.forEach(function (state) {
+        if (state.dateColumn) head += '<th>' + escapeHtml(state.dateColumn) + '</th>';
+      });
+      if (app.meta.files.length) head += '<th>Documents</th>';
+      head += '</tr>';
+
+      el('table').innerHTML = head + rows.map(rowHtml).join('');
+      showState('rows');
+      counter.textContent = rows.length === app.rows.length
+        ? app.rows.length + (app.rows.length === 1 ? ' entry' : ' entries')
+        : rows.length + ' of ' + app.rows.length;
+    }
+
+    function rowHtml(row) {
+      var cells = app.meta.columns.map(function (column) {
+        var value = row.cells[column.header];
+        var cls = column.type === 'number' ? ' class="num"'
+          : column.header === 'Notes' ? ' class="notes"' : '';
+        var text = column.type === 'date' ? dayLabelOrRaw(value) : value;
+        return '<td' + cls + '>' + escapeHtml(text) + '</td>';
+      }).join('');
+
+      // The status selector, not Done/Undo: three states cannot be a two-way
+      // toggle, and going back is just picking an earlier one.
+      cells += '<td><select class="status" data-row="' + row.row + '">' +
+        app.meta.states.map(function (state) {
+          return '<option value="' + escapeHtml(state.name) + '"' +
+            (state.name === row.status ? ' selected' : '') + '>' +
+            escapeHtml(state.name) + '</option>';
+        }).join('') +
+        (row.statusIndex === -1
+          ? '<option value="" selected>' + escapeHtml(row.status || '(none)') + '</option>'
+          : '') +
+        '</select></td>';
+
+      app.meta.states.forEach(function (state, index) {
+        if (!state.dateColumn) return;
+        var iso = row.dates[state.dateColumn] || '';
+        // Only a state the row has REACHED gets an editable chip. A date for a
+        // later state is one setStatus clears on the next transition, so the
+        // server refuses it and offering the control would be inviting you to
+        // write something that vanishes. An existing date stays editable
+        // whatever the status, so a hand-edited row can still be repaired.
+        var editable = !!iso || (row.statusIndex >= 0 && index <= row.statusIndex);
+        cells += '<td>' + (editable
+          ? '<button type="button" class="chip' + (iso ? '' : ' blank') +
+            '" data-date-row="' + row.row + '" data-date-column="' +
+            escapeHtml(state.dateColumn) + '">' +
+            (iso ? escapeHtml(dayLabel(iso)) : '—') + '</button>'
+          : '<span class="chip unreached" title="Select ' + escapeHtml(state.name) +
+            ' to set this">—</span>') + '</td>';
+      });
+
+      if (app.meta.files.length) {
+        cells += '<td class="docs">' + (row.files.length
+          ? row.files.map(function (file) {
+              return '<a href="' + escapeHtml(file.url) + '" target="_blank" rel="noopener">' +
+                escapeHtml(file.label) + '</a>';
+            }).join('')
+          : '<span class="none' + (row.receiptState === 'awaiting' ? ' awaiting' : '') + '">' +
+            escapeHtml(row.receiptState || 'none') + '</span>') + '</td>';
+      }
+
+      return '<tr data-row="' + row.row + '">' + cells + '</tr>';
+    }
+
+    function dayLabelOrRaw(value) {
+      return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '')) ? dayLabel(value) : value;
+    }
+
+    function findRow(rowNumber) {
+      return app.rows.filter(function (row) { return row.row === Number(rowNumber); })[0];
+    }
+
+    function replaceRow(entry) {
+      if (!entry) return;
+      app.rows = app.rows.map(function (row) { return row.row === entry.row ? entry : row; });
+    }
+
+    function setBusy(rowNumber, busy) {
+      var tr = el('table').querySelector('tr[data-row="' + rowNumber + '"]');
+      if (tr) tr.className = busy ? 'busy' : '';
+    }
+
+    /* ------------------------------- dialog ------------------------------- */
+
+    /**
+     * Open the date dialog.
+     *
+     * spec.keepExisting comes from the server, which knows whether the target
+     * state already holds a date. When it does the primary button reads
+     * "Keep 15 Jan", because setStatus only fills a blank date — a button
+     * saying "Today" would be a lie on the revert path.
+     */
+    function openDialog(spec) {
+      app.dialog = spec;
+      var prefill = spec.existingDate || app.today;
+
+      el('dialogTitle').textContent = spec.title;
+      el('dialogPrimary').textContent = spec.keepExisting
+        ? 'Keep ' + dayLabel(spec.existingDate)
+        : 'Today — ' + dayLabel(app.today);
+      el('dialogDate').value = prefill;
+      el('dialogClear').style.display = spec.allowClear ? '' : 'none';
+      el('overlay').className = 'open';
+    }
+
+    function closeDialog(cancelled) {
+      var spec = app.dialog;
+      app.dialog = null;
+      el('overlay').className = '';
+      if (cancelled && spec && spec.onCancel) spec.onCancel();
+    }
+
+    function acceptDialog(dateISO) {
+      var spec = app.dialog;
+      if (!spec) return;
+      app.dialog = null;
+      el('overlay').className = '';
+      spec.apply(dateISO);
+    }
+
+    /* ------------------------------- actions ------------------------------ */
+
+    function changeStatus(rowNumber, stateName) {
+      var row = findRow(rowNumber);
+      if (!row) return;
+
+      var option = row.options.filter(function (o) { return o.state === stateName; })[0];
+      if (!option) return;
+
+      // A state with no date column of its own — Work's "To Do" — needs no
+      // dialog at all.
+      if (!option.dateColumn) return applyStatus(rowNumber, stateName, '');
+
+      openDialog({
+        title: 'Mark as ' + stateName,
+        existingDate: option.existingDate,
+        keepExisting: option.keepExisting,
+        allowClear: false,
+        apply: function (dateISO) { applyStatus(rowNumber, stateName, dateISO); },
+        onCancel: function () { renderTable(); }
+      });
+    }
+
+    function applyStatus(rowNumber, stateName, dateISO) {
+      setBusy(rowNumber, true);
+      call('uiSetStatus', app.current, rowNumber, stateName, dateISO)
+        .then(function (result) {
+          replaceRow(result.entry);
+          renderFilters();
+          renderTable();
+          // Never report success for work that failed: the status moved, and if
+          // a rename did not, that is what gets said.
+          if (result.fileErrors && result.fileErrors.length) {
+            toast(stateName + ' saved, but the document could not be filed:\n' +
+              result.fileErrors.map(function (f) {
+                return f.column + ': ' + (f.error || 'unknown error');
+              }).join('\n'), 'warn');
+          } else {
+            toast(stateName + (result.date ? ' — ' + dayLabel(result.date) : ''));
+          }
+        })
+        .catch(function (error) {
+          setBusy(rowNumber, false);
+          renderTable();  // put the selector back to what the sheet still says
+          toast(message(error), 'error');
+        });
+    }
+
+    function editDate(rowNumber, dateColumn) {
+      var row = findRow(rowNumber);
+      if (!row) return;
+      var existing = row.dates[dateColumn] || '';
+
+      openDialog({
+        title: dateColumn,
+        existingDate: existing,
+        keepExisting: !!existing,
+        allowClear: !!existing,
+        apply: function (dateISO) { applyDate(rowNumber, dateColumn, dateISO); }
+      });
+    }
+
+    function applyDate(rowNumber, dateColumn, dateISO) {
+      setBusy(rowNumber, true);
+      call('uiSetEntryDate', app.current, rowNumber, dateColumn, dateISO)
+        .then(function (result) {
+          replaceRow(result.entry);
+          renderTable();
+          toast(dateColumn + (result.date ? ' — ' + dayLabel(result.date) : ' cleared'));
+        })
+        .catch(function (error) {
+          setBusy(rowNumber, false);
+          toast(message(error), 'error');
+        });
+    }
+
+    function copyValue(value) {
+      var done = function () { toast('Copied ' + value); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(value).then(done, function () { fallbackCopy(value, done); });
+      } else {
+        fallbackCopy(value, done);
+      }
+    }
+
+    function fallbackCopy(value, done) {
+      var field = document.createElement('textarea');
+      field.value = value;
+      field.style.position = 'fixed';
+      field.style.opacity = '0';
+      document.body.appendChild(field);
+      field.select();
+      try { document.execCommand('copy'); done(); }
+      catch (e) { toast('Could not copy — ' + value, 'error'); }
+      document.body.removeChild(field);
+    }
+
+    /* ------------------------------- events ------------------------------- */
+
+    document.addEventListener('click', function (event) {
+      var target = event.target.closest('button, a');
+      if (!target) return;
+
+      if (target.parentNode === el('tabs')) return select(target.dataset.key);
+      if (target.id === 'refresh') return load();
+      if (target.dataset.copy !== undefined) return copyValue(target.dataset.copy);
+      if (target.dataset.dateRow) return editDate(target.dataset.dateRow, target.dataset.dateColumn);
+      if (target.id === 'dialogPrimary') return acceptDialog(el('dialogDate').value);
+      if (target.id === 'dialogOk') return acceptDialog(el('dialogDate').value);
+      if (target.id === 'dialogClear') return acceptDialog('');
+      if (target.id === 'dialogCancel') return closeDialog(true);
+    });
+
+    el('overlay').addEventListener('click', function (event) {
+      if (event.target === el('overlay')) closeDialog(true);
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (!app.dialog) return;
+      if (event.key === 'Escape') {
+        // Without this the browser also acts on Escape — leaving fullscreen,
+        // which reads as the window disappearing rather than a dialog closing.
+        event.preventDefault();
+        closeDialog(true);
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        acceptDialog(el('dialogDate').value);
+      }
+    });
+
+    document.addEventListener('change', function (event) {
+      var target = event.target;
+      if (target.classList.contains('status')) {
+        return changeStatus(target.dataset.row, target.value);
+      }
+      if (target.id === 'statusFilter') {
+        app.filters.status = target.value;
+        return renderTable();
+      }
+      if (target.id === 'categoryFilter') {
+        app.filters.category = target.value;
+        return renderTable();
+      }
+    });
+
+    boot();
+  </script>
+</body>
+</html>

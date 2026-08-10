@@ -314,6 +314,118 @@ function setupScriptProperties() {
   return checkScriptProperties();
 }
 
+/* ============================== Diagnostics =============================== */
+
+/** Name of the folder a file sits in, or a note saying it has none. */
+function parentFolderName(file) {
+  const parents = file.getParents();
+  return parents.hasNext() ? parents.next().getName() : '(no folder)';
+}
+
+/**
+ * Report every document reference and every file in the Drive tree.
+ *
+ * Zero arguments, so the editor can run it. Written because Drive's own listing
+ * cannot answer the question that matters: which of these files is the sheet
+ * actually pointing at?
+ *
+ * It reports both directions, and the mismatch between them is the point:
+ *
+ *   rows     every file reference in every sheet, whether it opens, and the
+ *            real name and folder of the file it resolves to
+ *   orphans  files sitting in the tree that NO row refers to
+ *
+ * An orphan is what a broken reference leaves behind. The file is untouched -
+ * still there, still named whatever it was called at the moment the link broke -
+ * but transitions stop renaming it, because nothing can find it. Two files then
+ * sit side by side with similar names and only one of them live, which is
+ * impossible to tell apart by looking.
+ */
+function checkDocuments() {
+  const report = { rows: [], orphans: [], brokenReferences: 0, checked: 0 };
+  const referenced = {};
+
+  Object.keys(SECTIONS).forEach(key => {
+    const section = SECTIONS[key];
+    if (!section.fileColumns.length) return;
+
+    const sheet = getSheet(section);
+    const cols = resolveColumns(sheet);
+    const lastRow = sheet.getLastRow();
+
+    for (let row = 2; row <= lastRow; row++) {
+      section.fileColumns.forEach(fileCol => {
+        const stored = (readCell(sheet, cols, row, fileCol.header) || '').toString().trim();
+        if (!stored) return;
+
+        report.checked++;
+        const entry = {
+          section: key,
+          row: row,
+          column: fileCol.header,
+          status: (readCell(sheet, cols, row, COMMON.status) || '').toString(),
+          stored: stored
+        };
+
+        const fileId = extractFileId(stored);
+        if (!fileId) {
+          entry.opens = false;
+          entry.error = 'no Drive ID could be read from the cell';
+          report.brokenReferences++;
+          report.rows.push(entry);
+          return;
+        }
+
+        entry.id = fileId;
+        referenced[fileId] = true;
+
+        try {
+          const file = DriveApp.getFileById(fileId);
+          entry.opens = true;
+          entry.name = file.getName();
+          entry.folder = parentFolderName(file);
+        } catch (error) {
+          entry.opens = false;
+          entry.error = error.toString();
+          report.brokenReferences++;
+        }
+        report.rows.push(entry);
+      });
+    }
+  });
+
+  // Second direction: what is actually in the folders. Uses the same
+  // sectionFolder() the rest of the code does, so it cannot look somewhere else.
+  Object.keys(SECTIONS).forEach(key => {
+    const section = SECTIONS[key];
+    if (!section.fileColumns.length) return;
+
+    const names = [INBOX_FOLDER];
+    section.states.forEach(state => {
+      if (state.folder && names.indexOf(state.folder) === -1) names.push(state.folder);
+    });
+    names.push(ARCHIVE_FOLDER);
+
+    names.forEach(folderName => {
+      const files = sectionFolder(section, folderName).getFiles();
+      while (files.hasNext()) {
+        const file = files.next();
+        if (referenced[file.getId()]) continue;
+        report.orphans.push({
+          section: key,
+          folder: folderName,
+          name: file.getName(),
+          id: file.getId()
+        });
+      }
+    });
+  });
+
+  report.ok = report.brokenReferences === 0 && report.orphans.length === 0;
+  Logger.log(JSON.stringify(report, null, 2));
+  return report;
+}
+
 /**
  * Report what is configured, without revealing secrets.
  *

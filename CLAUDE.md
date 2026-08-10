@@ -11,7 +11,7 @@ of v2.
 | Account | the original one | a separate one — `V2_CLASP_ACCOUNT` in `.env` |
 | Push | `npm run clasp:push` | `npm run v2:push` (`--user v2` credential) |
 | Intake | four Google Forms + `onFormSubmit` | **no Forms, no triggers** — `createEntry()` only |
-| UI | GitHub Pages + Sheets API + two client-side keys | Apps Script web app (not built yet) |
+| UI | GitHub Pages + Sheets API + two client-side keys | Apps Script web app — `v2/Web.js` + `v2/Index.html` |
 
 **Do not change v1.** It still serves the old account and is being worked down
 to zero in parallel. Its known bugs are accepted, not fixed.
@@ -47,6 +47,11 @@ npm run v2:push    # add --force if appsscript.json changed
 - **Every value written to a sheet goes through `safeCellValue`.**
 - **Claim mail sends once**, when the document is there, and at no other time —
   guarded by a `Claim Emailed` column, not by convention.
+- **Every function the web page can call checks the caller itself.**
+  `google.script.run` reaches any global in the project, so the deployment
+  setting is never the only gate. The check reads `Session.getActiveUser()` — the
+  visitor — not `getEffectiveUser()`, which under "execute as me" is always you
+  and therefore proves nothing.
 
 `v2/Smoke.js` is the live counterpart of the harness, run from the Apps Script
 editor. `v2/test/` is local only and is not pushed.

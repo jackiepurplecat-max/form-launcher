@@ -1,8 +1,29 @@
 /* Minimal Apps Script stand-ins: enough to actually run v2 end to end. */
 
+const fs = require('fs');
+const path = require('path');
+
 const Logger = { entries: [], log(m) { this.entries.push(String(m)); } };
 
-const Session = { getScriptTimeZone: () => 'UTC' };
+/*
+ * The account the deployment runs as, and whoever is visiting.
+ *
+ * These are separate on purpose: with "execute as me", getEffectiveUser() is
+ * always the deployer while getActiveUser() is the caller, and that difference
+ * is the entire basis of the UI's access check. _setActiveUser lets the harness
+ * arrive as somebody else - or as nobody, which is what an anonymous
+ * deployment produces.
+ */
+const OWNER_EMAIL = 'owner@example.test';
+let _activeUser = OWNER_EMAIL;
+
+const Session = {
+  getScriptTimeZone: () => 'UTC',
+  getActiveUser: () => ({ getEmail: () => _activeUser }),
+  getEffectiveUser: () => ({ getEmail: () => OWNER_EMAIL }),
+  _setActiveUser(email) { _activeUser = email; },
+  _owner: OWNER_EMAIL
+};
 
 function _pad(n, w) { return String(n).padStart(w, '0'); }
 
@@ -108,6 +129,7 @@ class DFile {
   getBlob() { return { _blob: this.name }; }
   getParents() { const p = this.parent ? [this.parent] : []; let i = 0; return { hasNext: () => i < p.length, next: () => p[i++] }; }
   setTrashed(v) { this.trashed = !!v; return this; }
+  isTrashed() { return !!this.trashed; }
 }
 class DFolder {
   constructor(name) { this.id = 'fold' + (++_driveId) + 'y'.repeat(22); this.name = name; this.children = []; }
@@ -117,6 +139,14 @@ class DFolder {
   createFolder(n) { const f = new DFolder(n); this.children.push(f); _folders[f.id] = f; return f; }
   getFoldersByName(n) {
     const hits = this.children.filter(c => c instanceof DFolder && c.name === n);
+    let i = 0;
+    return { hasNext: () => i < hits.length, next: () => hits[i++] };
+  }
+  // Files record their own parent rather than being listed by the folder, so
+  // this scans - which is also how a file moved here by moveTo() shows up.
+  getFiles() {
+    const hits = Object.keys(_files).map(id => _files[id])
+      .filter(f => f.parent === this && !f.trashed);
     let i = 0;
     return { hasNext: () => i < hits.length, next: () => hits[i++] };
   }
@@ -142,6 +172,36 @@ const PropertiesService = {
   })
 };
 
+/* ------------------------------ HtmlService -------------------------------- */
+
+/*
+ * Reads the real Index.html off disk, so a page renamed or missing from the
+ * project fails here rather than at the deployed URL.
+ */
+function _htmlOutput(content) {
+  return {
+    _content: content, title: '', metaTags: [],
+    getContent() { return this._content; },
+    getTitle() { return this.title; },
+    setTitle(t) { this.title = t; return this; },
+    addMetaTag(name, value) { this.metaTags.push({ name, value }); return this; },
+    setXFrameOptionsMode() { return this; }
+  };
+}
+
+const HtmlService = {
+  createHtmlOutput(content) { return _htmlOutput(String(content)); },
+  createHtmlOutputFromFile(name) {
+    const file = path.join(__dirname, '..', `${name}.html`);
+    if (!fs.existsSync(file)) throw new Error(`No HTML file named "${name}" in the project`);
+    return _htmlOutput(fs.readFileSync(file, 'utf8'));
+  },
+  createTemplateFromFile(name) {
+    const output = HtmlService.createHtmlOutputFromFile(name);
+    return { evaluate: () => output };
+  }
+};
+
 /* -------------------------------- Misc ----------------------------------- */
 
 const MailApp = { sent: [], sendEmail(to, subject, body, opts) { this.sent.push({ to, subject, body, opts }); } };
@@ -156,5 +216,5 @@ const LockService = {
 
 module.exports = {
   Logger, Session, Utilities, SpreadsheetApp, DriveApp, PropertiesService,
-  MailApp, LockService, _props, _files, _folders, _ss
+  MailApp, LockService, HtmlService, _props, _files, _folders, _ss
 };

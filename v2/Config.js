@@ -305,6 +305,11 @@ const SCRIPT_PROPERTY_INFO = {
     required: false, secret: false,
     description: 'Fixed Tipo text shown in the IVA section'
   },
+  UI_ALLOWED_EMAILS: {
+    required: false, secret: false,
+    description: 'Comma-separated addresses allowed to use the web UI. Unset means ' +
+      'only the account the script runs as, which is the intent for a personal tool'
+  },
   SIRI_API_KEY: {
     required: false, secret: true,
     description: 'Key held only in the Shortcut, for the create-only endpoint'
