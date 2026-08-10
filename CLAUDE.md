@@ -41,6 +41,21 @@ push — and prints either `Skipping push.` or `Pushed 9 files.` followed by the
 list. Never take the output as evidence; run `npm run v2:verify`, and on a
 mismatch `npm run v2:push:force`.
 
+**`v2/appsscript.json` has no trailing final newline, on purpose.** Google stores
+it that way, and one byte of difference silently refuses every push. Git showing
+`\ No newline at end of file` for that file is correct — do not tidy it.
+
+**Pushing is not deploying.** A push updates HEAD, which is what `…/dev` serves;
+`…/exec` serves a pinned version until you cut a new one with
+`clasp --user v2 deploy -i <deploymentId>`. Omitting `-i` creates a second
+deployment on a different URL instead of updating the existing one.
+
+**Assume several Google accounts are signed in, on every device including the
+phone, and that the v2 account is not the default.** Any Google URL this project
+emits — document links, completion links, anything for the phone — must carry
+`authuser=<address>`, or the default account answers and the failure reads as a
+missing file rather than the wrong identity.
+
 **Things that are true of v2 and not of v1:**
 
 - **Columns are resolved by header name, never by index.** No magic numbers.

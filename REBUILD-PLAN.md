@@ -38,8 +38,69 @@ silently refused from then on.
 
 `npm run v2:verify` pulls into a temporary directory and diffs every file clasp
 would push, so "did it land" is a fact rather than a hope. On a mismatch, run
-`npm run v2:push:force` — which also ends the loop, because the server then holds
-the local manifest byte for byte and plain pushes go back to working.
+`npm run v2:push:force`.
+
+**`--force` alone does not end it, though — the cause is structural.** Google
+stores `appsscript.json` **with no trailing newline**. Any editor that adds one
+back makes the local file differ by a single byte, and every plain push is
+refused again from that moment. Forcing once fixes the symptom for one push;
+Google re-strips the newline and the mismatch returns immediately.
+
+So `v2/appsscript.json` is deliberately kept **without a trailing final newline**,
+byte-identical to what Google holds. Git will show `\ No newline at end of file`
+for it; that is correct and must stay. If pushes ever start silently refusing
+again, check that byte first — `wc -c v2/appsscript.json` should be 425, not 426.
+
+**Deploying is separate from pushing.** A push updates HEAD. The `/exec` URL
+serves a **pinned version**, so the fix you just pushed is not live until a new
+version is cut:
+
+```
+npm run v2:verify                            # HEAD really is what you wrote
+cd v2 && clasp --user v2 list-deployments    # find the versioned deployment
+cd v2 && clasp --user v2 deploy -i <id> -d "what changed"
+```
+
+Pass `-i <deploymentId>`. **Without it clasp creates a second deployment with a
+different URL** and leaves the old one live, which is how you end up debugging a
+page that no longer exists.
+
+### The two URLs, and the accounts problem
+
+There are two endpoints and they behave differently. Confusing them cost a
+debugging session, so:
+
+| | Serves | Opens for | Use it for |
+|---|---|---|---|
+| `…/dev` | **HEAD** — whatever was last pushed | only accounts with **edit access to the script** | checking a push straight away, no deploy needed |
+| `…/exec` | the **pinned version** | whatever `webapp.access` allows | real use, and anything on the phone |
+
+A `/dev` URL opened by an account that cannot edit the project fails at **Drive's**
+layer, not this code's — an Apps Script project is a Drive file, so you get
+Drive's *"cannot open the file, check the address"* page and never reach `doGet`.
+It is not a bug and not an access-check failure. Same principle as being signed
+out: Google's gate runs first.
+
+**Every device here has several Google accounts signed in, the iPhone included,
+and the account that owns v2 is not the default one.** That is a permanent
+condition of this setup, not a temporary state, so it has to be designed around
+rather than worked around:
+
+- **Every URL needs the account naming itself.** Append
+  `?authuser=<the v2 address>` to `/exec`, and to anything else handed to a
+  browser. Without it the default account answers, and the failure looks like a
+  missing file or a missing permission rather than the wrong identity.
+- **This is why document links carry `authuser`** (see Settled since). Anything
+  built later that emits a Google URL — the completion link, the Siri
+  confirmation, an OCR result — must do the same, or it will work on the desktop
+  where the right account happens to be default and fail on the phone.
+- **Two failure messages, two different causes**, worth keeping straight because
+  they look equally like "it's broken":
+
+  | Message | Means |
+  |---|---|
+  | *You need access* / *Precisa de acesso* | Right file, wrong account — an `authuser` problem |
+  | *Cannot open the file, check the address* | No such ID, or no rights to the script itself |
 
 Expect an empty table on first load. `smokeCleanup()` removed every row and
 nothing can create one from the UI until step 8, so run `smokeTest()` from the
