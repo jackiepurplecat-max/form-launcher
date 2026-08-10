@@ -285,28 +285,43 @@ function uiUpdateEntry(sectionKey, sheetRow, payload) {
 
   validateSubmitted(section, submitted, uiEditFields(section));
 
-  Object.keys(submitted).forEach(header => {
-    const value = submitted[header];
-    writeCell(sheet, cols, row, header,
-      value === null || value === undefined ? '' : value);
+  // Uploads land BEFORE anything is written, for the same reason they do when
+  // creating: a failed upload then changes nothing at all, rather than leaving
+  // the field edits applied and the document missing. If writing the row then
+  // fails, the new files are trashed rather than stranded.
+  const stored = [];
+  uploads.forEach(upload => {
+    stored.push({ header: upload.header, file: uiStoreUpload(section, upload) });
   });
 
-  // A replacement is trashed rather than left in place: nothing would point at
-  // the old file any more, which is the orphan state checkDocuments() hunts for.
   const replaced = [];
-  uploads.forEach(upload => {
-    const previous = extractFileId(readCell(sheet, cols, row, upload.header));
-    const file = uiStoreUpload(section, upload);
-    writeCell(sheet, cols, row, upload.header, file.getId());
-    if (previous && previous !== file.getId()) {
+  try {
+    Object.keys(submitted).forEach(header => {
+      const value = submitted[header];
+      writeCell(sheet, cols, row, header,
+        value === null || value === undefined ? '' : value);
+    });
+
+    // The document being replaced is trashed rather than left in place:
+    // nothing would point at it any more, which is the orphan state
+    // checkDocuments() exists to find.
+    stored.forEach(item => {
+      const previous = extractFileId(readCell(sheet, cols, row, item.header));
+      writeCell(sheet, cols, row, item.header, item.file.getId());
+      if (!previous || previous === item.file.getId()) return;
       try {
         DriveApp.getFileById(previous).setTrashed(true);
-        replaced.push({ column: upload.header, ok: true });
+        replaced.push({ column: item.header, ok: true });
       } catch (error) {
-        replaced.push({ column: upload.header, ok: false, error: error.toString() });
+        replaced.push({ column: item.header, ok: false, error: error.toString() });
       }
-    }
-  });
+    });
+  } catch (error) {
+    stored.forEach(item => {
+      try { item.file.setTrashed(true); } catch (ignored) { /* best effort */ }
+    });
+    throw error;
+  }
 
   const status = (readCell(sheet, cols, row, COMMON.status) || '').toString().trim();
   const documents = nameAndFileDocuments(

