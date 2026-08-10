@@ -27,7 +27,8 @@
     "v2:status": "cd v2 && clasp --user v2 status",
     "v2:login": "clasp login --user v2",
     "v2:whoami": "cd v2 && clasp --user v2 show-authorized-user",
-    "v2:push:force": "cd v2 && clasp --user v2 push --force"
+    "v2:push:force": "cd v2 && clasp --user v2 push --force",
+    "v2:verify": "node v2/test/verify-push.js"
   },
   "keywords": [],
   "author": "",

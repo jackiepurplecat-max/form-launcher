@@ -31,8 +31,15 @@ reading the code.
 ```
 npm run v2:test    # the harness — do this first
 npm run v2:check   # syntax only
-npm run v2:push    # add --force if appsscript.json changed
+npm run v2:push    # then ALWAYS verify — see below
+npm run v2:verify  # does the server actually hold this? pulls and diffs
 ```
+
+**A push that reports success may have done nothing.** When the remote
+`appsscript.json` differs by so much as a trailing newline, clasp abandons the
+push — and prints either `Skipping push.` or `Pushed 9 files.` followed by the
+list. Never take the output as evidence; run `npm run v2:verify`, and on a
+mismatch `npm run v2:push:force`.
 
 **Things that are true of v2 and not of v1:**
 

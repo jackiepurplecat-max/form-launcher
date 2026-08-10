@@ -11,17 +11,35 @@ against real Sheets and real Drive — one entry per section, each walked throug
 every state and back, filenames and folders confirmed at each step, then
 `smokeCleanup()` removed every trace. Build order steps 1–6 are done.
 
-**The web UI is written and green locally, not yet deployed.** `v2/Web.js` and
-`v2/Index.html` are step 7: listing, the status control and the date dialog,
-served as one page. `npm run v2:test` covers them — 266 assertions now, up from
-161 — including the access check from both sides, the generated table columns,
-the dialog's Today-versus-Keep wording and a status change that reports a failed
+**The web UI is live.** `v2/Web.js` and `v2/Index.html` are step 7: listing, the
+status control and the date dialog, served as one page. Pushed, deployed,
+authorised for the added `userinfo.email` scope, and driven by hand in a browser.
+`npm run v2:test` covers the server side — 284 assertions now, up from 161 —
+including the access check from both sides, the generated table columns, the
+dialog's Today-versus-Keep wording and a status change that reports a failed
 rename instead of a tick. What the harness cannot reach is the browser itself:
 the CSS, the tap-to-copy and the iOS date wheel are confirmed by hand.
 
-To deploy it: `npm run v2:push:force` — **`--force` is required**, because the
-manifest gained `userinfo.email` — then a new Web app deployment, execute as me,
-access restricted to myself, and re-authorise for the added scope.
+To redeploy after a change: `npm run v2:push`, **`npm run v2:verify`**, then a
+new version of the Web app deployment.
+
+**`clasp push` can report success while pushing nothing — always verify.** If the
+server's `appsscript.json` differs from the local one at all, clasp asks before
+overwriting it; with no TTY the prompt defaults to no and the push is abandoned.
+Sometimes it says `Skipping push.`, which at least reads as a refusal. Sometimes
+it prints **`Pushed 9 files.`** and lists all nine, having sent none. The output
+cannot be trusted either way.
+
+This is not hypothetical. `checkDocuments()` was written, committed, and named in
+this file as the next thing to run — and was never on the server, so the Apps
+Script editor did not list it. The trigger was **a missing trailing newline** in
+the server's copy of the manifest. One byte, no semantic difference, every push
+silently refused from then on.
+
+`npm run v2:verify` pulls into a temporary directory and diffs every file clasp
+would push, so "did it land" is a fact rather than a hope. On a mismatch, run
+`npm run v2:push:force` — which also ends the loop, because the server then holds
+the local manifest byte for byte and plain pushes go back to working.
 
 Expect an empty table on first load. `smokeCleanup()` removed every row and
 nothing can create one from the UI until step 8, so run `smokeTest()` from the
@@ -63,17 +81,12 @@ for a state the row had not reached (see Settled since).
 - **`smokeCleanup()` only trashes files a row still references.** A broken
   reference leaves its file behind and reports it in `warnings`, so repair the
   cell before cleaning up.
-- **Whether Drive links need an account hint.** Both document links appeared
-  broken in a browser with two Google accounts signed in. `uiFileUrl()` builds
-  `drive.google.com/file/d/<id>/view` with no `authuser`, so links resolve
-  against whichever account is default. Not yet distinguished from the orphan
-  above; if real it affects every document link in normal use.
+- **Confirm the account hint fixed the broken links** (see Settled since). The
+  links now carry `authuser`; what has not been checked is whether they open in
+  the browser that showed them broken.
 - **Not yet tested at all:** the phone (iOS date wheel, scrolling), tap-to-copy
   on the IVA reference block, the status and category filters, and Income's
   `Invoiced / Received / Logged` vocabulary rendering.
-
-**Not committed.** `v2/Web.js` and `v2/Index.html` are untracked; the manifest,
-`Config.js`, `Core.js`, `Setup.js`, the harness and this file are modified.
 
 | File | Contains |
 |---|---|
@@ -85,7 +98,7 @@ for a state the row had not reached (see Settled since).
 | `v2/Smoke.js` | `smokeTest()` / `smokeCleanup()` — the live smoke test, run from the editor |
 | `v2/Web.js` | `doGet`, the access check, `uiBootstrap` / `uiListEntries` / `uiSetStatus` / `uiSetEntryDate` |
 | `v2/Index.html` | The page. No templating — it fetches everything through `google.script.run` |
-| `v2/test/` | The harness. Local only — `.claspignore` keeps it out of the push |
+| `v2/test/` | The harness, and `verify-push.js`. Local only — `.claspignore` keeps it out of the push |
 
 **Not written yet:** the custom form (step 8), management module (edit / archive
 / hard delete / category lists), Siri endpoint, OCR intake. There is no `doPost`,
@@ -799,12 +812,11 @@ Each step should leave the system working.
    until it is on. Note that `clasp pull` works without it, so a successful pull
    is not evidence that push will work. Check the avatar before toggling — with
    two accounts signed in it is easy to enable it on the wrong one.
-4. **Push, then run `bootstrap()`.** `bootstrap()` creates the four sheets,
-   their generated header spine, `Suppliers`, the Drive tree, and
-   `ROOT_FOLDER_ID`. The push needs `--force` whenever the manifest has changed:
-   clasp will not overwrite a remote manifest unprompted, and with no TTY that
-   prompt defaults to no and it reports only `Skipping push.` — which reads like
-   "nothing to do" rather than "I declined".
+4. **Push, verify, then run `bootstrap()`.** `bootstrap()` creates the four
+   sheets, their generated header spine, `Suppliers`, the Drive tree, and
+   `ROOT_FOLDER_ID`. Always follow a push with `npm run v2:verify`: clasp
+   abandons the push whenever the remote manifest differs, and reports either
+   `Skipping push.` or a wholly untrue `Pushed 9 files.` See State of play.
 5. **Script Properties**, verified with `checkScriptProperties()`. Before any
    entry exists, because creating an entry can send mail and every upload needs
    the root folder. Setting them in **Project Settings → Script Properties** is
@@ -816,15 +828,13 @@ Each step should leave the system working.
    at each step. `smokeCleanup()` then removes exactly the rows it made, their
    files, and the registry entry it taught. Confirm this before building
    anything on top.
-7. **Web UI**: listing and the status control — **written, deploy pending**.
-   `v2/Web.js` and `v2/Index.html`. Push with `npm run v2:push:force`, since the
-   manifest gained `userinfo.email`; a plain push declines silently and reports
-   `Skipping push.` Then a new Web app deployment, execute as me, access
-   restricted to myself, and re-authorise for the added scope. Confirm sign-in,
-   listing, status changes and dates in a browser — the harness covers the server
-   side, but not the CSS, the tap-to-copy or the iOS date wheel. Nothing can
-   create a row from the UI until step 8, so use `smokeTest()` for rows to click
-   on and `smokeCleanup()` afterwards.
+7. **Web UI**: listing and the status control — **done**. `v2/Web.js` and
+   `v2/Index.html`, deployed execute-as-me with access restricted to myself, and
+   authorised for the `userinfo.email` scope the manifest gained. Sign-in,
+   listing, status changes and dates confirmed in a browser; the phone and the
+   filters are still unchecked (see State of play). Nothing can create a row from
+   the UI until step 8, so use `smokeTest()` for rows to click on and
+   `smokeCleanup()` afterwards.
 8. **Custom form** as a view in the same app: fields rendered from `SECTIONS`,
    file upload, registry autocomplete and prefill.
 9. **Management module**: edit, delete-to-archive, hard delete, category lists.
@@ -882,6 +892,22 @@ stop.
 
 ### Settled since
 
+- **Document links say which account to open them as.** Every document read
+  "You need access" in a browser with two Google accounts signed in — the file
+  was fine and so was the link, it was being opened as the wrong person, because
+  a bare `drive.google.com` URL resolves against the browser's *default* account
+  rather than the one signed into the page. `uiFileUrl()` now appends
+  `authuser=<address>`, and the address is the one that just passed the access
+  check, so each link is built for whoever is actually looking instead of naming
+  one account for everybody. Drive references are rebuilt from their ID so the
+  hint reaches the ones stored as full URLs too — which is all of them that
+  `createEntry` wrote. Anything that is not a Drive link is passed through
+  untouched: reading an ID out of some other service's URL would break a link
+  that worked.
+- **`uiEntry()` checks the caller itself.** It returns a whole row and is a
+  global like any other, so `google.script.run` reaches it without going through
+  `uiSetStatus`. It had been relying on the functions that call it, which is
+  exactly the assumption the rule exists to refuse.
 - **A date cannot be set for a state the row has not reached.** Found by
   clicking, not by reading: a `Claimed Date` could be typed onto a row still in
   `To Do`, and the next transition would clear it, because `setStatus` wipes the

@@ -301,18 +301,41 @@ function uiCellValue(value) {
   return value.toString();
 }
 
+/** A URL that is already pointing at Drive, whatever shape it takes. */
+const UI_DRIVE_URL = /^https?:\/\/(?:[\w-]+\.)*drive\.google\.com\//i;
+
 /**
  * A link to a document from whatever the file column holds.
  *
  * The column may hold a full URL or a bare ID depending on how the entry was
  * made, so both are turned into something clickable.
+ *
+ * WHY THE ACCOUNT HINT. A bare drive.google.com link resolves against whichever
+ * Google account the browser has as its default, which is not necessarily the
+ * one signed into this page. With two accounts signed in, every document read
+ * "You need access" — the file was fine and the link was fine, it was being
+ * opened as the wrong person. `authuser` says which account to open it as, and
+ * the address used is the one that just passed the access check, so the link is
+ * built for whoever is actually looking rather than for a hardcoded account.
+ *
+ * Drive links are therefore rebuilt from the ID rather than passed through, so
+ * the hint lands on the ones stored as full URLs too — which is all of them, in
+ * practice, since createEntry writes a URL. Anything that is not a Drive link is
+ * left exactly as stored: guessing an ID out of some other service's URL would
+ * turn a working link into a broken one.
  */
-function uiFileUrl(fileRef) {
+function uiFileUrl(fileRef, viewerEmail) {
   const text = (fileRef === null || fileRef === undefined) ? '' : fileRef.toString().trim();
   if (!text) return '';
-  if (/^https?:\/\//i.test(text)) return text;
+
+  const isUrl = /^https?:\/\//i.test(text);
+  if (isUrl && !UI_DRIVE_URL.test(text)) return text;
+
   const id = extractFileId(text);
-  return id ? `https://drive.google.com/file/d/${id}/view` : '';
+  if (!id) return isUrl ? text : '';
+
+  const url = `https://drive.google.com/file/d/${id}/view`;
+  return viewerEmail ? `${url}?authuser=${encodeURIComponent(viewerEmail)}` : url;
 }
 
 /* ================================= Rows =================================== */
@@ -329,8 +352,10 @@ function uiFileUrl(fileRef) {
  *
  * Returns null for a row with nothing in it, which is what a row deleted by
  * hand in the sheet leaves behind.
+ *
+ * `viewerEmail` only reaches the document links — see uiFileUrl.
  */
-function uiRow(section, sheetName, cols, rowValues, rowNumber) {
+function uiRow(section, sheetName, cols, rowValues, rowNumber, viewerEmail) {
   const raw = header => rowValues[columnIndex(cols, sheetName, header) - 1];
 
   const spine = [COMMON.date, COMMON.counterparty, COMMON.amount, COMMON.status];
@@ -356,7 +381,7 @@ function uiRow(section, sheetName, cols, rowValues, rowNumber) {
   });
 
   const files = section.fileColumns
-    .map(fileCol => ({ label: fileCol.label, url: uiFileUrl(raw(fileCol.header)) }))
+    .map(fileCol => ({ label: fileCol.label, url: uiFileUrl(raw(fileCol.header), viewerEmail) }))
     .filter(file => file.url);
 
   const options = section.states.map(state => {
@@ -390,7 +415,7 @@ function uiRow(section, sheetName, cols, rowValues, rowNumber) {
  * notices the difference — while still resolving every column by header name.
  */
 function uiListEntries(sectionKey) {
-  requireUiAccess();
+  const viewer = requireUiAccess();
 
   const section = getSection(sectionKey);
   const sheet = getSheet(section);
@@ -403,7 +428,7 @@ function uiListEntries(sectionKey) {
   if (lastRow >= 2) {
     const values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
     rows = values
-      .map((rowValues, i) => uiRow(section, sheet.getName(), cols, rowValues, i + 2))
+      .map((rowValues, i) => uiRow(section, sheet.getName(), cols, rowValues, i + 2, viewer))
       .filter(row => row !== null);
     rows.reverse();
   }
@@ -417,14 +442,22 @@ function uiListEntries(sectionKey) {
   };
 }
 
-/** One row, re-read from the sheet. Used to refresh a row after a change. */
+/**
+ * One row, re-read from the sheet. Used to refresh a row after a change.
+ *
+ * Checks the caller even though its callers here have already done so: it is a
+ * global that returns row data, and google.script.run can reach it directly
+ * without going through uiSetStatus. The repeated check costs a property read.
+ */
 function uiEntry(sectionKey, sheetRow) {
+  const viewer = requireUiAccess();
+
   const section = getSection(sectionKey);
   const sheet = getSheet(section);
   const row = resolveDataRow(sheet, sheetRow);
   const cols = resolveColumns(sheet);
   const values = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getValues()[0];
-  return uiRow(section, sheet.getName(), cols, values, row);
+  return uiRow(section, sheet.getName(), cols, values, row, viewer);
 }
 
 /* ================================ Actions ================================= */

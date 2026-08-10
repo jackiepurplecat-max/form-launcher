@@ -488,6 +488,12 @@ check('the status control is gated', /Not authorized/.test(strangerStatus || '')
 check('and it changed nothing',
   mocks._ss.getSheetByName('Work').getRange(2, wcols['Status']).getValue() === 'To Do',
   mocks._ss.getSheetByName('Work').getRange(2, wcols['Status']).getValue());
+// uiEntry returns a whole row and is a global like any other, so it is reachable
+// without going through uiSetStatus. It asks for itself rather than relying on
+// the function that happens to call it.
+let strangerEntry = null;
+try { G.uiEntry('work', 2); } catch (e) { strangerEntry = e.message; }
+check('reading a single row is gated', /Not authorized/.test(strangerEntry || ''), strangerEntry);
 
 // An anonymous deployment - which is what the Siri endpoint would force - makes
 // getActiveUser() blank for EVERYONE. Failing closed is correct; it is also why
@@ -654,6 +660,49 @@ check('a row with no entry in it is skipped',
   G.uiListEntries('work').rows.every(r => r.row !== gapRow),
   G.uiListEntries('work').rows.map(r => r.row));
 workSheet.getRange(gapRow, wcols['Notes']).setValue('');
+
+/* ---------------------------- document links ------------------------------ */
+// Found in a browser with two Google accounts signed in: every document link
+// read "You need access". The file was fine and so was the link - it was being
+// opened as the wrong person, because a bare Drive URL resolves against the
+// browser's default account. The hint is the caller's own address, so it follows
+// whoever is looking rather than naming one account for everybody.
+section('document links say which account to open them as');
+const ownerHint = `?authuser=${encodeURIComponent(mocks.Session._owner)}`;
+const linkRows = G.uiListEntries('work').rows;
+const storedAsUrl = linkRows.find(r => r.cells['Counterparty'] === 'Hospital da Luz');
+const storedAsId = linkRows.find(r => r.cells['Counterparty'] === 'Symmetry Co' && r.files.length);
+check('a reference stored as a full URL gets the hint',
+  /^https:\/\/drive\.google\.com\/file\/d\/[-\w]{25,}\/view\?/.test(storedAsUrl.files[0].url) &&
+  storedAsUrl.files[0].url.endsWith(ownerHint), storedAsUrl.files[0].url);
+check('and so does one stored as a bare ID',
+  storedAsId.files[0].url.endsWith(ownerHint), storedAsId.files[0].url);
+
+mocks._props.UI_ALLOWED_EMAILS = `${mocks.Session._owner}, helper@example.test`;
+mocks.Session._setActiveUser('helper@example.test');
+check('the hint names the caller, not the account the script runs as',
+  G.uiListEntries('work').rows
+    .find(r => r.cells['Counterparty'] === 'Hospital da Luz')
+    .files[0].url.endsWith('?authuser=helper%40example.test'),
+  G.uiListEntries('work').rows.find(r => r.cells['Counterparty'] === 'Hospital da Luz').files[0].url);
+mocks.Session._setActiveUser(mocks.Session._owner);
+delete mocks._props.UI_ALLOWED_EMAILS;
+
+const bareId = '1234567890123456789012345';
+check('the address is escaped, so a + in it cannot start another parameter',
+  G.uiFileUrl(bareId, 'a+b@example.test') ===
+    `https://drive.google.com/file/d/${bareId}/view?authuser=a%2Bb%40example.test`,
+  G.uiFileUrl(bareId, 'a+b@example.test'));
+check('no address means no hint rather than an empty one',
+  G.uiFileUrl(bareId, '') === `https://drive.google.com/file/d/${bareId}/view`,
+  G.uiFileUrl(bareId, ''));
+// Reading an ID out of some other service's URL would turn a working link into a
+// broken one, so only Drive links are rebuilt.
+const foreignUrl = 'https://example.test/receipts/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.pdf';
+check('a link that is not Drive is left exactly as stored',
+  G.uiFileUrl(foreignUrl, mocks.Session._owner) === foreignUrl,
+  G.uiFileUrl(foreignUrl, mocks.Session._owner));
+check('an empty cell is still no link', G.uiFileUrl('', mocks.Session._owner) === '');
 
 /* --------------------------- the status control --------------------------- */
 section('the status control, through the UI');
