@@ -15,6 +15,19 @@ function getSection(sectionKey) {
   return section;
 }
 
+/**
+ * The key a section is held under, for the places that have the object and need
+ * the name — a URL, a message. Returns '' rather than throwing: a caller that
+ * only wants to build a link should not be the thing that fails.
+ */
+function sectionKeyOf(section) {
+  const keys = Object.keys(SECTIONS);
+  for (let i = 0; i < keys.length; i++) {
+    if (SECTIONS[keys[i]] === section) return keys[i];
+  }
+  return '';
+}
+
 function getSheet(section) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(section.sheet);
   if (!sheet) throw new Error(`Sheet not found: ${section.sheet}`);

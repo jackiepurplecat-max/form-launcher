@@ -410,8 +410,14 @@ function uiRow(section, sheetName, cols, rowValues, rowNumber, viewerEmail) {
     };
   });
 
+  const stamp = raw(COMMON.timestamp);
+
   return {
     row: rowNumber,
+    // Not shown anywhere — this is how a completion link names its entry. Row
+    // numbers shift when a row above is archived, and that link can be days old
+    // by the time it is opened, so it identifies the entry by when it was made.
+    stamp: stamp instanceof Date ? stamp.getTime() : null,
     status: status,
     statusIndex: stateIndex(section, status),
     cells: cells,

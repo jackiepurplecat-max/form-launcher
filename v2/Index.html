@@ -394,17 +394,72 @@
 
     /* -------------------------------- boot -------------------------------- */
 
+    /*
+     * The entry a completion email asked us to open, as ?section=<key>&t=<stamp>.
+     *
+     * Read through google.script.url because the page is served inside a sandboxed
+     * iframe: window.location is the iframe's own address, not the link that was
+     * clicked, and the parent's query string is not readable across that origin.
+     * It is also the only way to get a parameter in here without templating the
+     * page, which would give sheet data a second route to the client.
+     */
+    var deepLink = null;
+
+    function readDeepLink(done) {
+      if (!(window.google && google.script && google.script.url)) return done();
+      google.script.url.getLocation(function (location) {
+        var params = (location && location.parameter) || {};
+        if (params.section && params.t) {
+          deepLink = { section: String(params.section), stamp: String(params.t) };
+        }
+        done();
+      });
+    }
+
     function boot() {
       showState('loading', 'Loading…');
-      call('uiBootstrap').then(function (data) {
-        app.today = data.today;
-        app.sections = data.sections;
-        el('who').textContent = data.user;
-        renderTabs();
-        select(data.sections[0].key);
-      }).catch(function (error) {
-        showState('error', message(error));
+      readDeepLink(function () {
+        call('uiBootstrap').then(function (data) {
+          app.today = data.today;
+          app.sections = data.sections;
+          el('who').textContent = data.user;
+          renderTabs();
+
+          // An unknown section in the link is dropped rather than allowed to
+          // fail: a stale or hand-edited URL should still get you the app.
+          var wanted = deepLink && data.sections.some(function (s) {
+            return s.key === deepLink.section;
+          });
+          if (deepLink && !wanted) deepLink = null;
+
+          select(wanted ? deepLink.section : data.sections[0].key);
+        }).catch(function (error) {
+          showState('error', message(error));
+        });
       });
+    }
+
+    /**
+     * Open the form on the entry a completion email pointed at.
+     *
+     * Runs once the rows have arrived, because the form is prefilled from the row
+     * the page is holding. Consumed on the first attempt: left in place it would
+     * reopen the form on every tab switch and every refresh, which is the shape of
+     * bug that makes a page impossible to leave.
+     */
+    function openDeepLink() {
+      if (!deepLink || deepLink.section !== app.current) return;
+
+      var target = app.rows.filter(function (row) {
+        return row.stamp !== null && String(row.stamp) === deepLink.stamp;
+      })[0];
+      deepLink = null;
+
+      if (!target) {
+        return toast('That entry is no longer in ' + app.meta.label +
+          ' — it may have been archived, or the link may be out of date.', 'warn');
+      }
+      openForm(target.row);
     }
 
     function message(error) {
@@ -451,6 +506,9 @@
         renderReference();
         renderFilters();
         renderTable();
+        // After the rows exist, and only in the live view: the archive is not
+        // where a completion link is asking you to go.
+        if (!archive) openDeepLink();
         if (archive) {
           el('archiveCount').textContent = data.rows.length
             ? data.rows.length + (data.rows.length === 1 ? ' archived entry' : ' archived entries') +

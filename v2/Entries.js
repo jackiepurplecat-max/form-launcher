@@ -286,6 +286,67 @@ function sendPendingClaim(sectionKey, sheetRow) {
 /** Script Property holding the address that "more info needed" mail goes to. */
 const COMPLETION_RECIPIENT_PROPERTY = 'COMPLETION_EMAIL_RECIPIENT';
 
+/** Script Property holding the /exec URL of the versioned deployment. */
+const WEB_APP_URL_PROPERTY = 'WEB_APP_URL';
+
+/**
+ * The deployed web app's URL, or '' if it cannot be established.
+ *
+ * The Script Property wins, because it can name the PINNED deployment — the one
+ * the phone and every mailed link should reach. `getService().getUrl()` is only a
+ * fallback: it needs no setup, but it returns whichever endpoint the running
+ * context belongs to, and anything run from the editor belongs to /dev, which
+ * only opens for accounts that can edit the script. Wrapped because the manifest
+ * pins its scopes and no URL lookup should ever be the reason mail stops going.
+ */
+function webAppUrl() {
+  const configured = (PropertiesService.getScriptProperties()
+    .getProperty(WEB_APP_URL_PROPERTY) || '').toString().trim();
+  if (configured) return configured;
+
+  try {
+    return (ScriptApp.getService().getUrl() || '').toString();
+  } catch (error) {
+    Logger.log(`Could not establish the web app URL: ${error}`);
+    return '';
+  }
+}
+
+/**
+ * Where the completion mail sends you: the form, open on that entry.
+ *
+ * The sheet row was fine for correcting a word and wrong for what this mail is
+ * usually about — a missing document, a date, a category value. The sheet offers
+ * no upload, no date picker and no dropdown; the form offers all three and
+ * already edits in place, so only this URL had to change.
+ *
+ * The entry is named by its TIMESTAMP, not its row number. Archiving a row shifts
+ * every row beneath it up by one, and a completion mail is precisely the thing
+ * that sits in an inbox for days — a row number would then open a DIFFERENT
+ * entry, prefilled and looking entirely plausible. Both sides read the timestamp
+ * back out of the cell that was just written, so they compare the same stored
+ * value rather than two formattings of it.
+ *
+ * Falls back to the spreadsheet row when no web app URL is known: a reminder that
+ * lands somewhere useful beats one that does not land.
+ *
+ * Carries the accounts problem with it — /exec takes the browser's default
+ * account and cannot be pointed at one by URL, so on a device where the v2
+ * account is not the default this link opens as the wrong person. That is the
+ * same unresolved constraint as the phone, not something this can fix.
+ */
+function completionLink(section, sheet, cols, row) {
+  const sheetLink = `${SpreadsheetApp.getActiveSpreadsheet().getUrl()}` +
+    `#gid=${sheet.getSheetId()}&range=A${row}`;
+
+  const base = webAppUrl();
+  const key = sectionKeyOf(section);
+  const stamp = readCell(sheet, cols, row, COMMON.timestamp);
+  if (!base || !key || !(stamp instanceof Date)) return sheetLink;
+
+  return `${base}?section=${encodeURIComponent(key)}&t=${stamp.getTime()}`;
+}
+
 /**
  * Tell you an entry arrived incomplete.
  *
@@ -328,8 +389,7 @@ function sendCompletionRequest(section, sheet, cols, row, missing, receiptState)
     const who = readCell(sheet, cols, row, COMMON.counterparty) || 'unknown';
     const subject = `${section.label}: more info needed - ${who}`;
 
-    const link = `${SpreadsheetApp.getActiveSpreadsheet().getUrl()}` +
-      `#gid=${sheet.getSheetId()}&range=A${row}`;
+    const link = completionLink(section, sheet, cols, row);
 
     const lines = [
       `A ${section.label} entry was created but is not finished.`,

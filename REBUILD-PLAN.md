@@ -260,17 +260,14 @@ for a state the row had not reached (see Settled since).
 
 **Still outstanding — pick this up first:**
 
-- **The completion email must open the form, not the sheet.** Found by using it.
-  `sendCompletionRequest()` links to `…#gid=<id>&range=A<row>`
-  (`Entries.js:331`), which is fine for correcting a word and wrong for what the
-  mail is usually about — a missing document, a date, a category value. The sheet
-  offers no date picker, no dropdown and no upload; the form offers all three and
-  already edits in place. So this is a URL and an entry point, not a new view:
-  `…/exec?section=<key>&edit=<row>`, `doGet` passing the pair through to the page,
-  and the page opening `openForm(row)` on load. The comment at `Entries.js:304`
-  anticipates exactly this and says only the URL built there has to change.
-  It inherits the accounts problem — `/exec` ignores `authuser`, so a link mailed
-  to yourself still resolves against the browser's default account.
+- **Set the `WEB_APP_URL` Script Property.** One value, by hand, in Project
+  Settings: the `/exec` URL of the versioned deployment. The completion link needs
+  it and **falls back to the spreadsheet row without it**, silently and by design
+  — so the feature is built and deployed but does nothing until this is set. It is
+  set by hand rather than read from `ScriptApp.getService().getUrl()` because that
+  returns whichever endpoint the running context belongs to, and anything run from
+  the editor belongs to `/dev`, which only opens for accounts that can edit the
+  script.
 - **Two values to add to Work: `Education` and `Boarding Pass`.** These belong to
   `Type`, not `Expense Reason`: Expense Reason is open free text whose suggestions
   populate from what is already in use, so there is nothing there to implement,
@@ -1180,6 +1177,32 @@ stop.
 
 ### Settled since
 
+- **The completion email opens the form on that entry.** It linked to the
+  spreadsheet row, which is fine for correcting a word and wrong for what the mail
+  is nearly always about — a missing document, a date, a category value. The sheet
+  offers no upload, no date picker and no dropdown; the form offers all three and
+  already edits in place, so only the URL changed, exactly as the comment in
+  `sendCompletionRequest` predicted.
+  - **The entry is named by its `Timestamp`, not its row number.** Archiving a row
+    shifts every row beneath it up by one, and a completion mail is precisely the
+    thing that sits in an inbox for days — a row number would then open a
+    *different* entry, prefilled and looking entirely plausible. `uiRow` now
+    reports a `stamp` for this and nothing else; it is not a table column. The
+    harness asserts the link and the listing agree on that value, which is the
+    whole contract.
+  - **No templating was added, and none was needed.** The page is served inside a
+    sandboxed iframe, so `window.location` is the iframe's own address rather than
+    the link that was clicked. `google.script.url.getLocation()` is the only way to
+    read the real query string from in there — and it happens to be the one that
+    keeps sheet data down to a single route to the client.
+  - **A stale or hand-edited link degrades rather than fails.** An unknown section
+    is dropped and you get the app; a timestamp matching no live row says the entry
+    may have been archived instead of opening the wrong one. The deep link is
+    consumed on its first attempt, or it would reopen the form on every tab switch.
+  - **It inherits the accounts problem and cannot fix it.** `/exec` takes the
+    browser's default account and cannot be pointed at one by URL, so on a device
+    where the v2 account is not the default this link opens as the wrong person —
+    the same unresolved constraint as the phone.
 - **Step 9 is verified by hand.** Editing (including the rename that follows a
   changed amount, and a blanked note actually clearing), the state dates being
   absent from the edit form, delete-to-archive, restore rebuilding the folder and

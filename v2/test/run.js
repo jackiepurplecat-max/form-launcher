@@ -295,6 +295,41 @@ check('complete entry sends no more-info mail', completeEntry.completionRequest 
 check('Income optional Reason is not "missing"', completeEntry.ok === true, completeEntry.warnings);
 check('mailbox untouched', mocks.MailApp.sent.length === mailAfterPartial);
 
+/*
+ * The completion mail has to open the FORM, not the spreadsheet row. The sheet
+ * offers no upload, no date picker and no dropdown, which is most of what this
+ * mail is ever about — and the check above, which still passes, is now the
+ * fallback for when no web app URL is known.
+ *
+ * The entry is named by its timestamp rather than its row number, because
+ * archiving a row shifts every row beneath it up by one and this mail is exactly
+ * the thing that sits in an inbox for days. A row number would then open a
+ * different entry, prefilled and looking entirely plausible.
+ */
+section('the completion link opens the form, and survives a shifted row');
+check('with no WEB_APP_URL set it falls back to the spreadsheet row',
+  /spreadsheets\/d\/TESTSHEETID.*range=A/.test(mocks.MailApp.sent[mailBefore].body));
+
+mocks._props.WEB_APP_URL = 'https://script.google.test/macros/s/DEPLOYED/exec';
+const linkMailBefore = mocks.MailApp.sent.length;
+const linked = G.createEntry('health', {
+  'Date': '2026-06-03', 'Counterparty': 'White Clinic', 'Patient': 'K', 'Amount': 55, 'Currency': 'EUR'
+}, 'siri');
+const linkBody = mocks.MailApp.sent[linkMailBefore].body;
+check('it links to the web app', /macros\/s\/DEPLOYED\/exec\?/.test(linkBody), linkBody);
+check('naming the section by key', /section=health/.test(linkBody), linkBody);
+check('and the entry by timestamp, with no row number in sight',
+  /[?&]t=\d+/.test(linkBody) && !/range=A/.test(linkBody), linkBody);
+
+const linkedStamp = (linkBody.match(/[?&]t=(\d+)/) || [])[1];
+const listedRow = G.uiListEntries('health').rows.filter(r => r.row === linked.row)[0];
+check('and both sides agree on that stamp, which is the whole contract',
+  !!listedRow && String(listedRow.stamp) === linkedStamp,
+  { listed: listedRow && listedRow.stamp, inLink: linkedStamp });
+check('sectionKeyOf takes the object back to its key, and refuses to guess',
+  G.sectionKeyOf(G.getSection('iva')) === 'iva' && G.sectionKeyOf({}) === '');
+delete mocks._props.WEB_APP_URL;
+
 const ivaNoReceipt = G.createEntry('iva', {
   'Date': '2026-06-03', 'Counterparty': 'Worten', 'Amount': 20, 'Currency': 'EUR',
   'Número': 'FT 12', 'Emitente NIF': '500000001', 'IVA Amount': 3.74

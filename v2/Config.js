@@ -325,6 +325,14 @@ const SCRIPT_PROPERTY_INFO = {
       'Deliberately separate from IVA_CLAIM_RECIPIENT - this is a note to yourself ' +
       'and must never reach whoever processes claims'
   },
+  WEB_APP_URL: {
+    required: false, secret: false,
+    description: 'The /exec URL of the versioned Web app deployment. Used to build the ' +
+      'completion link, which opens the form on the entry rather than the sheet row. ' +
+      'Set by hand so it names the PINNED deployment: getService().getUrl() returns ' +
+      'whichever endpoint the running context belongs to, which for anything run from ' +
+      'the editor is /dev. Unset, the completion mail falls back to the spreadsheet row'
+  },
   REF_JALLC_NIF: {
     required: false, secret: false,
     description: 'Shown in the IVA section for copying into Finanças'
