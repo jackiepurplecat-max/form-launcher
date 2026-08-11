@@ -279,13 +279,11 @@ for a state the row had not reached (see Settled since).
   their headers matched `sectionHeaders()`, so live and archive have not drifted.
   One warning, which is the code working: `Folha1`, Google's default tab under a
   Portuguese locale, reported rather than deleted in case it holds something.
-- **Steps 8 and 9 have barely been used by hand.** Creating works; editing,
-  deleting, restoring and permanent deletion have never been tapped. Also
-  untried: attaching a document to an existing entry, which is what releases a
-  deferred claim email — the Siri path working before Siri exists.
-- **One IVA entry with a receipt, end to end**, exercising the claim email with
-  its attachment, the `Emitente NIF` prefill and the filename chain. The mail
-  goes to Jax, so a test entry is harmless.
+- **Attaching a document to an existing entry** — the last path never exercised
+  at all, and the one that releases a deferred claim email: the Siri case working
+  before Siri exists. Make an entry with no receipt, confirm the claim is held,
+  then edit the row to attach the file and confirm `sendPendingClaim` fires once
+  and stamps `Claim Emailed`.
 - **Whether `authuser` actually fixes a document link.** Still never confirmed:
   every attempt was stopped by the web app's own gate first, which turned out to
   be the real cause of what looked like broken links all along.
@@ -1203,6 +1201,11 @@ stop.
     browser's default account and cannot be pointed at one by URL, so on a device
     where the v2 account is not the default this link opens as the wrong person —
     the same unresolved constraint as the phone.
+- **An IVA claim has been made end to end, and it was clean.** One real entry with
+  a receipt, no issues: the claim mail with its attachment, the `Emitente NIF`
+  prefilled from the registry, and the filename suffix chain through the
+  transitions. That is the section with the most moving parts — two extra fields, a
+  NIF prefill and a mail on creation — so it is the one worth having confirmed.
 - **Step 9 is verified by hand.** Editing (including the rename that follows a
   changed amount, and a blanked note actually clearing), the state dates being
   absent from the edit form, delete-to-archive, restore rebuilding the folder and
