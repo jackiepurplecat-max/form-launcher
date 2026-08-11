@@ -43,6 +43,21 @@
       padding-bottom: 3rem;
     }
 
+    /*
+     * The archive is a different place, not a filtered view of the same one, and
+     * the actions there are the two that do not simply undo: Restore re-files
+     * documents, and Delete forever is final. So the whole chrome shifts warm
+     * rather than only the table, and the header and column heads go with it -
+     * a tint you can only see by looking for it is not a distinction.
+     *
+     * Warm sand rather than the warning or error tints: being in the archive is
+     * not a problem, it is just not where the live rows are.
+     */
+    body.archive { --bg: #f2ece1; }
+    body.archive header,
+    body.archive nav#tabs { background: #faf6ee; }
+    body.archive th { background: #f7f2e8; }
+
     header {
       display: flex; align-items: baseline; gap: .75rem;
       padding: .85rem 1rem;
@@ -450,6 +465,8 @@
 
     function setArchive(on) {
       app.archive = on;
+      // The body class is set by load(), which this calls — and which also runs
+      // on a tab switch, so the tint cannot be left behind by one.
       // "Active" rather than "Entries": the archive holds entries too, so
       // Entries/Archive read as different kinds of thing when they are two views
       // of the same thing. Active/Archive is the actual distinction.
