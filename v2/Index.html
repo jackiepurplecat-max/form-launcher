@@ -57,6 +57,19 @@
     body.archive header,
     body.archive nav#tabs { background: #faf6ee; }
     body.archive th { background: #f7f2e8; }
+    /*
+     * In here the section buttons select ARCHIVE views: tapping Health does not
+     * take you to Health's live entries. So all four change, not just the selected
+     * one — the unselected ones are the ones making a promise about where they go.
+     *
+     * The tabs are the only accent that changes. Overriding --accent wholesale
+     * would be one line and would also recolour the document links, which have no
+     * underline and would stop reading as links at all.
+     */
+    body.archive nav#tabs button { border-color: #e3d9c6; color: #7b6a4f; }
+    body.archive nav#tabs button[aria-selected="true"] {
+      background: #7a6134; border-color: #7a6134; color: #fff;
+    }
 
     header {
       display: flex; align-items: baseline; gap: .75rem;

@@ -397,7 +397,16 @@ function uiListArchive(sectionKey) {
         if (!entry) return null;
         entry.options = [];  // nothing to transition an archived row to
         entry.archivedAt = uiDateISO(rowValues[cols[ARCHIVE_COLUMNS.archivedAt] - 1]);
-        entry.reason = (rowValues[cols[ARCHIVE_COLUMNS.reason] - 1] || '').toString();
+
+        // The ordinary reason is not worth showing. Deleting from the table is the
+        // only way into the archive today, so every row said "deleted" — a chip on
+        // every row distinguishes nothing, which is the same argument that turned
+        // Tipo and Importados into a reference block rather than columns. Anything
+        // OTHER than the ordinary reason is still reported, so a bulk archive at
+        // cutover would show up. Decided here rather than in the page, so the
+        // harness can hold it.
+        const reason = (rowValues[cols[ARCHIVE_COLUMNS.reason] - 1] || '').toString();
+        entry.reason = reason === ARCHIVE_REASON.deleted ? '' : reason;
         return entry;
       })
       .filter(row => row !== null);

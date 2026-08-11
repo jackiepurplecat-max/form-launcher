@@ -1292,8 +1292,21 @@ check('it is in the archive', !!archivedRow, archiveList.rows.map(r => r.cells['
 check('with every field carried across',
   archivedRow.cells['Amount'] === 8 && archivedRow.cells['Notes'] === 'archive me',
   archivedRow.cells);
-check('stamped with when, and why', !!archivedRow.archivedAt && archivedRow.reason === 'deleted',
-  [archivedRow.archivedAt, archivedRow.reason]);
+check('stamped with when it was archived', !!archivedRow.archivedAt, archivedRow.archivedAt);
+// The reason is withheld when it is the ordinary one: deleting from the table is
+// the only way in today, so a "deleted" chip on every row distinguishes nothing.
+// Anything else is still reported, which is what a bulk archive at cutover would
+// be. Held here rather than in the page so this stays a rule and not a habit.
+check('but not told "deleted" on every row, which says nothing',
+  archivedRow.reason === '', archivedRow.reason);
+check('while any other reason is still reported', (() => {
+  const sheet = mocks.SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Work Archive');
+  const cols = G.resolveColumns(sheet);
+  G.writeCell(sheet, cols, archivedRow.row, 'Archive Reason', 'archived');
+  const again = G.uiListArchive('work').rows.filter(r => r.row === archivedRow.row)[0];
+  G.writeCell(sheet, cols, archivedRow.row, 'Archive Reason', 'deleted');
+  return again.reason === 'archived';
+})());
 check('offering no status transitions, because there are none',
   archivedRow.options.length === 0, archivedRow.options);
 
