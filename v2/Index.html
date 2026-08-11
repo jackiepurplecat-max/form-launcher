@@ -209,6 +209,10 @@
     #formNote { font-size: .8rem; margin-bottom: .8rem; display: none; }
     #formNote.show { display: block; color: var(--warn); background: var(--warn-bg);
       border-radius: 8px; padding: .5rem .6rem; }
+    /* Missing required fields read as an error rather than a caution: the Save
+       button no longer changes, so this note is the only thing saying that
+       pressing it again writes an incomplete entry. */
+    #formNote.show.missing { color: var(--err); background: var(--err-bg); }
 
     #toast {
       position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%);
@@ -446,7 +450,10 @@
 
     function setArchive(on) {
       app.archive = on;
-      el('showArchive').textContent = on ? 'Entries' : 'Archive';
+      // "Active" rather than "Entries": the archive holds entries too, so
+      // Entries/Archive read as different kinds of thing when they are two views
+      // of the same thing. Active/Archive is the actual distinction.
+      el('showArchive').textContent = on ? 'Active' : 'Archive';
       el('newEntry').style.display = on ? 'none' : '';
       load();
     }
@@ -645,7 +652,10 @@
 
       cells += '<td class="rowActions">' +
         '<button type="button" data-edit="' + row.row + '">Edit</button> ' +
-        '<button type="button" data-delete="' + row.row + '">Delete</button></td>';
+        // "Archive", not "Delete": it is what the button does, and the archive is
+        // a place you can see, one tap away in the header. A button labelled
+        // Delete that does not delete is the same lie the Save button was telling.
+        '<button type="button" data-delete="' + row.row + '">Archive</button></td>';
 
       return '<tr data-row="' + row.row + '">' + cells + '</tr>';
     }
@@ -821,10 +831,10 @@
       var who = row.cells['Counterparty'] || 'this entry';
 
       openConfirm({
-        title: 'Delete this entry?',
+        title: 'Archive this entry?',
         body: who + ' moves to the archive, and its documents to the Archived folder. ' +
           'Nothing is removed — you can restore it, or delete it for good from there.',
-        okLabel: 'Delete',
+        okLabel: 'Archive',
         destructive: false,
         apply: function () {
           setBusy(rowNumber, true);
@@ -1086,25 +1096,57 @@
       var hint = el('hint_' + cssId(counterpartyHeader()));
       if (!text || !hint) return;
 
-      call('uiLookupCounterparty', app.current, text).then(function (match) {
+      // Held so saveForm can wait for it. Leaving the counterparty box by
+      // clicking Save fires change and the click in the same breath, and the
+      // lookup is a round trip to the server - so without this the save outruns
+      // the correction and stores the typo anyway, intermittently, which is the
+      // worst kind.
+      var pending = call('uiLookupCounterparty', app.current, text).then(function (match) {
         if (!app.form || !match) { if (hint) hint.textContent = ''; return; }
 
         if (match.autofill) {
           var filled = [];
+          var corrected = '';
           Object.keys(match.prefill).forEach(function (header) {
             var input = fieldInput(header);
-            if (!input || input.value) return;   // never overwrite what you typed
+            if (!input) return;
+            // "Never overwrite what you typed" is right for Type and NIF and
+            // wrong for the counterparty itself, which is the field the match is
+            // ABOUT. That box always holds what you typed, so the guard made the
+            // one correction the registry exists for the one it could never
+            // apply: "whitee clinic" matched White Clinic at 0.92 and still went
+            // into the filename, and into the Suppliers sheet as a second
+            // supplier. Visible, not silent - you can see it change and type it
+            // back if the near-identical name really is a different business.
+            if (header === counterpartyHeader()) {
+              if (input.value === match.prefill[header]) return;
+              input.value = match.prefill[header];
+              corrected = match.prefill[header];
+              return;
+            }
+            if (input.value) return;
             input.value = match.prefill[header];
             filled.push(header);
           });
           hint.className = 'hint';
-          hint.textContent = filled.length ? 'Filled ' + filled.join(', ') + ' from the registry' : '';
+          hint.textContent = [
+            corrected ? 'Corrected to ' + corrected : '',
+            filled.length ? 'Filled ' + filled.join(', ') : ''
+          ].filter(Boolean).join(', ') ;
+          if (hint.textContent) hint.textContent += ' from the registry';
+          // Setting .value in script fires neither input nor change, so a
+          // required field the registry just filled would otherwise stay marked
+          // as missing - the note accusing you of a blank the page filled in.
+          if (filled.length || corrected) refreshMissingNote();
         } else {
           hint.className = 'hint suggest';
           hint.innerHTML = 'Did you mean <button type="button" data-use-name="' +
             escapeHtml(match.name) + '">' + escapeHtml(match.name) + '</button>?';
         }
       }).catch(function () { /* the registry is an aid, never a blocker */ });
+
+      if (app.form) app.form.lookupPending = pending;
+      return pending;
     }
 
     function useSuggestedName(name) {
@@ -1185,31 +1227,71 @@
       return Promise.all(reads);
     }
 
+    /** Mark exactly the missing fields, clearing whatever was marked before. */
+    function highlightMissing(missing) {
+      Array.prototype.forEach.call(el('formFields').children, function (node) {
+        node.className = 'field';
+      });
+      missing.forEach(function (field) {
+        var node = el('formFields').querySelector('[data-field="' + field.header + '"]');
+        if (node) node.className = 'field missing';
+      });
+    }
+
+    function showMissingNote(missing) {
+      el('formNote').className = 'show missing';
+      el('formNote').textContent = 'Still needed: ' +
+        missing.map(function (f) { return f.label; }).join(', ') +
+        '. Press Save again to save it incomplete.';
+    }
+
+    /**
+     * Keep the note honest as the form is filled in, and disarm the second tap
+     * as soon as nothing is missing.
+     *
+     * This is what makes the armed state track the FORM rather than the dialog.
+     * saveAnyway used to be set once and never cleared until the dialog was
+     * reopened, so: arm it, fill the missing field in, blank a different one, and
+     * Save wrote an incomplete entry on a single press with no warning at all.
+     * The safeguard was one-shot per dialog instead of per state.
+     *
+     * Does nothing until the first Save press. A red warning on a form you have
+     * only just opened is describing the normal state of every blank form, and a
+     * warning that is always there is not read.
+     */
+    function refreshMissingNote() {
+      if (!app.form || !app.form.saveAnyway) return;
+
+      var missing = missingRequired(collectValues());
+      highlightMissing(missing);
+
+      if (!missing.length) {
+        app.form.saveAnyway = false;
+        el('formNote').className = '';
+        return;
+      }
+      showMissingNote(missing);
+    }
+
     function saveForm() {
       if (!app.form || app.form.busy) return;
 
       var values = collectValues();
       var missing = missingRequired(values);
-
-      Array.prototype.forEach.call(el('formFields').children, function (node) {
-        node.className = 'field';
-      });
+      highlightMissing(missing);
 
       // Not a hard block: an entry you cannot complete yet is still worth having,
       // and the server writes it and says what is outstanding. But it is not the
       // normal case, so it takes a second, deliberate tap.
+      //
+      // The button goes on saying "Save" throughout. Relabelling it to "Save
+      // incomplete" put the warning on the control instead of beside it, and the
+      // label then went stale the moment the field was filled in - so it read
+      // "Save incomplete" over an entry that was now complete, which is a button
+      // misdescribing what it is about to do. The note carries the warning, and
+      // the note is recomputed on every keystroke.
       if (missing.length && !app.form.saveAnyway) {
-        missing.forEach(function (field) {
-          var node = el('formFields').querySelector('[data-field="' + field.header + '"]');
-          if (node) node.className = 'field missing';
-        });
-        el('formNote').className = 'show';
-        el('formNote').textContent = 'Still needed: ' +
-          missing.map(function (f) { return f.label; }).join(', ') +
-          '. Press again to save it incomplete.';
-        // The button now says what pressing it does. Fill the fields in and it
-        // saves a complete entry regardless - this is a relabel, not a mode.
-        el('formSave').textContent = 'Save incomplete';
+        showMissingNote(missing);
         app.form.saveAnyway = true;
         return;
       }
@@ -1219,9 +1301,16 @@
 
       var editingRow = app.form.row;
 
-      collectFiles()
+      // Let any registry lookup still in flight finish first, then read the
+      // fields again rather than reusing the values collected for validation:
+      // a confident match rewrites the counterparty box, and those are the
+      // values that decide the filename. Never fatal - a lookup that fails or
+      // hangs must not stop the entry being saved.
+      Promise.resolve(app.form.lookupPending)
+        .catch(function () { /* the registry is an aid, never a blocker */ })
+        .then(collectFiles)
         .then(function (files) {
-          var payload = { values: values, files: files };
+          var payload = { values: collectValues(), files: files };
           return editingRow
             ? call('uiUpdateEntry', app.current, editingRow, payload)
             : call('uiCreateEntry', app.current, payload);
@@ -1277,14 +1366,34 @@
       if (target.id === 'dialogCancel') return closeDialog(true);
     });
 
+    /*
+     * Where the press that produced a click began.
+     *
+     * A click fires on the nearest common ancestor of mousedown and mouseup, so
+     * holding the button down inside the Notes box to select text and dragging
+     * off the card reports a click on the BACKDROP - and the form closed, taking
+     * what had been typed with it. Selecting text is not a request to discard the
+     * form, so closing on the backdrop now requires the press to have started
+     * there as well. pointerdown rather than mousedown because a touch drag has
+     * exactly the same shape.
+     */
+    var pressedOn = null;
+    document.addEventListener('pointerdown', function (event) {
+      pressedOn = event.target;
+    }, true);
+
+    function fromBackdrop(event, overlayId) {
+      return event.target === el(overlayId) && pressedOn === el(overlayId);
+    }
+
     el('overlay').addEventListener('click', function (event) {
-      if (event.target === el('overlay')) closeDialog(true);
+      if (fromBackdrop(event, 'overlay')) closeDialog(true);
     });
 
     el('formOverlay').addEventListener('click', function (event) {
       // Only the backdrop closes it. A half-filled form thrown away by a stray
       // tap inside the card would be worse than one extra tap on Cancel.
-      if (event.target === el('formOverlay') && app.form && !app.form.busy) closeForm();
+      if (fromBackdrop(event, 'formOverlay') && app.form && !app.form.busy) closeForm();
     });
 
     // Typing in the counterparty box: suggest while typing, look up once it
@@ -1294,10 +1403,13 @@
       if (event.target.dataset && event.target.dataset.role === 'counterparty') {
         counterpartySuggest(event.target.value);
       }
+      // Every keystroke, not just the counterparty box: this is what clears the
+      // warning the moment the last required field is filled in.
+      refreshMissingNote();
     });
 
     el('confirmOverlay').addEventListener('click', function (event) {
-      if (event.target === el('confirmOverlay')) closeConfirm();
+      if (fromBackdrop(event, 'confirmOverlay')) closeConfirm();
     });
 
     document.addEventListener('keydown', function (event) {
@@ -1332,6 +1444,9 @@
       if (app.form && target.dataset && target.dataset.role === 'counterparty') {
         return counterpartyLookup(target.value);
       }
+      // Dropdowns and the file inputs fire change rather than input, so a
+      // required choice picked from a list has to clear the warning too.
+      if (app.form && el('formFields').contains(target)) return refreshMissingNote();
       if (target.classList.contains('status')) {
         return changeStatus(target.dataset.row, target.value);
       }

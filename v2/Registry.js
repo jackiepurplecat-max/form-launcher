@@ -41,6 +41,16 @@ const REGISTRY_HEADERS = [
  */
 const REGISTRY_AUTOFILL_CONFIDENCE = 0.85;
 
+/**
+ * Similarity at or above which a name is worth *offering* in the dropdown.
+ *
+ * Much lower than the autofill bar, and that is the point: suggesting a name
+ * fills nothing in. The strict bar exists to stop a wrong NIF reaching a claim,
+ * so applying it to a list of candidates would be borrowing a rule from a
+ * decision this is not. Matches findSupplier's own floor for its weakest tier.
+ */
+const REGISTRY_SUGGEST_SIMILARITY = 0.6;
+
 /* ================================ Storage ================================= */
 
 /**
@@ -190,10 +200,24 @@ function findSupplier(spokenName) {
  * Registry entries matching typed text, most-used first, for autocomplete.
  * Matches anywhere in the name or an alias, not just at the start, so "luz"
  * finds "Hospital da Luz". A blank prefix returns the most-used entries.
+ *
+ * Substring matching cannot see past a typo, and that showed: "white" offered
+ * White Clinic while "whitee clinic" offered nothing, because a wrong letter
+ * mid-string means no registry name contains the text and the text contains no
+ * registry name. findSupplier scores that same string at 0.92 — the matcher was
+ * never the problem, the dropdown just never asked it. So substring matches come
+ * first, and near misses top the list up to the limit.
+ *
+ * Length-sensitive similarity is what keeps this from dragging in junk: a single
+ * typed letter scores near zero against every name, so the fuzzy half only
+ * contributes once enough has been typed to be wrong rather than incomplete.
  */
 function suggestSuppliers(prefix, limit) {
   const target = normalizeName(prefix);
-  const matches = loadRegistry().filter(entry => {
+  const cap = limit || 10;
+  const registry = loadRegistry();
+
+  const matches = registry.filter(entry => {
     if (!target) return true;
     const name = normalizeName(entry.name);
     return name.indexOf(target) !== -1 ||
@@ -201,7 +225,21 @@ function suggestSuppliers(prefix, limit) {
   });
 
   matches.sort((a, b) => b.timesUsed - a.timesUsed || a.name.localeCompare(b.name));
-  return matches.slice(0, limit || 10).map(entry => ({
+
+  if (target && matches.length < cap) {
+    const already = {};
+    matches.forEach(entry => { already[entry.name] = true; });
+
+    registry
+      .filter(entry => !already[entry.name])
+      .map(entry => ({ entry: entry, score: similarity(normalizeName(entry.name), target) }))
+      .filter(scored => scored.score >= REGISTRY_SUGGEST_SIMILARITY)
+      .sort((a, b) => b.score - a.score || b.entry.timesUsed - a.entry.timesUsed)
+      .slice(0, cap - matches.length)
+      .forEach(scored => matches.push(scored.entry));
+  }
+
+  return matches.slice(0, cap).map(entry => ({
     name: entry.name, type: entry.type, nif: entry.nif
   }));
 }

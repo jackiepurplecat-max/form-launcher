@@ -260,9 +260,28 @@ for a state the row had not reached (see Settled since).
 
 **Still outstanding — pick this up first:**
 
-- **Re-run `bootstrap()`.** It now creates a `<Section> Archive` sheet per
-  section. Nothing in step 9 works until they exist, and delete fails with a
-  clear message saying so. This is the one blocking item.
+- **The completion email must open the form, not the sheet.** Found by using it.
+  `sendCompletionRequest()` links to `…#gid=<id>&range=A<row>`
+  (`Entries.js:331`), which is fine for correcting a word and wrong for what the
+  mail is usually about — a missing document, a date, a category value. The sheet
+  offers no date picker, no dropdown and no upload; the form offers all three and
+  already edits in place. So this is a URL and an entry point, not a new view:
+  `…/exec?section=<key>&edit=<row>`, `doGet` passing the pair through to the page,
+  and the page opening `openForm(row)` on load. The comment at `Entries.js:304`
+  anticipates exactly this and says only the URL built there has to change.
+  It inherits the accounts problem — `/exec` ignores `authuser`, so a link mailed
+  to yourself still resolves against the browser's default account.
+- **Two values to add to Work: `Education` and `Boarding Pass`.** These belong to
+  `Type`, not `Expense Reason`: Expense Reason is open free text whose suggestions
+  populate from what is already in use, so there is nothing there to implement,
+  while `Type` is the closed list carrying the `TODO` in `Config.js` — and both
+  values are kinds of expense rather than trips. A config line plus a push. No
+  `bootstrap()` re-run, because the column already exists; only its option list
+  changes.
+- **`bootstrap()` re-run — done.** All four archive sheets already existed and
+  their headers matched `sectionHeaders()`, so live and archive have not drifted.
+  One warning, which is the code working: `Folha1`, Google's default tab under a
+  Portuguese locale, reported rather than deleted in case it holds something.
 - **Steps 8 and 9 have barely been used by hand.** Creating works; editing,
   deleting, restoring and permanent deletion have never been tapped. Also
   untried: attaching a document to an existing entry, which is what releases a
@@ -847,6 +866,56 @@ space is urgent, permanent removal is a config switch.
 | Hard delete | management, archived rows only | no (30 days in Drive trash) | yes |
 | Archive a category value | management | yes | yes |
 
+**Edit a supplier, and repair what its name is written into — step 9c, planned,
+not built.** The registry populates itself, which means it also learns your
+typos: `whitee clinic` was entered once and became a second supplier, splitting
+that provider's history, with the misspelling baked into a receipt's filename.
+The page now corrects a confident match before it is saved (see Settled since),
+but nothing repairs what is already stored, and doing it by hand means editing a
+sheet cell, a Drive filename and a registry row in three places and getting all
+three consistent.
+
+So: a form over the `Suppliers` sheet — Name, Type, NIF, Aliases — that treats a
+**name change as a rename across everything derived from it.**
+
+- **The repair goes through `nameAndFileDocuments()`, never through string
+  surgery on the old filename.** That function already rebuilds a document's name
+  from the row's own values (`Entries.js:422`) and is already shared by creation,
+  editing and status changes. So the operation is: write the new name into the
+  affected rows, then re-run it per row. Pattern-matching the old name inside the
+  existing filename would be a second naming rule, free to drift from the first —
+  and it would have to know that `White Clinic` is `WhiteClinic` in a filename.
+- **The rows are the index, not Drive.** Find affected entries by their
+  `Counterparty` column across all four sections; never search Drive by filename.
+  The row holds the document's URL, so it can say which file to fix without
+  guessing, and a file whose name was already wrong is still found.
+- **The archive sheets are included.** They carry the same spine, their documents
+  sit in `Archived`, and `restoreEntry` rebuilds names from the row — so a rename
+  that skipped them would sit quietly until a restore resurrected the old
+  spelling.
+- **Merging is the common case, not renaming.** Correcting a typo usually means
+  the target name already exists, so this is a merge: sum `Times Used`, keep the
+  later `Last Used`, union the aliases, and apply the existing
+  clear-on-conflict rule to `Type`. A rename that silently created a *third*
+  supplier would be the original bug with more steps.
+- **Offer the old spelling as an alias, do not add it.** A real recurring
+  mishearing should resolve at 0.95 forever; a one-off typo should not be
+  taught. Only you know which it was. This is the plan's "learning from
+  corrections" applied to the management surface.
+- **Report per row and per document.** A rename can fail halfway through, so it
+  returns what actually happened rather than a tick. Re-running is safe and is
+  the repair: names are rebuilt from the row every time, so a second pass fixes
+  whatever the first could not. Same reasoning as a file failure not rolling back
+  a status change.
+- Watch the six-minute execution limit if a supplier has many entries. Personal
+  volumes are nowhere near it, but the count belongs in the result rather than
+  being discovered as a timeout.
+
+**Open question:** whether correcting a supplier's **NIF** should also rewrite
+`Emitente NIF` on past IVA entries. A wrong NIF is a rejected claim, which argues
+for it; rewriting a figure that was already submitted to Finanças argues against.
+Probably offered per entry rather than applied, but undecided.
+
 **Manage category values.** Add and remove the allowed values of a section's
 category field, which the form's dropdown reads directly — there is no form to
 keep in sync, which is most of what this used to cost. Works for Work's
@@ -980,7 +1049,19 @@ of `=IMPORTXML("http://evil.test","//x")` is stored as text, not executed. This
 covers `createEntry` and the registry — the two paths that write data that came
 from outside.
 
-Two constraints to respect when the Siri endpoint is built:
+Three constraints to respect when the Siri endpoint is built:
+
+- **Nothing canonicalises the counterparty on the server**, so a caller with no
+  form bypasses the correction entirely. That correction lives in the page,
+  deliberately — two near-identical names can be two real businesses, so it is
+  shown and overridable rather than applied silently. Siri has no such moment:
+  it sends what it heard, and a 0.92 mishearing would land in the filename and
+  append a second supplier row, which is the bug fixed in Settled since
+  reappearing on a path with nobody watching. So the Shortcut must call
+  `uiLookupCounterparty` and confirm the canonical name in its visual
+  confirmation — which the prompted-questions design already has a natural place
+  for — or `doPost` must canonicalise above the autofill bar and say in its
+  response that it did.
 
 - **`doPost` must not accept file columns.** `extractFileId` will take any Drive
   ID out of a supplied string, and the script runs as you, so a key holder
@@ -1039,6 +1120,12 @@ Each step should leave the system working.
    hard delete, in `v2/Manage.js`, deployed as version 11. **Run `bootstrap()`
    once** to create the four archive sheets. Category lists are handled: closed
    ones are config, open ones populate themselves.
+9c. **Supplier editing, with the rename propagated** — planned, not built. A form
+    over `Suppliers` where changing a name updates every affected entry in every
+    section, archives included, and re-runs `nameAndFileDocuments()` per row so
+    the documents follow. Merges rather than renames when the target already
+    exists. See the management module section for why the repair must not
+    pattern-match the old filename.
 10. **Cutover** — see below.
 11. **Siri Shortcut** in its own Apps Script project — not a second deployment
     of this one. See Security: anonymous access is per project, and it blanks the
@@ -1093,6 +1180,81 @@ stop.
 
 ### Settled since
 
+- **Step 9 is verified by hand.** Editing (including the rename that follows a
+  changed amount, and a blanked note actually clearing), the state dates being
+  absent from the edit form, delete-to-archive, restore rebuilding the folder and
+  the filename suffix from the row's own dates, and `Delete forever` from the
+  archive only — all confirmed in the browser.
+- **The row button says `Archive`, and the header toggle says `Active`.** It was
+  `Delete`, which is not what it does: the row moves to the archive and its
+  documents to the `Archived` folder, and nothing is removed. A button labelled
+  Delete that does not delete is the same lie the Save button was telling, so the
+  confirmation's title and OK label moved with it. `Delete` now appears in the UI
+  only on `Delete forever`, which is the one action that really does destroy
+  something. The header toggle read `Entries`/`Archive`, which reads as two kinds
+  of thing when they are two views of one thing; `Active`/`Archive` is the actual
+  distinction.
+- **Selecting text no longer closes the dialog it was selected in.** Holding the
+  button down in the Notes box and dragging left threw the whole form away. A
+  click fires on the nearest common ancestor of `mousedown` and `mouseup`, so a
+  drag that starts in a field and ends past the card reports a click on the
+  **backdrop** — indistinguishable, to a plain `click` handler, from tapping
+  outside to dismiss. Closing on the backdrop now also requires the press to have
+  *started* there (`pressedOn`, from a capturing `pointerdown` — a touch drag has
+  the same shape). Applied to all three overlays, because all three had it: the
+  form, the date dialog and the confirmation. The same class of defect as Escape
+  leaving fullscreen — the browser's default reading of an input gesture is not
+  the one the page wants, and both were found by using it rather than by reading
+  it.
+- **A confident match now corrects the counterparty box.** `whitee clinic` matched
+  White Clinic at 0.92 and *still* went into the filename — and into `Suppliers`
+  as a second supplier, splitting that provider's history. `lookupCounterparty`
+  had always computed the correction (`Registry.js:270`, with a comment saying it
+  is the most useful thing a confident match can do); the page threw it away. Its
+  prefill loop skipped any field that already had a value — right for `Type` and
+  `NIF`, wrong for the field the match is *about*, since the counterparty box
+  always holds what you just typed. So the one correction the registry exists for
+  was the one prefill that could never land. The fix keeps the guard for every
+  other field and makes the correction **visible rather than silent** — the box
+  changes in front of you and the hint says `Corrected to White Clinic from the
+  registry`, so two genuinely different businesses with near-identical names can
+  still be told apart by hand. Two near-identical names *are* the hazard here,
+  which is why this is not done silently on the server.
+- **And the save now waits for the lookup.** Leaving the counterparty box by
+  clicking Save fires `change` and the click together, and the lookup is a round
+  trip — so the save outran the correction and stored the typo anyway, but only
+  sometimes. `saveForm` holds the pending lookup and re-reads the fields after it
+  settles rather than reusing the values collected for validation. Never fatal: a
+  lookup that fails or hangs must not stop the entry being written.
+- **The dropdown now suggests through a typo.** Found by using the form: `white`
+  offered White Clinic and `whitee clinic` offered nothing. Not a weakness in the
+  matcher — two different algorithms on two paths. `suggestSuppliers` was
+  substring-only, while the fuzzy tiers live in `findSupplier` and the dropdown
+  never asked them; `findSupplier` scores that exact string at **0.92**. A typo
+  mid-string is a substring of nothing, so what mattered was where the wrong
+  letter fell, not how much had been typed. Substring matches still come first
+  and near misses top the list up to the limit, above a **0.6** floor
+  (`REGISTRY_SUGGEST_SIMILARITY`) rather than the 0.85 autofill bar — offering a
+  name fills nothing in, so borrowing the bar that exists to keep a wrong NIF out
+  of a claim would be applying a rule from a different decision. Length-sensitive
+  similarity is what keeps it clean: a single typed letter scores near zero
+  against every name, so the fuzzy half only contributes once you have typed
+  enough to be *wrong* rather than *incomplete*.
+- **The Save button stopped lying about incomplete entries.** It relabelled itself
+  to `Save incomplete`, which put the warning on the control instead of beside it
+  — and the label went stale the moment the field was filled in, so it read
+  `Save incomplete` over an entry that was now complete. Behind that was a real
+  defect: `saveAnyway` was set once and cleared only when the dialog reopened, so
+  arming it, filling the missing field in and then blanking a different one wrote
+  an incomplete entry on a **single** press with no warning at all. The safeguard
+  was one-shot per dialog rather than per state. Now the button always reads
+  `Save`, a red note carries the warning and names the fields, and
+  `refreshMissingNote()` recomputes it on every keystroke — including after a
+  registry autofill, which sets `.value` in script and therefore fires neither
+  `input` nor `change`. The note stays absent until the first Save press: a form
+  you have only just opened has every required field blank, and a warning that is
+  always there is not read. Client-side, so the harness cannot reach it — confirmed
+  by hand.
 - **Document links say which account to open them as.** Every document read
   "You need access" in a browser with two Google accounts signed in — the file
   was fine and so was the link, it was being opened as the wrong person, because

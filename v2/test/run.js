@@ -1071,6 +1071,43 @@ check('and still says what it suspected, so the page can offer it',
   weak.name === 'FNAC' && weak.confidence < 0.85, weak);
 check('suggestions come back for a prefix',
   G.uiSuggestCounterparty('wo', 5).some(s => s.name === 'Worten'), G.uiSuggestCounterparty('wo', 5));
+
+/*
+ * Found by using it: "white" offered White Clinic and "whitee clinic" offered
+ * nothing, because the dropdown was substring-only while the fuzzy tiers lived
+ * in findSupplier and were never asked. A typo mid-string is a substring of
+ * nothing, so the length of what you typed was irrelevant - what mattered was
+ * where the wrong letter fell.
+ */
+check('a typo still gets suggested, though substring matching cannot see it',
+  G.uiSuggestCounterparty('whitee clinic', 5).some(s => s.name === 'White Clinic'),
+  G.uiSuggestCounterparty('whitee clinic', 5));
+check('the substring case is unchanged and still comes first',
+  G.uiSuggestCounterparty('white', 5)[0].name === 'White Clinic',
+  G.uiSuggestCounterparty('white', 5));
+check('one letter drags nothing in — similarity is length-sensitive, so a short ' +
+  'prefix only ever matches by substring',
+  G.uiSuggestCounterparty('w', 20).every(s => /w/i.test(s.name)),
+  G.uiSuggestCounterparty('w', 20));
+check('and a name nothing like anything stored returns nothing',
+  G.uiSuggestCounterparty('zzzqqq', 5).length === 0,
+  G.uiSuggestCounterparty('zzzqqq', 5));
+
+/*
+ * The same typo, one layer down. A confident match must offer the CANONICAL name
+ * back, because the counterparty is what the filename is built from and what the
+ * registry is keyed on - so a near miss that is merely tolerated still ends up in
+ * the filename and as a second supplier row. The page discarded this for a while:
+ * its "never overwrite what you typed" guard covered the counterparty box, which
+ * always holds what you typed, making this the one prefill that could never land.
+ */
+section('a confident match offers the name back, not just the details');
+const typo = G.uiLookupCounterparty('health', 'whitee clinic');
+check('scored above the autofill bar', typo.autofill === true && typo.confidence >= 0.85, typo);
+check('and the canonical spelling is part of the prefill',
+  typo.prefill['Counterparty'] === 'White Clinic', typo.prefill);
+check('a match below the bar offers no name to write',
+  Object.keys(G.uiLookupCounterparty('iva', 'fnak').prefill).length === 0);
 check('an unknown section is refused before any sheet is touched',
   (() => { try { G.uiLookupCounterparty('nope', 'x'); return false; } catch (e) { return true; } })());
 
