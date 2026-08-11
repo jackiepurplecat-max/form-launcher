@@ -326,8 +326,54 @@ const listedRow = G.uiListEntries('health').rows.filter(r => r.row === linked.ro
 check('and both sides agree on that stamp, which is the whole contract',
   !!listedRow && String(listedRow.stamp) === linkedStamp,
   { listed: listedRow && listedRow.stamp, inLink: linkedStamp });
+
+/*
+ * The link goes out as an href, not as bare text. It is ~130 characters and
+ * plain-text mail wraps at about 78, which leaves the receiving client guessing
+ * where a URL ends. The plain-text part is kept as the alternative.
+ */
+const linkedMail = mocks.MailApp.sent[linkMailBefore];
+check('the mail carries an HTML part', !!(linkedMail.opts && linkedMail.opts.htmlBody),
+  linkedMail.opts);
+check('with the whole link inside one href attribute',
+  /href="https:\/\/script\.google\.test\/macros\/s\/DEPLOYED\/exec\?section=health&amp;t=\d+"/
+    .test(linkedMail.opts.htmlBody),
+  linkedMail.opts.htmlBody);
+check('and a plain-text alternative is still sent', /Finish it here: http/.test(linkedMail.body));
+check('sheet values are escaped on the way into the HTML', (() => {
+  const before = mocks.MailApp.sent.length;
+  G.createEntry('health', {
+    'Date': '2026-06-05', 'Counterparty': 'Smith & Sons <Lda>', 'Patient': 'J', 'Amount': 3
+  }, 'siri');
+  const body = mocks.MailApp.sent[before].opts.htmlBody;
+  return body.indexOf('Smith &amp; Sons &lt;Lda&gt;') !== -1 &&
+    body.indexOf('<Lda>') === -1;
+})());
 check('sectionKeyOf takes the object back to its key, and refuses to guess',
   G.sectionKeyOf(G.getSection('iva')) === 'iva' && G.sectionKeyOf({}) === '');
+
+/*
+ * Found on a phone. /dev serves HEAD and opens only for accounts that can EDIT the
+ * script, so a mailed /dev link fails at Drive's layer before doGet is reached -
+ * and reads as "unable to open the file", which sounds like anything but a wrong
+ * endpoint. A link that is opened later, on whatever device is to hand, must not
+ * be one that only works at the desk it was made at.
+ */
+mocks._props.WEB_APP_URL = 'https://script.google.test/macros/s/HEADDEV/dev';
+const devMailBefore = mocks.MailApp.sent.length;
+G.createEntry('health', {
+  'Date': '2026-06-04', 'Counterparty': 'White Clinic', 'Patient': 'A', 'Amount': 12, 'Currency': 'EUR'
+}, 'siri');
+const devBody = mocks.MailApp.sent[devMailBefore].body;
+check('a /dev URL is refused rather than mailed', !/\/dev/.test(devBody), devBody);
+check('and the mail falls back to the sheet row, which does open',
+  /spreadsheets\/d\/TESTSHEETID.*range=A/.test(devBody), devBody);
+check('the check is on the endpoint, not the string "dev" anywhere in it',
+  G.mailableUrl('https://script.google.test/macros/s/devious/exec') ===
+    'https://script.google.test/macros/s/devious/exec');
+check('and a /dev with a query string is still refused',
+  G.mailableUrl('https://script.google.test/macros/s/X/dev?section=work') === '');
+
 delete mocks._props.WEB_APP_URL;
 
 const ivaNoReceipt = G.createEntry('iva', {

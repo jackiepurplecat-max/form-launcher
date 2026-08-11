@@ -302,14 +302,42 @@ const WEB_APP_URL_PROPERTY = 'WEB_APP_URL';
 function webAppUrl() {
   const configured = (PropertiesService.getScriptProperties()
     .getProperty(WEB_APP_URL_PROPERTY) || '').toString().trim();
-  if (configured) return configured;
+  if (configured) return mailableUrl(configured);
 
   try {
-    return (ScriptApp.getService().getUrl() || '').toString();
+    return mailableUrl((ScriptApp.getService().getUrl() || '').toString());
   } catch (error) {
     Logger.log(`Could not establish the web app URL: ${error}`);
     return '';
   }
+}
+
+/**
+ * Refuse a /dev URL, however it was arrived at.
+ *
+ * `/dev` serves HEAD and opens only for accounts that can EDIT the script. A
+ * mailed link is opened later, on whatever device is to hand, signed in as
+ * whichever Google account happens to be that browser's default — so a /dev link
+ * is not merely suboptimal, it is guaranteed to fail there. And it fails at
+ * Drive's layer, before doGet, so it reads as "Sorry, unable to open the file at
+ * this time" rather than as anything to do with this project. That is a bad half
+ * hour, and it happened.
+ *
+ * Returning '' sends the caller to its fallback, which is the spreadsheet row: a
+ * worse destination that actually opens beats a better one that cannot.
+ */
+function mailableUrl(url) {
+  const clean = (url || '').toString().trim();
+  if (!clean) return '';
+  if (/\/dev(\?|#|$)/.test(clean)) {
+    Logger.log(
+      `Refusing to mail a /dev link (${clean}) - it only opens for accounts that ` +
+      `can edit the script. Set ${WEB_APP_URL_PROPERTY} to the /exec URL of the ` +
+      `versioned deployment.`
+    );
+    return '';
+  }
+  return clean;
 }
 
 /**
@@ -391,26 +419,56 @@ function sendCompletionRequest(section, sheet, cols, row, missing, receiptState)
 
     const link = completionLink(section, sheet, cols, row);
 
+    const captured = [];
+    [COMMON.date, COMMON.counterparty, COMMON.amount, COMMON.currency, COMMON.notes]
+      .forEach(header => {
+        const value = readCell(sheet, cols, row, header);
+        if (value !== '' && value !== null && value !== undefined) {
+          captured.push({ label: header, value: value });
+        }
+      });
+
     const lines = [
       `A ${section.label} entry was created but is not finished.`,
       '',
       'Still needed:'
     ];
     outstanding.forEach(label => lines.push(`  - ${label}`));
-
     lines.push('', 'What was captured:');
-    [COMMON.date, COMMON.counterparty, COMMON.amount, COMMON.currency, COMMON.notes]
-      .forEach(header => {
-        const value = readCell(sheet, cols, row, header);
-        if (value !== '' && value !== null && value !== undefined) {
-          lines.push(`  ${header}: ${value}`);
-        }
-      });
-
+    captured.forEach(item => lines.push(`  ${item.label}: ${item.value}`));
     lines.push('', `Finish it here: ${link}`);
 
-    MailApp.sendEmail(recipient, subject, lines.join('\n'));
-    return { ok: true, recipient: recipient, outstanding: outstanding };
+    /*
+     * Sent as HTML with a plain-text alternative, rather than text alone.
+     *
+     * The link is ~130 characters and plain-text mail wraps at about 78, which
+     * leaves the receiving client guessing where a URL ends. As an href it is one
+     * unbreakable attribute instead. A bare long URL in an otherwise plain message
+     * is also a fair imitation of spam, and this mail was landing in junk - a
+     * multipart message with real structure is at least a less suspicious shape,
+     * though no message can guarantee its own delivery to an inbox.
+     *
+     * Every interpolated value goes through escapeHtml. These come from sheet
+     * cells, which is the same untrusted text safeCellValue neutralises on the way
+     * in: a supplier called "Smith & Sons <Lda>" would otherwise eat the rest of
+     * the line, and that is the mild version.
+     */
+    const html = [
+      `<div style="font:15px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">`,
+      `<p>A ${escapeHtml(section.label)} entry was created but is not finished.</p>`,
+      `<p><strong>Still needed</strong></p>`,
+      `<ul>${outstanding.map(label => `<li>${escapeHtml(label)}</li>`).join('')}</ul>`,
+      `<p><strong>What was captured</strong></p>`,
+      `<ul>${captured.map(item =>
+        `<li>${escapeHtml(item.label)}: ${escapeHtml(item.value)}</li>`).join('')}</ul>`,
+      `<p><a href="${escapeHtml(link)}" style="display:inline-block;padding:10px 16px;`,
+      `background:#1a73e8;color:#fff;border-radius:8px;text-decoration:none;`,
+      `font-weight:600">Finish this entry</a></p>`,
+      `</div>`
+    ].join('');
+
+    MailApp.sendEmail(recipient, subject, lines.join('\n'), { htmlBody: html });
+    return { ok: true, recipient: recipient, outstanding: outstanding, link: link };
 
   } catch (error) {
     return { ok: false, error: error.toString() };

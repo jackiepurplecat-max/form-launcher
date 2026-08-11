@@ -204,11 +204,25 @@ rather than worked around:
   `/macros/s/…` endpoint uses **the browser's default account** and ignores both
   forms. On a query string it is worse than useless: Google passes it through to
   `doGet` as `e.parameter.authuser` and does nothing with it.
-- **So the phone is parked, deliberately.** Safari there has four accounts and
-  the v2 one is not the default. The fix is not a URL: it is either a second
-  browser signed in only as the v2 account, or opening `webapp.access` — see
-  below. Desktop works, which is enough to keep building; revisit when the form
-  exists and you actually want it in your hand.
+- **The phone works, and the fix was the one predicted here: a session with only
+  the v2 account in it.** A Safari **Private Browsing** tab, signed in as v2,
+  loads `/exec` on the iPhone. So it was never a URL problem and never this code's
+  access check — `webapp.access` is `MYSELF`, which makes the deployment visible
+  to exactly one Google account, and the phone resolves every request as its
+  *default* account. Google therefore refuses before `doGet` runs, and because an
+  Apps Script deployment is backed by a Drive file, **Drive** renders the refusal:
+  *"Sorry, unable to open the file at this time."* Nothing about accounts, which
+  is why it reads as a broken link. A private tab has its own cookie jar, so v2 is
+  the only account in it and the same URL opens.
+  - **Diagnose this from the manifest, not from the symptom.** Two wrong theories
+    were argued first — a `/dev` URL, then a link mangled by plain-text wrapping —
+    and both were plausible from the error message alone. `"access": "MYSELF"` in
+    `appsscript.json` explains it in one line.
+  - **Still open: whether a private tab is a durable route.** Private Browsing
+    clears its cookies when the tab closes, so this may be a fresh sign-in every
+    time. The candidates for something permanent are **Add to Home Screen** from
+    that session, since iOS gives home-screen web apps their own cookie jar, or a
+    second browser app signed in only as v2. Untested.
 - **If `webapp.access` is ever opened to `ANYONE`, guard the globals first.**
   It would let any signed-in Google user with the URL load a page from this
   project, and `google.script.run` reaches *any* global — `bootstrap()`,
@@ -287,9 +301,12 @@ for a state the row had not reached (see Settled since).
 - **Whether `authuser` actually fixes a document link.** Still never confirmed:
   every attempt was stopped by the web app's own gate first, which turned out to
   be the real cause of what looked like broken links all along.
-- **The phone.** Parked deliberately — see the accounts section. Needs either a
-  second browser signed in only as the v2 account, or opening `webapp.access`
-  and guarding the globals first.
+- **A durable phone route.** `/exec` loads in a Safari Private tab signed in as v2
+  — the phone is no longer parked — but Private Browsing drops its cookies when
+  the tab closes, so that may mean signing in every time. Try **Add to Home
+  Screen** from that session first, then a second browser app. Opening
+  `webapp.access` to `ANYONE` remains the alternative, and still requires guarding
+  the globals first.
 - **Work's `Type` list** is still the proposed one, never checked against real
   claims. It is a `TODO` in `Config.js` and a dropdown on every work entry.
 

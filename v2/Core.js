@@ -16,6 +16,27 @@ function getSection(sectionKey) {
 }
 
 /**
+ * Make a value safe to put inside HTML.
+ *
+ * Used for the mail that is sent as HTML. Its body is built from sheet cells, and
+ * a counterparty or note is the same untrusted text that `safeCellValue` exists to
+ * neutralise on the way in — a `<` in a supplier name would otherwise silently
+ * swallow the rest of the sentence, and that is the harmless version.
+ *
+ * Also correct for an href: `&` becomes `&amp;`, which is what an attribute
+ * carrying a query string is supposed to contain.
+ */
+function escapeHtml(value) {
+  return (value === null || value === undefined ? '' : value)
+    .toString()
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
  * The key a section is held under, for the places that have the object and need
  * the name — a URL, a message. Returns '' rather than throwing: a caller that
  * only wants to build a link should not be the thing that fails.
