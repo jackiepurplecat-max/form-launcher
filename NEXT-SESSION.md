@@ -9,7 +9,8 @@ after this. This file is disposable: overwrite it at the end of each session.
 | | |
 |---|---|
 | Branch | `step-7-web-ui`, pushed to `origin` |
-| Working tree | **uncommitted — the whole Siri build is unstaged** |
+| Last code commit | `8e7f27f` — the Siri endpoint. Doc commits follow it |
+| Working tree | clean |
 | Harness | **617 passing, 0 failed** (was 531) |
 | Main project | matches `v2/` byte for byte, **13 files** — `Siri.js` is new |
 | Siri project | **new** — `v2-siri/`, matches byte for byte, 2 files |
