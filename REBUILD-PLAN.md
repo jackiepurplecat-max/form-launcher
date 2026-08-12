@@ -282,22 +282,40 @@ for a state the row had not reached (see Settled since).
   returns whichever endpoint the running context belongs to, and anything run from
   the editor belongs to `/dev`, which only opens for accounts that can edit the
   script.
-- **Two values to add to Work: `Education` and `Boarding Pass`.** These belong to
+- **`Education` and `Boarding Pass` on Work's `Type` — done.** They belong to
   `Type`, not `Expense Reason`: Expense Reason is open free text whose suggestions
-  populate from what is already in use, so there is nothing there to implement,
-  while `Type` is the closed list carrying the `TODO` in `Config.js` — and both
-  values are kinds of expense rather than trips. A config line plus a push. No
-  `bootstrap()` re-run, because the column already exists; only its option list
-  changes.
+  populate from what is already in use, so there was nothing there to implement,
+  while `Type` is the closed list — and both values are kinds of expense rather
+  than trips. No `bootstrap()` re-run was needed; the column already existed and
+  only its option list changed. The rest of that list is still the original
+  proposal, and the `TODO` in `Config.js` now says exactly that.
 - **`bootstrap()` re-run — done.** All four archive sheets already existed and
   their headers matched `sectionHeaders()`, so live and archive have not drifted.
   One warning, which is the code working: `Folha1`, Google's default tab under a
   Portuguese locale, reported rather than deleted in case it holds something.
-- **Attaching a document to an existing entry** — the last path never exercised
-  at all, and the one that releases a deferred claim email: the Siri case working
-  before Siri exists. Make an entry with no receipt, confirm the claim is held,
-  then edit the row to attach the file and confirm `sendPendingClaim` fires once
-  and stamps `Claim Emailed`.
+- **Attaching a document to an existing entry — done, verified by hand, and it
+  works.** This was the last path never exercised at all, and the one that
+  releases a deferred claim email: the Siri case working before Siri exists. All
+  four steps confirmed in a browser — an entry made with no receipt held its
+  claim and sat at `awaiting`, the completion mail went instead, attaching the
+  receipt through `Edit` sent the claim *then*, with the attachment, and **editing
+  the row again sent nothing**. That last step is the one that mattered:
+  `sendPendingClaim` fires once and the `Claim Emailed` column, not convention, is
+  what stops a second claim.
+- **The completion mail lands in the INBOX — the junk question is closed.** The
+  HTML body with a real `href` and a plain-text alternative was enough. No mail
+  rule needed, and no further churn on the mail body is warranted.
+- **iOS can kill the file picker, and a clean reload is the fix.** Locking the
+  phone part way through choosing a file left the `Edit` form's file button doing
+  nothing at all. Nothing in the page disables it — the only `disabled`
+  assignments are on the supplier dialog's buttons, and the form's `busy` flag
+  gates only Save and the close paths. iOS had suspended the sandboxed iframe, so
+  the user-activation context the file picker needs was dead while the page still
+  looked fine. A genuinely fresh load fixed it; a Private Browsing tab is the most
+  likely thing for iOS to purge this way. **Do not write defensive code against
+  this** without reproducing it first. Note the entry was never left in a bad
+  state — uploads land before anything is written, so an abandoned edit changes
+  nothing.
 - **Whether `authuser` actually fixes a document link.** Still never confirmed:
   every attempt was stopped by the web app's own gate first, which turned out to
   be the real cause of what looked like broken links all along.
