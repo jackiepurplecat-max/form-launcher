@@ -18,6 +18,9 @@ to zero in parallel. Its known bugs are accepted, not fixed.
 
 ## v2 — the active system
 
+**`NEXT-SESSION.md` first** — a disposable handover note: what is deployed, what
+is verified, what to pick up, and the traps. Then the plan below for the reasons.
+
 `REBUILD-PLAN.md` is the source of truth: architecture, decisions and the
 reasons behind them, the build order, and a state-of-play section saying exactly
 what is done. Read it before starting work.

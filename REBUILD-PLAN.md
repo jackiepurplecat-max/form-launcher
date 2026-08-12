@@ -64,12 +64,12 @@ Pass `-i <deploymentId>`. **Without it clasp creates a second deployment with a
 different URL** and leaves the old one live, which is how you end up debugging a
 page that no longer exists.
 
-**The custom form is built — step 8, deployed as version 5, not yet used by
-hand.** `v2/Form.js` is its server side and the form view lives in the same
+**The custom form is built and verified by hand — step 8.** `v2/Form.js` is its
+server side and the form view lives in the same
 page. Fields, order, labels, which are required, which offer a list and which
 accept a document are all derived from `SECTIONS`, so adding a field remains a
-config change plus a re-run of `bootstrap()`. `npm run v2:test` is 348
-assertions, up from 284.
+config change plus a re-run of `bootstrap()`. `npm run v2:test` is 521
+assertions.
 
 What it does that a Google Form could not, which is the whole reason Forms went:
 typing `Worten` fills in its NIF. Below 0.85 confidence nothing is filled — the
@@ -878,8 +878,8 @@ space is urgent, permanent removal is a config switch.
 | Hard delete | management, archived rows only | no (30 days in Drive trash) | yes |
 | Archive a category value | management | yes | yes |
 
-**Edit a supplier, and repair what its name is written into — step 9c, planned,
-not built.** The registry populates itself, which means it also learns your
+**Edit a supplier, and repair what its name is written into — step 9c, built in
+`v2/Suppliers.js`, not yet used by hand.** The registry populates itself, which means it also learns your
 typos: `whitee clinic` was entered once and became a second supplier, splitting
 that provider's history, with the misspelling baked into a receipt's filename.
 The page now corrects a confident match before it is saved (see Settled since),
@@ -923,10 +923,45 @@ So: a form over the `Suppliers` sheet — Name, Type, NIF, Aliases — that trea
   volumes are nowhere near it, but the count belongs in the result rather than
   being discovered as a timeout.
 
-**Open question:** whether correcting a supplier's **NIF** should also rewrite
-`Emitente NIF` on past IVA entries. A wrong NIF is a rejected claim, which argues
-for it; rewriting a figure that was already submitted to Finanças argues against.
-Probably offered per entry rather than applied, but undecided.
+Four things the build had to settle that the design above did not:
+
+- **On a merge the target's spelling survives, not the one typed.** You are
+  folding a typo into an established supplier, so only the typo's rows are
+  touched and the established name is left exactly as it was. Otherwise typing
+  `white clinic` to find the match would rename `White Clinic` and re-file every
+  one of *its* documents as a side effect of correcting a different row. Changing
+  the established spelling is still possible — open that supplier and rename it,
+  deliberately.
+- **On a merge a conflicting NIF keeps the established value and reports the one
+  it displaced.** `recordSupplier` never clears a NIF, because it is a fact about
+  the supplier rather than about the visit, and a merge must not be the one place
+  that quietly does. `Type` still follows clear-on-conflict; the two rules differ
+  because a supplier really can have two types and cannot have two NIFs.
+- **The registry does not move until every row carries the new name.** The row
+  limit is 50 (`SUPPLIER_REPAIR_ROW_LIMIT`). Stop short of it, or fail to write a
+  cell, and the registry is left completely untouched — because a merge *deletes*
+  the source row, and once it is gone there is no supplier left to open and no
+  edit left to re-run. So the incomplete run reports how many remain and saving
+  again continues: the rows already done no longer match the old name. A document
+  that could not be renamed does **not** block the registry, for the same reason a
+  file failure never rolls back a status change.
+- **`uiRepairSupplierDocuments()` is what makes "run it again" true after a
+  merge.** By then the old name is gone, so re-running the *rename* would find
+  nothing. This rebuilds every filename for a supplier from its rows, changing no
+  data, and is offered in the dialog as `Rebuild documents`. It is also the fix
+  for a filename left stale by anything else.
+
+The archived documents are renamed but **not** re-filed, via a `folderName`
+override threaded through `nameAndFileDocuments()` into `applyFileState()`.
+Naming and filing stay one code path — the override exists precisely so a second
+copy of the naming rule did not have to.
+
+**Open question, still open:** whether correcting a supplier's **NIF** should also
+rewrite `Emitente NIF` on past IVA entries. A wrong NIF is a rejected claim, which
+argues for it; rewriting a figure that was already submitted to Finanças argues
+against. **The build does not do it** — the conservative option destroys nothing,
+and every future entry prefills correctly regardless. Probably offered per entry
+rather than applied, but undecided.
 
 **Manage category values.** Add and remove the allowed values of a section's
 category field, which the form's dropdown reads directly — there is no form to
@@ -1125,19 +1160,21 @@ Each step should leave the system working.
    filters are still unchecked (see State of play). Nothing can create a row from
    the UI until step 8, so use `smokeTest()` for rows to click on and
    `smokeCleanup()` afterwards.
-8. **Custom form** — **built and deployed, untested by hand.** `v2/Form.js` and
-   the form view in `v2/Index.html`: fields rendered from `SECTIONS`, file
-   upload, registry autocomplete and prefill. Version 5.
-9. **Management module — done.** Edit in place, delete-to-archive, restore and
-   hard delete, in `v2/Manage.js`, deployed as version 11. **Run `bootstrap()`
-   once** to create the four archive sheets. Category lists are handled: closed
-   ones are config, open ones populate themselves.
-9c. **Supplier editing, with the rename propagated** — planned, not built. A form
-    over `Suppliers` where changing a name updates every affected entry in every
-    section, archives included, and re-runs `nameAndFileDocuments()` per row so
-    the documents follow. Merges rather than renames when the target already
-    exists. See the management module section for why the repair must not
-    pattern-match the old filename.
+8. **Custom form — done, and verified by hand.** `v2/Form.js` and the form view in
+   `v2/Index.html`: fields rendered from `SECTIONS`, file upload, registry
+   autocomplete and prefill. Creating, the incomplete path, an extensionless
+   upload and the registry prefill all confirmed in a browser.
+9. **Management module — done, and verified by hand.** Edit in place,
+   delete-to-archive, restore and hard delete, in `v2/Manage.js`. Editing, a
+   blanked field clearing, archiving, restoring and `Delete forever` all confirmed
+   in a browser. Category lists are handled: closed ones are config, open ones
+   populate themselves.
+9c. **Supplier editing, with the rename propagated — built, not yet verified by
+    hand.** `v2/Suppliers.js` and the Suppliers view in `v2/Index.html`. Changing
+    a name updates every affected entry in every section, archives included, and
+    re-runs `nameAndFileDocuments()` per row so the documents follow. Merges
+    rather than renames when the target already exists. See the management module
+    section for why the repair must not pattern-match the old filename.
 10. **Cutover** — see below.
 11. **Siri Shortcut** in its own Apps Script project — not a second deployment
     of this one. See Security: anonymous access is per project, and it blanks the

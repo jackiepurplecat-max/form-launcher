@@ -535,9 +535,13 @@ function initializeEntry(section, sheet, row, source) {
  * makes an edit correct: change the date, the counterparty or the amount and
  * the filenames follow. applyFileState then appends the state suffix chain and
  * moves the file, so the whole naming rule lives in one place whether the row
- * was just created, just edited, or just changed state.
+ * was just created, just edited, just changed state, or just had its supplier
+ * renamed underneath it.
+ *
+ * folderName is passed straight through to applyFileState; see the note there.
+ * It is only ever set when repairing an archived row.
  */
-function nameAndFileDocuments(section, sheet, cols, row, targetIndex) {
+function nameAndFileDocuments(section, sheet, cols, row, targetIndex, folderName) {
   const renames = [];
   section.fileColumns.forEach(fileCol => {
     const fileId = extractFileId(readCell(sheet, cols, row, fileCol.header));
@@ -552,7 +556,10 @@ function nameAndFileDocuments(section, sheet, cols, row, targetIndex) {
     }
   });
 
-  return { renames: renames, files: applyFileState(section, sheet, cols, row, targetIndex) };
+  return {
+    renames: renames,
+    files: applyFileState(section, sheet, cols, row, targetIndex, folderName)
+  };
 }
 
 /* ================================= Intake ================================= */

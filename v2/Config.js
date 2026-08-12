@@ -118,10 +118,16 @@ const SECTIONS = {
       { header: COMMON.receiptUrl, label: 'Receipt', suffix: 'receipt' }
     ],
     extraFields: [
-      // TODO confirm this list - proposed, not taken from your current data
+      // Education and Boarding Pass are confirmed against real claims and belong
+      // HERE rather than on Expense Reason, which is open free text and needs no
+      // list at all. The rest of this list is still the original proposal - add to
+      // it when a claim turns up that none of these describe.
       {
         header: 'Type', label: 'Type', type: 'choice', required: false,
-        options: ['Taxi', 'Train', 'Flight', 'Hotel', 'Meals', 'Parking', 'Fuel', 'Other']
+        options: [
+          'Taxi', 'Train', 'Flight', 'Boarding Pass', 'Hotel', 'Meals',
+          'Parking', 'Fuel', 'Education', 'Other'
+        ]
       }
     ],
     // v1 mailed every work expense on form submission, receipt attached. That

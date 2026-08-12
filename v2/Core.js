@@ -333,8 +333,15 @@ function buildSuffixChain(section, sheet, cols, row, targetIndex) {
  *
  * Returns one result per file rather than throwing: a failure here must be
  * reported, not swallowed, but it must not roll back the status change.
+ *
+ * folderName overrides where the documents land, and exists for exactly one
+ * caller: repairing an ARCHIVED row. Those files were moved to Archived when the
+ * row was, and their names still have to be rebuilt when a supplier is renamed —
+ * but filing them by status would quietly un-archive them. Naming and filing are
+ * one path on purpose, so the override lives here rather than in a second copy
+ * of the naming rule. Omit it and nothing changes.
  */
-function applyFileState(section, sheet, cols, row, targetIndex) {
+function applyFileState(section, sheet, cols, row, targetIndex, folderName) {
   const target = section.states[targetIndex];
   const chain = buildSuffixChain(section, sheet, cols, row, targetIndex);
   const results = [];
@@ -359,7 +366,11 @@ function applyFileState(section, sheet, cols, row, targetIndex) {
 
       // Resolved lazily and once: creating folders is slow, and a section with
       // no attached files should not create any.
-      if (!destination) destination = folderForState(section, target);
+      if (!destination) {
+        destination = folderName
+          ? sectionFolder(section, folderName)
+          : folderForState(section, target);
+      }
       file.moveTo(destination);
 
       results.push({ column: header, ok: true, name: newName, folder: destination.getName() });

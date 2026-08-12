@@ -17,7 +17,7 @@ const path = require('path');
 
 const mocks = require('./mocks.js');
 const DIR = path.join(__dirname, '..');
-const FILES = ['Config.js', 'Core.js', 'Entries.js', 'Registry.js', 'Setup.js', 'Smoke.js', 'Web.js', 'Form.js', 'Manage.js'];
+const FILES = ['Config.js', 'Core.js', 'Entries.js', 'Registry.js', 'Setup.js', 'Smoke.js', 'Web.js', 'Form.js', 'Manage.js', 'Suppliers.js'];
 
 const sandbox = Object.assign({ console }, mocks);
 sandbox.globalThis = sandbox;
@@ -1569,6 +1569,288 @@ check('archived cleanly', incomeArchived.ok === true && incomeArchived.files.len
 check('and it is in the Income archive',
   G.uiListArchive('income').rows.some(r => r.cells['Counterparty'] === 'Client X'));
 
+/* ========================================================================== *
+ * Step 9c — supplier editing, with the rename propagated
+ * ========================================================================== */
+
+/* A supplier's name is written into three places that must agree: the entry
+ * rows, the Drive filenames built from them, and the registry itself. These
+ * tests exist because getting two of the three right is the failure that looks
+ * like success. */
+
+function supplierRow(name) {
+  const rows = G.uiListSuppliers().suppliers.filter(s => s.name === name);
+  return rows.length ? rows[0].row : null;
+}
+function supplierNamed(name) {
+  return G.uiListSuppliers().suppliers.filter(s => s.name === name)[0] || null;
+}
+function fileNameFor(sheetName, row) {
+  const sheet = mocks._ss.getSheetByName(sheetName);
+  const col = G.resolveColumns(sheet)['Receipt URL'];
+  const id = G.extractFileId(sheet.getRange(row, col).getValue());
+  return id ? mocks.DriveApp.getFileById(id).getName() : null;
+}
+function counterpartyAt(sheetName, row) {
+  const sheet = mocks._ss.getSheetByName(sheetName);
+  return sheet.getRange(row, G.resolveColumns(sheet)['Counterparty']).getValue();
+}
+
+section('a plain rename reaches the row, the document and the registry');
+const rn1 = G.uiCreateEntry('work', {
+  values: { 'Date': '2026-03-04', 'Counterparty': 'Whitee Clinicx', 'Expense Reason': 'r',
+            'Amount': 40 },
+  files: [{ header: 'Receipt URL', name: 'r.pdf', mimeType: 'application/pdf', data: b64 }]
+});
+check('created with the misspelling in the filename',
+  fileNameFor('Work', rn1.row) === '260304_WhiteeClinicx_40-00_receipt.pdf',
+  fileNameFor('Work', rn1.row));
+
+const renamed = G.uiUpdateSupplier(supplierRow('Whitee Clinicx'), {
+  name: 'Whitex Clinic', type: '', nif: '', aliases: '', was: 'Whitee Clinicx'
+});
+check('reported ok and complete', renamed.ok === true && renamed.incomplete === false, renamed);
+check('one entry row changed', renamed.repair.rowsChanged === 1, renamed.repair);
+check('the row now holds the new name', counterpartyAt('Work', rn1.row) === 'Whitex Clinic',
+  counterpartyAt('Work', rn1.row));
+check('the document was rebuilt from the row, not string-patched',
+  fileNameFor('Work', rn1.row) === '260304_WhitexClinic_40-00_receipt.pdf',
+  fileNameFor('Work', rn1.row));
+check('the registry entry was renamed', supplierNamed('Whitex Clinic') !== null);
+check('and the old registry entry is gone', supplierNamed('Whitee Clinicx') === null);
+check('the old spelling is OFFERED as an alias, not added',
+  renamed.aliasOffer && renamed.aliasOffer.alias === 'Whitee Clinicx' &&
+  supplierNamed('Whitex Clinic').aliases === '',
+  { offer: renamed.aliasOffer, aliases: supplierNamed('Whitex Clinic').aliases });
+
+section('accepting the alias offer is a second, separate act');
+G.uiAddSupplierAlias(renamed.aliasOffer.name, renamed.aliasOffer.alias);
+check('now stored', supplierNamed('Whitex Clinic').aliases === 'Whitee Clinicx',
+  supplierNamed('Whitex Clinic').aliases);
+check('and the mishearing resolves to it at alias confidence',
+  G.findSupplier('whitee clinicx').name === 'Whitex Clinic' &&
+  G.findSupplier('whitee clinicx').confidence === 0.95,
+  G.findSupplier('whitee clinicx'));
+
+// The archive carries the same spine and restoreEntry rebuilds names from the
+// row, so a rename that skipped it would sit quietly until a restore brought
+// the old spelling back.
+section('the rename reaches archived rows, and does not un-archive their files');
+const arch = G.uiCreateEntry('work', {
+  values: { 'Date': '2026-03-05', 'Counterparty': 'Stale Namee', 'Expense Reason': 'r',
+            'Amount': 12 },
+  files: [{ header: 'Receipt URL', name: 'a.pdf', mimeType: 'application/pdf', data: b64 }]
+});
+const archFileId = G.extractFileId(
+  mocks._ss.getSheetByName('Work')
+    .getRange(arch.row, G.resolveColumns(mocks._ss.getSheetByName('Work'))['Receipt URL'])
+    .getValue());
+G.uiArchiveEntry('work', arch.row);
+check('the file is in Archived to begin with',
+  mocks.DriveApp.getFileById(archFileId).parent.getName() === 'Archived',
+  mocks.DriveApp.getFileById(archFileId).parent.getName());
+
+const archRenamed = G.uiUpdateSupplier(supplierRow('Stale Namee'), {
+  name: 'Stale Name', type: '', nif: '', aliases: '', was: 'Stale Namee'
+});
+const archRow = archRenamed.repair.rows[0];
+check('the archived row was the one repaired',
+  archRow && archRow.archived === true && archRow.sheet === 'Work Archive', archRow);
+check('its Counterparty was corrected',
+  counterpartyAt('Work Archive', archRow.row) === 'Stale Name',
+  counterpartyAt('Work Archive', archRow.row));
+check('its document was renamed',
+  mocks.DriveApp.getFileById(archFileId).getName() === '260305_StaleName_12-00_receipt.pdf',
+  mocks.DriveApp.getFileById(archFileId).getName());
+check('and it is STILL in Archived, not re-filed by status',
+  mocks.DriveApp.getFileById(archFileId).parent.getName() === 'Archived',
+  mocks.DriveApp.getFileById(archFileId).parent.getName());
+check('restoring it brings back the corrected name, not the old one',
+  G.uiRestoreEntry('work', archRow.row).entry.cells['Counterparty'] === 'Stale Name');
+
+// Correcting a typo usually means the right name already exists. A rename that
+// silently created a THIRD supplier would be the original bug with more steps.
+section('renaming onto an existing supplier MERGES rather than duplicating');
+const mergeSrc = G.uiCreateEntry('health', {
+  values: { 'Date': '2026-03-06', 'Counterparty': 'Whte Clinic', 'Patient': 'J',
+            'Invoice Date': '2026-03-06', 'Amount': 60, 'Type': 'Dentist' }
+});
+const whiteBefore = supplierNamed('White Clinic');
+const srcBefore = supplierNamed('Whte Clinic');
+const merged = G.uiUpdateSupplier(supplierRow('Whte Clinic'), {
+  name: 'white clinic', type: 'Dentist', nif: '', aliases: 'whte', was: 'Whte Clinic'
+});
+check('reported as a merge', merged.ok === true && merged.merged &&
+  merged.merged.into === 'White Clinic', merged);
+check('the surviving spelling is the target\'s, not the one typed',
+  counterpartyAt('Health', mergeSrc.row) === 'White Clinic',
+  counterpartyAt('Health', mergeSrc.row));
+check('the source registry row is gone', supplierNamed('Whte Clinic') === null);
+check('no third supplier was created', supplierNamed('white clinic') === null);
+check('Times Used summed',
+  supplierNamed('White Clinic').timesUsed === whiteBefore.timesUsed + srcBefore.timesUsed,
+  { now: supplierNamed('White Clinic').timesUsed,
+    was: whiteBefore.timesUsed, plus: srcBefore.timesUsed });
+check('aliases were unioned, keeping the target\'s',
+  supplierNamed('White Clinic').aliases.indexOf('wite clinic') !== -1 &&
+  supplierNamed('White Clinic').aliases.indexOf('whte') !== -1,
+  supplierNamed('White Clinic').aliases);
+check('the source\'s Type filled the target\'s empty one',
+  supplierNamed('White Clinic').type === 'Dentist', supplierNamed('White Clinic').type);
+
+section('a merge target may be matched by one of its ALIASES');
+G.uiCreateEntry('health', {
+  values: { 'Date': '2026-03-07', 'Counterparty': 'Alias Bait', 'Patient': 'K',
+            'Invoice Date': '2026-03-07', 'Amount': 20 }
+});
+const byAlias = G.uiUpdateSupplier(supplierRow('Alias Bait'), {
+  name: 'wite clinic', type: '', nif: '', aliases: '', was: 'Alias Bait'
+});
+check('folded into the supplier that owns the alias',
+  byAlias.merged && byAlias.merged.into === 'White Clinic', byAlias);
+check('rather than becoming a name that collides with an alias',
+  supplierNamed('wite clinic') === null);
+
+section('a merge applies the clear-on-conflict rule to Type');
+G.uiCreateEntry('health', {
+  values: { 'Date': '2026-03-08', 'Counterparty': 'Conflicto', 'Patient': 'A',
+            'Invoice Date': '2026-03-08', 'Amount': 30, 'Type': 'Optician' }
+});
+const conflicted = G.uiUpdateSupplier(supplierRow('Conflicto'), {
+  name: 'White Clinic', type: 'Optician', nif: '', aliases: '', was: 'Conflicto'
+});
+check('the disagreement is reported', conflicted.typeCleared === true, conflicted);
+check('and the stored default is cleared rather than guessed',
+  supplierNamed('White Clinic').type === '', supplierNamed('White Clinic').type);
+
+// NIF is a fact about the supplier, not about the visit, so recordSupplier never
+// clears it. A merge must not be the one place that does.
+section('a merge keeps the established NIF and reports the one it displaced');
+G.uiCreateEntry('iva', {
+  values: { 'Date': '2026-03-09', 'Counterparty': 'Fnacc', 'Número': '1',
+            'Emitente NIF': '999999999', 'IVA Amount': 1, 'Amount': 10 },
+  files: [{ header: 'Receipt URL', name: 'f.pdf', mimeType: 'application/pdf', data: b64 }]
+});
+const nifMerge = G.uiUpdateSupplier(supplierRow('Fnacc'), {
+  name: 'FNAC', type: '', nif: '999999999', aliases: '', was: 'Fnacc'
+});
+check('the established NIF survives', supplierNamed('FNAC').nif === '500000000',
+  supplierNamed('FNAC').nif);
+check('and the displaced one is reported, not silently dropped',
+  nifMerge.nifKept && nifMerge.nifKept.kept === '500000000' &&
+  nifMerge.nifKept.discarded === '999999999', nifMerge.nifKept);
+check('past Emitente NIF values are left alone - the open question stays open',
+  mocks._ss.getSheetByName('IVA')
+    .getRange(G.uiListEntries('iva').rows.filter(r => r.cells['Número'] === '1')[0].row,
+      G.resolveColumns(mocks._ss.getSheetByName('IVA'))['Emitente NIF']).getValue() === '999999999');
+
+section('a case-only rename still rebuilds the filenames');
+const caseOnly = G.uiCreateEntry('work', {
+  values: { 'Date': '2026-03-10', 'Counterparty': 'acme services', 'Expense Reason': 'r',
+            'Amount': 5 },
+  files: [{ header: 'Receipt URL', name: 'c.pdf', mimeType: 'application/pdf', data: b64 }]
+});
+G.uiUpdateSupplier(supplierRow('acme services'), {
+  name: 'ACME Services', type: '', nif: '', aliases: '', was: 'acme services'
+});
+check('the slug follows the new casing',
+  fileNameFor('Work', caseOnly.row) === '260310_ACMEServices_5-00_receipt.pdf',
+  fileNameFor('Work', caseOnly.row));
+
+section('the preview reports the blast radius without touching anything');
+G.uiCreateEntry('work', {
+  values: { 'Date': '2026-03-11', 'Counterparty': 'Countme', 'Expense Reason': 'r', 'Amount': 1 }
+});
+G.uiCreateEntry('health', {
+  values: { 'Date': '2026-03-11', 'Counterparty': 'Countme', 'Patient': 'P',
+            'Invoice Date': '2026-03-11', 'Amount': 2 }
+});
+const preview = G.uiSupplierPreview(supplierRow('Countme'), 'White Clinic');
+check('counts every affected row', preview.total === 2, preview);
+check('and says which sections', preview.bySection.length === 2, preview.bySection);
+check('recognises the merge before it happens',
+  preview.merge && preview.merge.name === 'White Clinic', preview.merge);
+check('changed nothing', counterpartyAt('Work', G.uiListEntries('work').rows
+  .filter(r => r.cells['Counterparty'] === 'Countme')[0].row) === 'Countme');
+
+// Apps Script kills an execution at six minutes, so the work stops at a known
+// point instead - and the registry must not move until every row is done, or a
+// merge would delete the supplier that the second pass needs.
+section('a run that hits the row limit leaves the registry alone');
+const capped = G.uiListSuppliers().suppliers.filter(s => s.name === 'Countme')[0];
+const cappedRun = G.updateSupplier(capped.row, {
+  name: 'White Clinic', type: '', nif: '', aliases: '', was: 'Countme'
+}, 1);
+check('reported as incomplete, not as success',
+  cappedRun.ok === false && cappedRun.incomplete === true, cappedRun);
+check('one row done, one left', cappedRun.repair.rowsChanged === 1 &&
+  cappedRun.repair.remaining === 1, cappedRun.repair);
+check('the supplier still exists, so it can be saved again',
+  supplierNamed('Countme') !== null);
+check('and the merge target was NOT given the source\'s Times Used yet',
+  supplierNamed('Countme').timesUsed === capped.timesUsed);
+
+const finished = G.updateSupplier(supplierRow('Countme'), {
+  name: 'White Clinic', type: '', nif: '', aliases: '', was: 'Countme'
+}, 1);
+check('saving again finishes it - re-running IS the repair',
+  finished.ok === true && finished.merged.into === 'White Clinic', finished);
+check('and now the supplier is gone', supplierNamed('Countme') === null);
+
+section('the document repair can be re-run on its own');
+const stale = G.uiCreateEntry('work', {
+  values: { 'Date': '2026-03-12', 'Counterparty': 'Driftco', 'Expense Reason': 'r',
+            'Amount': 7 },
+  files: [{ header: 'Receipt URL', name: 'd.pdf', mimeType: 'application/pdf', data: b64 }]
+});
+const staleId = G.extractFileId(mocks._ss.getSheetByName('Work')
+  .getRange(stale.row, G.resolveColumns(mocks._ss.getSheetByName('Work'))['Receipt URL'])
+  .getValue());
+mocks.DriveApp.getFileById(staleId).setName('something_wrong.pdf');
+const repaired = G.uiRepairSupplierDocuments(supplierRow('Driftco'));
+check('the name is rebuilt from the row',
+  mocks.DriveApp.getFileById(staleId).getName() === '260312_Driftco_7-00_receipt.pdf',
+  mocks.DriveApp.getFileById(staleId).getName());
+check('and nothing was renamed', repaired.from === repaired.to && repaired.complete === true,
+  repaired);
+
+section('supplier editing refuses what it cannot do safely');
+let blankName = null;
+try {
+  G.uiUpdateSupplier(supplierRow('Driftco'), { name: '   ', was: 'Driftco' });
+} catch (e) { blankName = e.message; }
+check('a blank name', /Name is required/.test(blankName || ''), blankName);
+
+let staleRow = null;
+try {
+  G.uiUpdateSupplier(supplierRow('Driftco'), { name: 'Whatever', was: 'Somebody Else' });
+} catch (e) { staleRow = e.message; }
+check('a row that no longer holds the supplier the form loaded',
+  /Reload the list/.test(staleRow || ''), staleRow);
+check('and it changed nothing', supplierNamed('Driftco') !== null);
+
+// normalizeName('') is '', which would match every row with an empty
+// Counterparty and rename the lot.
+let blankScan = null;
+try { G.findSupplierEntries(''); } catch (e) { blankScan = e.message; }
+check('a blank name never reaches the scan',
+  /supplier name is required/.test(blankScan || ''), blankScan);
+
+section('supplier functions check the caller');
+mocks.Session._setActiveUser('someone.else@example.test');
+[
+  ['uiListSuppliers', []],
+  ['uiSupplierPreview', [2, 'x']],
+  ['uiUpdateSupplier', [2, { name: 'x' }]],
+  ['uiRepairSupplierDocuments', [2]],
+  ['uiAddSupplierAlias', ['x', 'y']]
+].forEach(([name, args]) => {
+  let refused = null;
+  try { G[name].apply(null, args); } catch (e) { refused = e.message; }
+  check(`${name} is gated`, /Not authorized/.test(refused || ''), refused);
+});
+mocks.Session._setActiveUser(mocks.Session._owner);
+
 /*
  * The page reaches the server by name through google.script.run, so a renamed
  * function fails at the tap rather than at build time. Nothing else in this
@@ -1584,6 +1866,34 @@ section('every function the page calls exists, and is gated');
  * worse than no test, so this one errs towards catching too much.
  */
 const pageSource = G.doGet().getContent();
+
+/*
+ * Two static checks on the page itself, because four of five defects found in
+ * one hand-testing session were client-side and 439 passing server assertions
+ * could not see any of them. These cannot replace clicking, but they catch the
+ * two failures that are pure typing: a script that does not parse, and an
+ * element id that does not exist.
+ */
+section('the page itself');
+const pageScript = /<script>([\s\S]*?)<\/script>/.exec(pageSource);
+check('has a script block', !!pageScript);
+let pageParseError = null;
+try { new vm.Script(pageScript[1]); } catch (e) { pageParseError = e.message; }
+check('and it parses', pageParseError === null, pageParseError);
+
+// el('x') is the page's only way to reach the DOM, so a typo in one is a
+// TypeError at the tap and nowhere else. Literal arguments only.
+const pageIds = {};
+pageSource.replace(/\sid="([^"]+)"/g, (whole, id) => { pageIds[id] = true; return whole; });
+const looked = [];
+pageScript[1].replace(/\bel\('([^']+)'\)/g, (whole, id) => {
+  if (looked.indexOf(id) === -1) looked.push(id);
+  return whole;
+});
+check('looks up a plausible number of elements', looked.length >= 15, looked.length);
+const missingIds = looked.filter(id => !pageIds[id]);
+check('every el() target exists in the markup', missingIds.length === 0, missingIds);
+
 const calledNames = [];
 pageSource.replace(/'(ui[A-Z][A-Za-z0-9_]*)'/g, (whole, name) => {
   if (calledNames.indexOf(name) === -1) calledNames.push(name);

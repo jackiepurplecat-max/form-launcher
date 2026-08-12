@@ -178,37 +178,50 @@
     #dialog .extra { margin-top: .75rem; display: flex; justify-content: center; gap: 1rem; }
 
     /* The form. Same overlay treatment as the date dialog, but scrollable and
-       left-aligned, because it is a column of fields rather than one choice. */
-    #formOverlay {
+       left-aligned, because it is a column of fields rather than one choice.
+       The supplier editor shares every one of these rules rather than copying
+       them, so the two dialogs cannot drift into looking almost the same. */
+    #formOverlay, #supplierOverlay {
       position: fixed; inset: 0; background: rgba(20, 22, 26, .45);
       display: none; align-items: flex-start; justify-content: center;
       padding: 1rem; z-index: 25; overflow-y: auto;
     }
-    #formOverlay.open { display: flex; }
-    #formCard {
+    #formOverlay.open, #supplierOverlay.open { display: flex; }
+    #formCard, #supplierCard {
       background: var(--card); border-radius: 16px; padding: 1.1rem;
       width: 100%; max-width: 30rem; margin: auto;
     }
-    #formCard h2 { margin: 0 0 .9rem; font-size: 1.05rem; }
-    #formCard .field { margin-bottom: .8rem; }
-    #formCard label {
+    #formCard h2, #supplierCard h2 { margin: 0 0 .9rem; font-size: 1.05rem; }
+    #formCard .field, #supplierCard .field { margin-bottom: .8rem; }
+    #formCard label, #supplierCard label {
       display: block; font-size: .78rem; color: var(--muted);
       margin-bottom: .25rem; font-weight: 600;
     }
     #formCard label .req { color: var(--err); margin-left: .15rem; }
-    #formCard input, #formCard select { width: 100%; padding: .55rem .6rem; }
+    #formCard input, #formCard select,
+    #supplierCard input { width: 100%; padding: .55rem .6rem; }
     #formCard input[type="file"] { padding: .45rem; background: #fbfcfd; }
     #formCard .field.missing input, #formCard .field.missing select { border-color: var(--err); }
     /* What the registry thinks, when it is not confident enough to fill it in.
        Shown rather than applied, because a wrong NIF is worse than a blank. */
-    #formCard .hint { font-size: .75rem; color: var(--muted); margin-top: .25rem; }
+    #formCard .hint, #supplierCard .hint {
+      font-size: .75rem; color: var(--muted); margin-top: .25rem;
+    }
     #formCard .hint.suggest { color: var(--warn); }
     #formCard .hint button { border: 0; background: none; color: var(--accent);
       padding: 0 .2rem; font-size: .75rem; text-decoration: underline; }
-    #formCard .actions { margin-top: 1.1rem; }
-    #formCard .actions .secondary {
-      display: flex; justify-content: center; margin-top: .6rem;
+    #formCard .actions, #supplierCard .actions { margin-top: 1.1rem; }
+    #formCard .actions .secondary, #supplierCard .actions .secondary {
+      display: flex; justify-content: center; gap: 1rem; margin-top: .6rem;
     }
+    /* The note above the fields: what this edit will actually do, once the
+       server has been asked. Warning-coloured because a rename is not local. */
+    #supplierCard .note {
+      font-size: .8rem; margin: 0 0 .9rem; padding: .55rem .7rem; border-radius: 10px;
+      background: var(--warn-bg); color: var(--warn); display: none;
+    }
+    #supplierCard .note.show { display: block; }
+    #supplierCard .note.bad { background: var(--err-bg); color: var(--err); }
     #confirmOverlay {
       position: fixed; inset: 0; background: rgba(20, 22, 26, .45);
       display: none; align-items: center; justify-content: center; padding: 1rem; z-index: 30;
@@ -261,6 +274,7 @@
     <span class="who" id="who"></span>
     <button id="newEntry" type="button">New</button>
     <button id="showArchive" type="button">Archive</button>
+    <button id="showSuppliers" type="button">Suppliers</button>
     <button id="refresh" type="button">Refresh</button>
   </header>
 
@@ -321,6 +335,43 @@
     </div>
   </div>
 
+  <!-- Editing a supplier. Four fields and no file input, so it is written out
+       rather than generated: SECTIONS does not describe the registry, and
+       inventing a config for one fixed form would be the wrong kind of generic. -->
+  <div id="supplierOverlay">
+    <div id="supplierCard" role="dialog" aria-modal="true">
+      <h2 id="supplierTitle">Edit supplier</h2>
+      <p class="note" id="supplierNote"></p>
+      <div class="field">
+        <label for="supplierName">Name</label>
+        <input type="text" id="supplierName" autocomplete="off" autocapitalize="words">
+        <div class="hint">Changing this renames every entry that uses it, and rebuilds
+          their document names. If the new name already exists, the two are merged.</div>
+      </div>
+      <div class="field">
+        <label for="supplierType">Type</label>
+        <input type="text" id="supplierType" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="supplierNif">NIF</label>
+        <input type="text" id="supplierNif" autocomplete="off" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="supplierAliases">Aliases</label>
+        <input type="text" id="supplierAliases" autocomplete="off">
+        <div class="hint">Comma separated. A spelling listed here resolves to this
+          supplier, which is the cure for a mishearing that keeps coming back.</div>
+      </div>
+      <div class="actions">
+        <button class="primary" id="supplierSave" type="button">Save</button>
+        <div class="secondary">
+          <button class="link" id="supplierRepair" type="button">Rebuild documents</button>
+          <button class="link" id="supplierCancel" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Confirmations are reserved for the two actions that are not freely
        reversible. Status changes deliberately have none. -->
   <div id="confirmOverlay">
@@ -347,7 +398,10 @@
       dialog: null,       // what the open dialog will do when accepted
       form: null,         // non-null while the new-entry form is open
       archive: false,     // showing the archive rather than the live entries
-      confirm: null       // what the open confirmation will do when accepted
+      confirm: null,      // what the open confirmation will do when accepted
+      suppliers: false,   // showing the registry rather than a section
+      supplierList: [],   // the registry as the server last reported it
+      supplierForm: null  // non-null while the supplier editor is open
     };
 
     var el = function (id) { return document.getElementById(id); };
@@ -489,7 +543,11 @@
     function select(key) {
       // A form left open would still be showing the previous section's fields.
       if (app.form) closeForm();
+      if (app.supplierForm) closeSupplier();
       if (app.confirm) closeConfirm();
+      // Tapping a section is a request to see that section, so it leaves the
+      // registry view rather than quietly loading behind it.
+      if (app.suppliers) setSuppliersButton(false);
       app.current = key;
       app.meta = null;
       app.rows = [];
@@ -505,6 +563,8 @@
     }
 
     function load() {
+      if (app.suppliers) return loadSuppliers();
+
       var key = app.current;
       var archive = app.archive;
       showState('loading', 'Loading…');
@@ -535,6 +595,9 @@
     }
 
     function setArchive(on) {
+      // The two extra views are alternatives, not layers: the archive is a
+      // section's rows and the registry is not a section at all.
+      if (on && app.suppliers) setSuppliersButton(false);
       app.archive = on;
       // The body class is set by load(), which this calls — and which also runs
       // on a tab switch, so the tint cannot be left behind by one.
@@ -544,6 +607,317 @@
       el('showArchive').textContent = on ? 'Active' : 'Archive';
       el('newEntry').style.display = on ? 'none' : '';
       load();
+    }
+
+    /* ------------------------------ suppliers ----------------------------- */
+
+    /*
+     * The registry, and the one place a supplier's name can be corrected.
+     *
+     * It is a view rather than a tab because it is not a section: it has no
+     * status, no documents and no dates, so the generic table machinery does not
+     * fit it. Everything the rename actually does happens on the server — this
+     * only shows the numbers before you commit and reports what came back.
+     */
+    function setSuppliersButton(on) {
+      app.suppliers = on;
+      el('showSuppliers').textContent = on ? 'Entries' : 'Suppliers';
+      // Nothing on this view belongs to a section, so the section controls go.
+      el('newEntry').style.display = on ? 'none' : (app.archive ? 'none' : '');
+      el('showArchive').style.display = on ? 'none' : '';
+      el('reference').style.display = 'none';
+      el('filters').innerHTML = '';
+      Array.prototype.forEach.call(el('tabs').children, function (tab) {
+        tab.setAttribute('aria-selected', String(!on && tab.dataset.key === app.current));
+      });
+    }
+
+    function setSuppliers(on) {
+      if (on && app.archive) {
+        app.archive = false;
+        el('showArchive').textContent = 'Archive';
+      }
+      setSuppliersButton(on);
+      load();
+    }
+
+    function loadSuppliers() {
+      showState('loading', 'Loading…');
+      document.body.className = '';
+
+      call('uiListSuppliers').then(function (data) {
+        if (!app.suppliers) return;   // the view changed while this was in flight
+        app.supplierList = data.suppliers;
+        renderSuppliers();
+      }).catch(function (error) {
+        if (!app.suppliers) return;
+        showState('error', message(error));
+      });
+    }
+
+    function renderSuppliers() {
+      if (!app.supplierList.length) {
+        return showState('empty', 'The registry is empty. It fills itself as you make entries.');
+      }
+
+      var head = '<tr><th>Supplier</th><th>Type</th><th>NIF</th><th>Aliases</th>' +
+        '<th class="num">Used</th><th>Last used</th><th></th></tr>';
+
+      var body = app.supplierList.map(function (supplier) {
+        return '<tr>' +
+          '<td>' + escapeHtml(supplier.name) + '</td>' +
+          '<td>' + escapeHtml(supplier.type) + '</td>' +
+          '<td>' + escapeHtml(supplier.nif) + '</td>' +
+          '<td class="notes">' + escapeHtml(supplier.aliases) + '</td>' +
+          '<td class="num">' + escapeHtml(supplier.timesUsed) + '</td>' +
+          '<td>' + escapeHtml(dayLabelOrRaw(supplier.lastUsed)) + '</td>' +
+          '<td><button class="chip" type="button" data-supplier="' +
+            escapeHtml(supplier.row) + '">Edit</button></td>' +
+          '</tr>';
+      }).join('');
+
+      el('table').innerHTML = head + body;
+      showState('rows');
+    }
+
+    function findSupplierByRow(rowNumber) {
+      return app.supplierList.filter(function (s) {
+        return s.row === Number(rowNumber);
+      })[0];
+    }
+
+    function supplierNote(text, bad) {
+      var node = el('supplierNote');
+      node.textContent = text || '';
+      node.className = 'note' + (text ? ' show' : '') + (bad ? ' bad' : '');
+    }
+
+    function openSupplier(rowNumber) {
+      var supplier = findSupplierByRow(rowNumber);
+      if (!supplier) return;
+
+      // `was` is sent back on save so the server can refuse if the row has moved
+      // under us — renaming the wrong supplier would be silent and would take its
+      // documents with it.
+      app.supplierForm = { row: supplier.row, was: supplier.name, busy: false };
+
+      el('supplierTitle').textContent = supplier.name;
+      el('supplierName').value = supplier.name;
+      el('supplierType').value = supplier.type;
+      el('supplierNif').value = supplier.nif;
+      el('supplierAliases').value = supplier.aliases;
+      supplierNote('');
+      el('supplierOverlay').className = 'open';
+      el('supplierName').focus();
+    }
+
+    function closeSupplier() {
+      app.supplierForm = null;
+      el('supplierOverlay').className = '';
+    }
+
+    function supplierBusy(busy) {
+      if (app.supplierForm) app.supplierForm.busy = busy;
+      el('supplierSave').disabled = busy;
+      el('supplierRepair').disabled = busy;
+      el('supplierSave').textContent = busy ? 'Working…' : 'Save';
+    }
+
+    function supplierValues() {
+      return {
+        name: el('supplierName').value.trim(),
+        type: el('supplierType').value.trim(),
+        nif: el('supplierNif').value.trim(),
+        aliases: el('supplierAliases').value.trim(),
+        was: app.supplierForm.was
+      };
+    }
+
+    /**
+     * Save, asking first when the name changed.
+     *
+     * A name change is not an edit to one cell — it rewrites entry rows across
+     * every section and renames their documents — so it gets the confirmation
+     * that archiving and purging get, with the real numbers in it. Editing only
+     * Type, NIF or Aliases touches nothing else and saves straight away.
+     */
+    function saveSupplier() {
+      if (!app.supplierForm || app.supplierForm.busy) return;
+      var values = supplierValues();
+
+      if (!values.name) return supplierNote('A name is required.', true);
+      if (values.name === values.was) return applySupplierSave(values);
+
+      supplierBusy(true);
+      supplierNote('Checking what this would change…');
+
+      call('uiSupplierPreview', app.supplierForm.row, values.name)
+        .then(function (preview) {
+          supplierBusy(false);
+          supplierNote('');
+          openConfirm(supplierConfirmSpec(preview, values));
+        })
+        .catch(function (error) {
+          supplierBusy(false);
+          supplierNote(message(error), true);
+        });
+    }
+
+    /** What the confirmation says, built from what the server found. */
+    function supplierConfirmSpec(preview, values) {
+      var counts = preview.bySection.map(function (part) {
+        var bits = [];
+        if (part.live) bits.push(part.live + ' live');
+        if (part.archived) bits.push(part.archived + ' archived');
+        return part.section + ' (' + bits.join(', ') + ')';
+      }).join(', ');
+
+      var body = preview.merge
+        ? '"' + preview.merge.name + '" already exists, so the two are merged into it — ' +
+          'its spelling is the one that survives. '
+        : 'Renaming to "' + preview.to + '". ';
+
+      body += preview.total
+        ? preview.total + (preview.total === 1 ? ' entry' : ' entries') +
+          ' will be updated and their documents renamed: ' + counts + '.'
+        : 'No entries use this name, so only the registry changes.';
+
+      if (preview.willStopAt) {
+        body += ' This will stop after ' + preview.willStopAt +
+          ' and tell you to save again — nothing changes in the registry until every row is done.';
+      }
+      if (preview.skippedSheets && preview.skippedSheets.length) {
+        body += ' Not searched, because they do not exist: ' + preview.skippedSheets.join(', ') +
+          '. Run bootstrap().';
+      }
+
+      return {
+        title: preview.merge ? 'Merge into ' + preview.merge.name + '?' : 'Rename this supplier?',
+        body: body,
+        okLabel: preview.merge ? 'Merge' : 'Rename',
+        destructive: false,
+        apply: function () { applySupplierSave(values); }
+      };
+    }
+
+    function applySupplierSave(values) {
+      supplierBusy(true);
+      call('uiUpdateSupplier', app.supplierForm.row, values)
+        .then(function (result) {
+          supplierBusy(false);
+
+          // Stopped at the row limit, or a row refused to be written. The
+          // registry is untouched, so the dialog stays open and saving again
+          // continues — that is the whole point of reporting it this way.
+          if (!result.ok) {
+            supplierNote(result.error, true);
+            loadSuppliers();
+            return;
+          }
+
+          closeSupplier();
+          loadSuppliers();
+          reportSupplierResult(result);
+        })
+        .catch(function (error) {
+          supplierBusy(false);
+          supplierNote(message(error), true);
+        });
+    }
+
+    /**
+     * Say what actually happened, including the parts that did not.
+     *
+     * ONE toast, built from every part of the result. Each call replaces the
+     * last, so reporting a merge and then its two side effects separately would
+     * show only the third — and the side effects are the ones you would not have
+     * predicted. The toast box already renders newlines.
+     */
+    function reportSupplierResult(result) {
+      var lines = [];
+      var rowsChanged = result.repair ? result.repair.rowsChanged : 0;
+      var kind = '';
+
+      if (result.merged) {
+        lines.push('Merged into ' + result.merged.into + '. ' +
+          rowsChanged + ' entry row(s) updated.');
+      } else if (result.renamedTo) {
+        lines.push('Renamed to ' + result.renamedTo + '. ' +
+          rowsChanged + ' entry row(s) updated.');
+      } else {
+        lines.push('Saved.');
+      }
+
+      if (result.typeCleared) {
+        kind = 'warn';
+        lines.push('The two disagreed on Type, so the stored default was cleared ' +
+          'rather than guessed.');
+      }
+      if (result.nifKept) {
+        kind = 'warn';
+        lines.push('Kept NIF ' + result.nifKept.kept + ' and discarded ' +
+          result.nifKept.discarded + '.');
+      }
+      if (result.documentErrors && result.documentErrors.length) {
+        kind = 'error';
+        lines.push(result.documentErrors.length + ' document(s) could not be renamed:');
+        result.documentErrors.forEach(function (e) {
+          lines.push('  ' + e.sheet + ' row ' + e.row + ': ' + e.error);
+        });
+        lines.push('Reopen the supplier and use Rebuild documents to try again.');
+      }
+
+      toast(lines.join('\n'), kind);
+
+      // Offered, never applied: only you know whether the old spelling was a
+      // recurring mishearing worth teaching or a one-off typo worth forgetting.
+      if (result.aliasOffer) offerAlias(result.aliasOffer);
+    }
+
+    function offerAlias(offer) {
+      openConfirm({
+        title: 'Remember "' + offer.alias + '"?',
+        body: 'Keep it as an alias of ' + offer.name + ', so that spelling resolves here ' +
+          'next time. Worth it for a mishearing that keeps coming back, not for a one-off typo.',
+        okLabel: 'Keep as alias',
+        destructive: false,
+        apply: function () {
+          call('uiAddSupplierAlias', offer.name, offer.alias)
+            .then(function (result) {
+              toast(result.ok ? 'Added.' : result.error, result.ok ? '' : 'warn');
+              loadSuppliers();
+            })
+            .catch(function (error) { toast(message(error), 'error'); });
+        }
+      });
+    }
+
+    /**
+     * Rebuild every document name for this supplier, changing no data.
+     *
+     * The repair for a document that could not be renamed during a merge: by
+     * then the old name is gone, so there is nothing left to re-run the rename
+     * from. Names are always rebuilt from the row, so running it twice is safe.
+     */
+    function repairSupplierDocs() {
+      if (!app.supplierForm || app.supplierForm.busy) return;
+      supplierBusy(true);
+
+      call('uiRepairSupplierDocuments', app.supplierForm.row)
+        .then(function (result) {
+          supplierBusy(false);
+          if (result.documentErrors.length) {
+            supplierNote(result.documentErrors.length + ' document(s) still could not be renamed: ' +
+              result.documentErrors.map(function (e) { return e.error; }).join('; '), true);
+            return;
+          }
+          supplierNote('Rebuilt ' + result.documentsTouched + ' document name(s) across ' +
+            result.rowsChanged + ' row(s).');
+        })
+        .catch(function (error) {
+          supplierBusy(false);
+          supplierNote(message(error), true);
+        });
     }
 
     /* ------------------------------ reference ----------------------------- */
@@ -1437,6 +1811,11 @@
       if (target.id === 'newEntry') return openForm();
       if (target.id === 'showArchive') return setArchive(!app.archive);
       if (target.id === 'archiveBack') return setArchive(false);
+      if (target.id === 'showSuppliers') return setSuppliers(!app.suppliers);
+      if (target.dataset.supplier) return openSupplier(target.dataset.supplier);
+      if (target.id === 'supplierSave') return saveSupplier();
+      if (target.id === 'supplierRepair') return repairSupplierDocs();
+      if (target.id === 'supplierCancel') return closeSupplier();
       if (target.dataset.edit) return openForm(Number(target.dataset.edit));
       if (target.dataset.delete) return deleteEntry(Number(target.dataset.delete));
       if (target.dataset.restore) return restoreRow(Number(target.dataset.restore));
@@ -1496,6 +1875,12 @@
       refreshMissingNote();
     });
 
+    el('supplierOverlay').addEventListener('click', function (event) {
+      if (fromBackdrop(event, 'supplierOverlay') && app.supplierForm && !app.supplierForm.busy) {
+        closeSupplier();
+      }
+    });
+
     el('confirmOverlay').addEventListener('click', function (event) {
       if (fromBackdrop(event, 'confirmOverlay')) closeConfirm();
     });
@@ -1511,6 +1896,19 @@
           // the browser also leaves fullscreen, which reads as the window going.
           event.preventDefault();
           closeForm();
+        }
+        return;
+      }
+      if (app.supplierForm) {
+        if (event.key === 'Escape' && !app.supplierForm.busy) {
+          event.preventDefault();
+          closeSupplier();
+        }
+        // Four short text fields and one obvious action, so Enter saves —
+        // unlike the entry form, where it would submit a half-filled column.
+        if (event.key === 'Enter' && !app.supplierForm.busy) {
+          event.preventDefault();
+          saveSupplier();
         }
         return;
       }

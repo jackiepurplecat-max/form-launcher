@@ -106,7 +106,10 @@ function loadRegistry() {
       type: (cell(REGISTRY.type) || '').toString(),
       nif: (cell(REGISTRY.nif) || '').toString(),
       aliases: aliases,
-      timesUsed: Number(cell(REGISTRY.timesUsed)) || 0
+      timesUsed: Number(cell(REGISTRY.timesUsed)) || 0,
+      // Raw, not parsed: a merge has to keep the later of two, and the
+      // management list shows it. Matching is indifferent to it.
+      lastUsed: cell(REGISTRY.lastUsed)
     };
   }).filter(entry => entry.name);
 }

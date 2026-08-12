@@ -20,7 +20,7 @@
     "clasp:deploy": "clasp deploy",
     "clasp:version": "clasp version",
     "v2:test": "node v2/test/run.js",
-    "v2:check": "node --check v2/Config.js && node --check v2/Core.js && node --check v2/Entries.js && node --check v2/Registry.js && node --check v2/Setup.js && node --check v2/Smoke.js && node --check v2/Web.js && node --check v2/Form.js && node --check v2/Manage.js",
+    "v2:check": "node --check v2/Config.js && node --check v2/Core.js && node --check v2/Entries.js && node --check v2/Registry.js && node --check v2/Setup.js && node --check v2/Smoke.js && node --check v2/Web.js && node --check v2/Form.js && node --check v2/Manage.js && node --check v2/Suppliers.js",
     "v2:push": "cd v2 && clasp --user v2 push",
     "v2:pull": "cd v2 && clasp --user v2 pull",
     "v2:open": "cd v2 && clasp --user v2 open-script",
