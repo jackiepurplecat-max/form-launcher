@@ -2247,6 +2247,25 @@ check('a second run does NOT replace the key', mocks._props.SIRI_API_KEY === fir
 check('and says so rather than returning a key that is not the real one',
   setup2.keyAlreadySet === true && setup2.key !== firstKey, setup2);
 
+section('Siri — siriRotateKey()');
+
+const beforeRotate = mocks._props.SIRI_API_KEY;
+const rotated = G.siriRotateKey();
+check('rotate replaces an existing key', mocks._props.SIRI_API_KEY !== beforeRotate);
+check('and says that it did', rotated.replacedAnExistingKey === true, rotated);
+check('and returns the new key, since nothing else will show it',
+  rotated.key === mocks._props.SIRI_API_KEY);
+check('the new key works', siriPost({ key: rotated.key, action: 'ping' }).ok === true);
+
+// The point of rotating: whatever leaked stops working immediately.
+check('the OLD key is refused at once',
+  siriPost({ key: beforeRotate, action: 'ping' }).error === 'Not authorized.');
+
+// siriSetup must stay the safe one, or the guard is pointless.
+const afterRotate = mocks._props.SIRI_API_KEY;
+G.siriSetup();
+check('siriSetup still refuses to rotate', mocks._props.SIRI_API_KEY === afterRotate);
+
 mocks._props.SIRI_API_KEY = SIRI_KEY;
 }
 

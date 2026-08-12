@@ -369,6 +369,37 @@ function siriSetup() {
   return report;
 }
 
+/**
+ * Replace the key deliberately, in one run.
+ *
+ * `siriSetup()` refuses to touch an existing key, which is right — it is the
+ * function you run when setting things up, and silently rotating from there
+ * would break every Shortcut on the phone with nothing to say why. But rotating
+ * is a real operation, not an accident to be prevented: a key ends up somewhere
+ * it should not be and has to be replaced. Making that mean hand-editing Script
+ * Properties turns a legitimate thing into fiddling in a UI, which is how it
+ * ends up not being done.
+ *
+ * So it gets its own name rather than its own ceremony. Nobody runs
+ * `siriRotateKey` by accident, and the old key stops working the instant it
+ * does — which is the whole reason this is not what `siriSetup()` does.
+ */
+function siriRotateKey() {
+  const props = PropertiesService.getScriptProperties();
+  const had = !!props.getProperty(SIRI_KEY_PROPERTY);
+
+  const key = siriGenerateKey();
+  props.setProperty(SIRI_KEY_PROPERTY, key);
+
+  const report = {
+    key: key,
+    replacedAnExistingKey: had,
+    reminder: 'The old key stopped working just now. Update every Shortcut, and .env.'
+  };
+  Logger.log(JSON.stringify(report, null, 2));
+  return report;
+}
+
 /** 32 hex characters from Apps Script's own UUID source. */
 function siriGenerateKey() {
   return (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '').slice(0, 32);

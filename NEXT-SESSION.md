@@ -11,20 +11,21 @@ after this. This file is disposable: overwrite it at the end of each session.
 | Branch | `step-7-web-ui`, pushed to `origin` |
 | Last code commit | `8e7f27f` — the Siri endpoint. Doc commits follow it |
 | Working tree | clean |
-| Harness | **617 passing, 0 failed** (was 531) |
+| Harness | **623 passing, 0 failed** (was 531) |
 | Main project | matches `v2/` byte for byte, **13 files** — `Siri.js` is new |
 | Siri project | **new** — `v2-siri/`, matches byte for byte, 2 files |
-| Deployed | main is still **version 23**. Siri is deployed at **@2**, and **returns 403 until it is authorised** — see step 2 |
+| Deployed | main is still **version 23**. Siri is at **@2**, authorised, and answering |
 
 Steps 1–9 and 9c are done and verified by hand. **Step 11's server side is
-built, pushed, covered by the harness and deployed — but not authorised, never
-answered a real request, and no Shortcut exists yet.** Cutover (step 10) is
-still not started.
+built, pushed, harness-covered, deployed, configured and exercised live** —
+`ping`, `catalog` and `resolve` all answer correctly against the real
+spreadsheet. `create` is the only action never run live, because it writes.
+**What is left is the four Shortcuts.** Cutover (step 10) is still not started.
 
 ## First thing: establish the baseline
 
 ```
-npm run v2:test          # expect 617 passing, 0 failed
+npm run v2:test          # expect 623 passing, 0 failed
 npm run v2:verify        # expect "Server matches v2/ — 13 files, byte for byte"
 npm run v2:siri:verify   # expect "Server matches v2-siri/ — 2 files, byte for byte"
 ```
@@ -33,15 +34,22 @@ If any of those disagree, find out why before changing anything.
 
 ## Pick up here — finishing Siri
 
-All of it needs hands. Nothing below can be done from the CLI.
+Steps 1–3 are done — kept here struck through, because what they proved is worth
+knowing and the commands are worth re-running. **Start at step 4.** It needs a
+phone; nothing below can be done from the CLI.
 
-1. **Run `siriSetup()`** from the **main** project's editor. It sets
-   `SPREADSHEET_ID` off the container and generates `SIRI_API_KEY`, and
-   **returns the key once** — copy it somewhere before closing the log. A second
-   run will not show it again and will not replace it.
-2. **Authorise `v2-siri`.** It is already deployed, at version **@2**, described
-   *Siri intake v2*. **Its URL is deliberately not written down here** — see the
-   note below on why. Get it with:
+1. ~~**Run `siriSetup()`.**~~ **Done.** `SPREADSHEET_ID` and `SIRI_API_KEY` are
+   both set on the **main** project. The key is in `.env` as `V2_SIRI_API_KEY`
+   (gitignored) as well as in Script Properties.
+
+   To **rotate** it, run **`siriRotateKey()`** from the same editor. It replaces
+   the key in one go and returns the new one; the old one stops working
+   immediately, so update `.env` and every Shortcut. `siriSetup()` deliberately
+   will *not* rotate — silently replacing a key would break every Shortcut on the
+   phone with nothing to say why — which is why rotating has its own name.
+2. ~~**Authorise `v2-siri`.**~~ **Done.** Deployed at **@2**, its four scopes
+   granted, and it answers. **Its URL is deliberately not written down here** —
+   see the note below on why. Get it with:
 
    ```
    cd v2-siri && clasp --user v2 list-deployments
@@ -51,38 +59,33 @@ All of it needs hands. Nothing below can be done from the CLI.
    `https://script.google.com/macros/s/<the @2 id>/exec`. There should be exactly
    two: the permanent `@HEAD` (`/dev`) and `@2`.
 
-   **It answers 403 to everything, GET and POST alike** — verified with curl
-   against the previous deployment, so this is observed and not a guess. The body
-   is Drive's *"Acesso negado / Precisa de acesso"*, which is the page you get
-   when Google refuses before `doPost` runs.
+   A keyless probe now returns **`{"ok":false,"error":"Not authorized."}` as
+   JSON, HTTP 200** — verified. That is the whole chain working: an anonymous
+   request reaches the shim, the shim resolves the library, `siriHandlePost`
+   runs, and the key check refuses it. Only the key is missing.
 
-   The expected cause is that a standalone project deployed execute-as-me is not
-   authorised until something in it has run: nobody has granted its four scopes.
-   So `npm run v2:siri:open`, run `doGet` once from the editor, accept the
-   consent screen, and probe it again with the curl in step 3.
+   If it ever goes back to **403** with Drive's *"Acesso negado / Precisa de
+   acesso"*, Google is refusing before `doPost` runs: either the scopes were
+   revoked, or the deployment's access is not really *Anyone*. Check the latter
+   in the editor under Deploy → Manage deployments rather than assume. Redeploy
+   with `-i <the @2 id>` to update that URL instead of making a second one.
+3. ~~**Prove the library resolves.**~~ **Done, live.** `ping`, `catalog` for
+   health and work, and `resolve` all answered correctly against the real
+   spreadsheet — including work's `Expense Reason` list coming back as
+   `["2025-26 Education Phoenix"]`, which is `categoryValues()` reading the sheet
+   rather than config. **`create` is the only action never exercised live**, for
+   the obvious reason: it writes a row and sends mail.
 
-   **If it still 403s after that**, the cause is the other one: the deployment's
-   access is not really *Anyone*. `appsscript.json` asks for `ANYONE_ANONYMOUS`
-   and the server holds that file byte for byte, but check it in the editor
-   under Deploy → Manage deployments rather than assume — the manifest and the
-   deployment have disagreed before. Fixing it there and redeploying with
-   `-i <the @2 id>` updates that URL rather than making a second one.
-3. **Prove the library resolves** before building any Shortcut. This is the one
-   thing the harness cannot test — see the trap below.
+   To re-run any of these without putting the key in your shell history:
    ```
-   curl -sL -X POST '<the @2 /exec url>' \
+   KEY=$(grep -E '^V2_SIRI_API_KEY=' .env | cut -d= -f2-)
+   ID=$(cd v2-siri && clasp --user v2 list-deployments | grep '@2' | awk '{print $2}')
+   curl -sL "https://script.google.com/macros/s/$ID/exec" \
      -H 'Content-Type: application/json' \
-     -d '{"key":"<the key>","action":"ping"}'
+     -d "{\"key\":\"$KEY\",\"action\":\"catalog\",\"section\":\"health\"}"
    ```
-   A quicker first probe needs no key at all: send `{"action":"ping"}` and expect
-   `{"ok":false,"error":"Not authorized."}`. **That JSON is the good outcome** —
-   it means the deployment, the shim and the library all work and only the key is
-   missing. An HTML page instead means you are still stuck on step 2.
-   With the key, expect `"ok": true`, a `spreadsheet` name, and
-   `propertiesVisible` **all true**. `-L` matters: Apps Script redirects.
-   - `ok:false` with a `SPREADSHEET_ID` message → step 1 did not run, or
-     properties resolve to the *shim's* store rather than the library's (below).
-   - `Not authorized.` → the key does not match, or step 1 did not run.
+   Note there is **no `-X POST`** — see the curl trap below; `-d` already makes
+   it a POST.
 4. **Build the Shortcuts.** `v2/SIRI-SHORTCUT.md` is the full recipe, including
    the protocol and the per-section field whitelist. Build "Log health claim"
    first and duplicate it.
@@ -103,15 +106,24 @@ All of it needs hands. Nothing below can be done from the CLI.
 
 ## Things that will waste your time if you do not know them
 
-- **The one unknown the harness cannot reach: whose Script Properties does
-  library code see?** `v2/Siri.js` runs as a library when Siri calls it, and
-  `getScriptProperties()` is expected to mean the **library's own** project — the
-  main one, where every property already lives. If `ping` comes back with
-  `propertiesVisible` all false, that expectation is wrong and the properties
-  resolve to the *shim's* store instead. It is not fatal: set `SPREADSHEET_ID`,
-  `SIRI_API_KEY`, `ROOT_FOLDER_ID` and both recipient addresses on `v2-siri` too.
-  But it would mean two stores to keep in step, so write it down here if it
-  happens. **Run `ping` before building anything on top of this.**
+- **Do not put `-X POST` in the curl.** Apps Script answers `/exec` with a 302 to
+  `script.googleusercontent.com/macros/echo`, and that endpoint serves **GET
+  only**. Plain `curl -L -d …` is right: curl downgrades the redirected request
+  to GET by itself. `-X POST` forces the method to stick across the redirect and
+  you get **405** with a Drive "Página não encontrada" page — which reads exactly
+  like a dead deployment and is not one. This cost a diagnosis already. Shortcuts
+  does the right thing on its own; this is a curl problem only.
+  The tell is in the redirect: `curl -s -D - -o /dev/null -X POST … | grep -i location`.
+  A `location` carrying **`&lib=…`** means the library resolved and `doPost`
+  already ran, whatever status the next hop returns.
+- **Library code reads the LIBRARY's Script Properties — confirmed, not
+  assumed.** This was the one thing the harness could not reach and the whole
+  one-store design rested on it. A live `ping` returned `propertiesVisible` all
+  true and `"spreadsheet": "HelpfulForms"`, so `v2/Siri.js` running as a library
+  sees the **main** project's properties, and `getSpreadsheet()` resolved through
+  the `openById(SPREADSHEET_ID)` fallback exactly as intended. **Nothing needs
+  duplicating onto `v2-siri`, and nothing should be** — a second store is the
+  drift this design exists to avoid.
 - **Never write the Siri `/exec` URL into a tracked file.** This repo is public,
   and unlike every other URL in this note that one is anonymous: the address *is*
   the reachable surface. It cannot be used to write anything — an unset or wrong
