@@ -23,11 +23,10 @@ whitelist refusals, and the registry learning what it created. Nothing on the
 server is untested. **What is left is the four Shortcuts.** Cutover (step 10) is
 still not started.
 
-**A test row may still need deleting.** The live `create` left Work row 5,
-`ZZ Siri Test` at €1.23, plus a `ZZ Siri Test` entry in the Suppliers registry —
-delete both, or the registry keeps fuzzy-matching it. The Expense Reason
-`DELETE ME - siri live test` disappears on its own once the row is gone, because
-that list is computed from the sheet.
+**The live test left nothing behind.** Its Work row and its `ZZ Siri Test`
+registry entry were deleted and the removal was verified through the endpoint:
+the mishearing that had matched at 0.92 now returns `known: false`, and the
+Expense Reason list is back to one value. Nothing to clean up.
 
 ## First thing: establish the baseline
 
