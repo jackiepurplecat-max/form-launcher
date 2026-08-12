@@ -14,11 +14,12 @@ after this. This file is disposable: overwrite it at the end of each session.
 | Harness | **617 passing, 0 failed** (was 531) |
 | Main project | matches `v2/` byte for byte, **13 files** — `Siri.js` is new |
 | Siri project | **new** — `v2-siri/`, matches byte for byte, 2 files |
-| Deployed | main is still **version 23**. Siri is deployed at **@1**, and **returns 403 until it is authorised** — see below |
+| Deployed | main is still **version 23**. Siri is deployed at **@2**, and **returns 403 until it is authorised** — see step 2 |
 
 Steps 1–9 and 9c are done and verified by hand. **Step 11's server side is
-built, pushed and covered by the harness; nothing has been deployed and no
-Shortcut exists yet.** Cutover (step 10) is still not started.
+built, pushed, covered by the harness and deployed — but not authorised, never
+answered a real request, and no Shortcut exists yet.** Cutover (step 10) is
+still not started.
 
 ## First thing: establish the baseline
 
@@ -38,16 +39,22 @@ All of it needs hands. Nothing below can be done from the CLI.
    `SPREADSHEET_ID` off the container and generates `SIRI_API_KEY`, and
    **returns the key once** — copy it somewhere before closing the log. A second
    run will not show it again and will not replace it.
-2. **Authorise `v2-siri`.** It is already deployed:
+2. **Authorise `v2-siri`.** It is already deployed, at version **@2**, described
+   *Siri intake v2*. **Its URL is deliberately not written down here** — see the
+   note below on why. Get it with:
 
    ```
-   https://script.google.com/macros/s/AKfycbxSnO8XLQXOpiiBMrFDm49_kM7A6dd9V2oCq_JGxgjoe-toifwbxryuL8UA94TIGrAQNQ/exec
+   cd v2-siri && clasp --user v2 list-deployments
    ```
 
-   **It currently answers 403 to everything, GET and POST alike** — verified with
-   curl, so this is observed and not a guess. The body is Drive's *"Acesso
-   negado / Precisa de acesso"*, which is the page you get when Google refuses
-   before `doPost` runs.
+   and build the address as
+   `https://script.google.com/macros/s/<the @2 id>/exec`. There should be exactly
+   two: the permanent `@HEAD` (`/dev`) and `@2`.
+
+   **It answers 403 to everything, GET and POST alike** — verified with curl
+   against the previous deployment, so this is observed and not a guess. The body
+   is Drive's *"Acesso negado / Precisa de acesso"*, which is the page you get
+   when Google refuses before `doPost` runs.
 
    The expected cause is that a standalone project deployed execute-as-me is not
    authorised until something in it has run: nobody has granted its four scopes.
@@ -59,13 +66,11 @@ All of it needs hands. Nothing below can be done from the CLI.
    and the server holds that file byte for byte, but check it in the editor
    under Deploy → Manage deployments rather than assume — the manifest and the
    deployment have disagreed before. Fixing it there and redeploying with
-   `-i AKfycbxSnO8XLQXOpiiBMrFDm49_kM7A6dd9V2oCq_JGxgjoe-toifwbxryuL8UA94TIGrAQNQ`
-   updates this URL rather than making a second one.
+   `-i <the @2 id>` updates that URL rather than making a second one.
 3. **Prove the library resolves** before building any Shortcut. This is the one
    thing the harness cannot test — see the trap below.
    ```
-   curl -sL -X POST \
-     'https://script.google.com/macros/s/AKfycbxSnO8XLQXOpiiBMrFDm49_kM7A6dd9V2oCq_JGxgjoe-toifwbxryuL8UA94TIGrAQNQ/exec' \
+   curl -sL -X POST '<the @2 /exec url>' \
      -H 'Content-Type: application/json' \
      -d '{"key":"<the key>","action":"ping"}'
    ```
@@ -73,8 +78,8 @@ All of it needs hands. Nothing below can be done from the CLI.
    `{"ok":false,"error":"Not authorized."}`. **That JSON is the good outcome** —
    it means the deployment, the shim and the library all work and only the key is
    missing. An HTML page instead means you are still stuck on step 2.
-   Expect `"ok": true`, a `spreadsheet` name, and `propertiesVisible` **all
-   true**. `-L` matters: Apps Script redirects.
+   With the key, expect `"ok": true`, a `spreadsheet` name, and
+   `propertiesVisible` **all true**. `-L` matters: Apps Script redirects.
    - `ok:false` with a `SPREADSHEET_ID` message → step 1 did not run, or
      properties resolve to the *shim's* store rather than the library's (below).
    - `Not authorized.` → the key does not match, or step 1 did not run.
@@ -107,6 +112,17 @@ All of it needs hands. Nothing below can be done from the CLI.
   `SIRI_API_KEY`, `ROOT_FOLDER_ID` and both recipient addresses on `v2-siri` too.
   But it would mean two stores to keep in step, so write it down here if it
   happens. **Run `ping` before building anything on top of this.**
+- **Never write the Siri `/exec` URL into a tracked file.** This repo is public,
+  and unlike every other URL in this note that one is anonymous: the address *is*
+  the reachable surface. It cannot be used to write anything — an unset or wrong
+  key returns `Not authorized.` — but a published anonymous endpoint attracts
+  scanning and spends execution quota on traffic that has nothing to do with you.
+  It happened once already: deployment `@1` went into this file and was pushed,
+  so it was **deleted and redeployed as `@2`**, and the published address now
+  404s. Rotating cost nothing that day because no Shortcut existed yet; once
+  four Shortcuts point at it, rotating means editing all four on the phone. Get
+  the URL from `clasp --user v2 list-deployments`, keep it in the Shortcut and in
+  `.env` if anywhere.
 - **`clasp push` reports success while pushing nothing.** Always verify after.
   This bit again while creating `v2-siri`: the first push printed
   `Skipping push.` because the remote manifest was still Google's default.
