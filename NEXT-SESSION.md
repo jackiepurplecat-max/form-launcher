@@ -124,9 +124,11 @@ Ordered by what unblocks the most.
   you learn to click through, which would cost the warning its meaning. It
   defaults and warns instead — in the two cases where the core ends up holding a
   number nobody checked, and in no others.
-- **Correcting a supplier's NIF does not rewrite `Emitente NIF` on past IVA
-  entries.** Still genuinely open, but the build takes the option that destroys
-  nothing.
+- **A corrected NIF is never backdated — decided, not deferred.** Old records stay
+  exactly as they are. A submitted claim is a record of *what was submitted*, so
+  rewriting `Emitente NIF` on past IVA entries would make the row disagree with
+  what Finanças received. Future entries prefill from the corrected registry, which
+  is the whole benefit available without touching history. Pinned by the harness.
 
 ## Not started
 

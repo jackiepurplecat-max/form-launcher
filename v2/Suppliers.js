@@ -61,14 +61,17 @@
  * - **Report per row and per document.** A rename can fail halfway through, so
  *   this returns what actually happened rather than a tick.
  *
- * OPEN QUESTION, DELIBERATELY NOT DECIDED HERE
+ * A CORRECTED NIF IS NEVER BACKDATED
  *
  * Correcting a supplier's NIF does NOT rewrite `Emitente NIF` on past IVA
- * entries. A wrong NIF is a rejected claim, which argues for repairing it; but a
- * submitted claim is a record of what was submitted, which argues against
- * rewriting it after the fact. Until that is settled, the conservative option is
- * the one that destroys nothing. The registry value changes, so every FUTURE
- * entry prefills correctly.
+ * entries, and that is a decision rather than an omission. A submitted claim is a
+ * record of WHAT WAS SUBMITTED, so rewriting the figure afterwards makes the row
+ * disagree with what Finanças actually received — worse than a row that is merely
+ * out of date, because it destroys the evidence of what happened. The registry
+ * value changes, so every FUTURE entry prefills correctly, and that is the whole
+ * benefit available without touching history.
+ *
+ * The harness pins it. Do not "improve" this into a repair.
  */
 
 /**

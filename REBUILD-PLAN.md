@@ -990,12 +990,20 @@ override threaded through `nameAndFileDocuments()` into `applyFileState()`.
 Naming and filing stay one code path — the override exists precisely so a second
 copy of the naming rule did not have to.
 
-**Open question, still open:** whether correcting a supplier's **NIF** should also
-rewrite `Emitente NIF` on past IVA entries. A wrong NIF is a rejected claim, which
-argues for it; rewriting a figure that was already submitted to Finanças argues
-against. **The build does not do it** — the conservative option destroys nothing,
-and every future entry prefills correctly regardless. Probably offered per entry
-rather than applied, but undecided.
+**Decided (12 Aug 2026): a corrected NIF is never backdated. Old records stay as
+they are.** The question was whether correcting a supplier's NIF should also
+rewrite `Emitente NIF` on past IVA entries. It should not, and this is now settled
+rather than deferred.
+
+A submitted claim is a record of **what was submitted**, and rewriting the figure
+after the fact makes the row disagree with what Finanças actually received — which
+is worse than a row that is merely out of date, because it destroys the evidence
+of what happened. The registry value changes, so every *future* entry prefills
+correctly, and that is the whole benefit available without touching history.
+
+The harness pins this: an IVA entry keeps its original `Emitente NIF` through a
+merge that changes the registry's. Anything that starts backdating fails a test
+rather than being noticed in a rejected claim.
 
 **Manage category values.** Add and remove the allowed values of a section's
 category field, which the form's dropdown reads directly — there is no form to

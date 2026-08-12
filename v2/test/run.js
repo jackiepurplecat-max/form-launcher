@@ -1804,7 +1804,10 @@ check('same verdict as passing it explicitly',
   JSON.stringify(G.uiSupplierPreview(supplierRow('Adopter Co'), 'FNAC').nifKept) ===
   JSON.stringify(G.uiSupplierPreview(supplierRow('Adopter Co'), 'FNAC', '222222222').nifKept),
   G.uiSupplierPreview(supplierRow('Adopter Co'), 'FNAC').nifKept);
-check('past Emitente NIF values are left alone - the open question stays open',
+// Decided 12 Aug 2026, not deferred: a submitted claim records what was
+// SUBMITTED, so rewriting it after the fact makes the row disagree with what
+// Financas received. This assertion is what stops that being reintroduced.
+check('a corrected NIF is never backdated onto past IVA entries',
   mocks._ss.getSheetByName('IVA')
     .getRange(G.uiListEntries('iva').rows.filter(r => r.cells['Número'] === '1')[0].row,
       G.resolveColumns(mocks._ss.getSheetByName('IVA'))['Emitente NIF']).getValue() === '999999999');
