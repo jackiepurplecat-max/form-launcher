@@ -265,6 +265,16 @@ const SECTIONS = {
  */
 const ROOT_FOLDER_PROPERTY = 'ROOT_FOLDER_ID';
 
+/**
+ * Script Property holding the spreadsheet's own ID.
+ *
+ * Unused by anything running inside the container — getSpreadsheet() prefers
+ * getActiveSpreadsheet() and never reaches for this. It exists for the Siri
+ * project, which is standalone and reaches this code as a library, and so has
+ * no container to resolve. See getSpreadsheet() in Core.js.
+ */
+const SPREADSHEET_ID_PROPERTY = 'SPREADSHEET_ID';
+
 /** Folder used for entries in a state that declares no folder of its own. */
 const INBOX_FOLDER = 'Inbox';
 
@@ -359,6 +369,13 @@ const SCRIPT_PROPERTY_INFO = {
   SIRI_API_KEY: {
     required: false, secret: true,
     description: 'Key held only in the Shortcut, for the create-only endpoint'
+  },
+  SPREADSHEET_ID: {
+    required: false, secret: false,
+    description: 'This spreadsheet\'s own id. Never read by anything running inside ' +
+      'the container - only by the standalone Siri project, which reaches this code ' +
+      'as a library and so has no active spreadsheet to resolve. Required as soon as ' +
+      'the Siri endpoint exists; harmless before then'
   }
 };
 

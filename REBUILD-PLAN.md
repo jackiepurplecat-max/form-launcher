@@ -345,10 +345,26 @@ tap-to-copy, and the revert dialog's `Keep` wording.
 | `v2/Form.js` | The form server side: fields from `SECTIONS`, uploads, registry lookup, `uiCreateEntry` |
 | `v2/Web.js` | `doGet`, the access check, `uiBootstrap` / `uiListEntries` / `uiSetStatus` / `uiSetEntryDate` |
 | `v2/Index.html` | The page. No templating — it fetches everything through `google.script.run` |
+| `v2/Siri.js` | The Siri endpoint: `siriHandlePost`, the key check, the field whitelist, `siriSetup()` |
 | `v2/test/` | The harness, and `verify-push.js`. Local only — `.claspignore` keeps it out of the push |
 
-**Not written yet:** Siri endpoint, OCR intake. There is no `doPost`,
-so the only outside surface is the signed-in UI.
+**A second project**, `v2-siri/`, holds the anonymous endpoint. Two files —
+`appsscript.json` and a `doPost` that delegates to `HF.siriHandlePost` — and
+nothing else, deliberately.
+
+| | |
+|---|---|
+| `v2-siri/Shim.js` | The whole project. Five lines of delegation and a flat `doGet` |
+| `v2-siri/appsscript.template.json` | Committed. `{{MAIN_SCRIPT_ID}}` placeholder |
+| `v2-siri/appsscript.json` | **Generated and gitignored** — holds the main script id |
+| `v2-siri/build-manifest.js` | Builds one from the other, reading `v2/.clasp.json` |
+
+The shim reaches the main project as a **development-mode library** under the
+symbol `HF`, so it runs whatever `npm run v2:push` last put on HEAD. There is no
+library version to bump and nothing that can go quietly stale — but there is
+still a push to actually land, so `npm run v2:verify` matters as much as ever.
+
+**Not written yet:** OCR intake.
 
 **The new account** — address in `.env` as `V2_CLASP_ACCOUNT`, since this repo is
 public. Its Apps Script project is
@@ -1221,10 +1237,47 @@ Each step should leave the system working.
 11. **Siri Shortcut** in its own Apps Script project — not a second deployment
     of this one. See Security: anonymous access is per project, and it blanks the
     caller's identity for everyone.
+    **Server side built and pushed; not yet deployed or used from a phone.**
+    `v2/Siri.js` in the main project holds all of it — the key check, the three
+    actions, the whitelist — and the harness covers it. `v2-siri/` is created and
+    pushed. What remains is `siriSetup()`, the anonymous deployment, and building
+    the Shortcuts: `v2/SIRI-SHORTCUT.md` is the recipe.
 12. **OCR intake.**
 
 Steps 1–10 restore what you have today, cleanly. 11 and 12 are new capability
 and can wait.
+
+### How step 11 resolved the questions this plan left open
+
+- **Code sharing: a library, not a copy.** The alternative was pushing the same
+  source into both projects, and it fails on configuration rather than on code:
+  the second project would need its own `ROOT_FOLDER_ID`, its own recipients and
+  its own copy of the key, in a second Script Properties store with nothing to
+  catch the two drifting apart. Keeping the logic in the main project means one
+  copy of both, and — the part that pays daily — the entire endpoint is exercised
+  by `npm run v2:test` against the real source. Only the five-line delegation is
+  beyond the harness, and there is nothing in it to get wrong.
+- **`getActiveSpreadsheet()` had to go.** A library resolves it against its
+  *caller's* container, and the shim is standalone, so it resolves to nothing. All
+  seven call sites now go through `getSpreadsheet()`, which prefers the container
+  and falls back to `openById(SPREADSHEET_ID)`. Bound execution is unchanged and
+  never reads the property.
+- **The confirmation happens before the write.** Of the two branches this plan
+  offered, the Shortcut confirming the canonical name is the one built: `resolve`
+  writes nothing and returns what to show, `create` takes what was confirmed. The
+  second branch — canonicalise server-side and say so afterwards — was rejected
+  because by the time you read it the row exists.
+- **`create` does not re-run the fuzzy matcher.** It fills `Type` and NIF from
+  the registry on an **exact** match only. The counterparty arriving in that call
+  has already been confirmed on the phone, and re-matching it could quietly merge
+  a supplier the confirmation had just established was a different business.
+- **An unset `SIRI_API_KEY` shuts the endpoint** rather than opening it. The shim
+  is deployed anonymously, so "no key configured" meaning "no key required" would
+  leave it open in exactly the window where nobody is looking — between deploying
+  and configuring.
+- **A refused field is refused, not dropped.** Silently ignoring a field the
+  whitelist does not name would leave a Shortcut believing it recorded something
+  it did not, and that failure is invisible until someone reads the sheet.
 
 ## Cutover
 

@@ -27,7 +27,14 @@ const Session = {
 
 function _pad(n, w) { return String(n).padStart(w, '0'); }
 
+let _uuid = 0;
 const Utilities = {
+  // Counted rather than random, so a generated Siri key is reproducible in a
+  // test while still being a different string on every call.
+  getUuid() {
+    const n = (++_uuid).toString(16).padStart(8, '0');
+    return `${n}-aaaa-bbbb-cccc-dddddddddddd`;
+  },
   formatDate(date, tz, fmt) {
     const d = new Date(date);
     if (isNaN(d.getTime())) throw new Error('Utilities.formatDate: invalid date');
@@ -113,6 +120,7 @@ class Sheet {
 class Spreadsheet {
   constructor(name) { this.name = name; this.sheets = []; }
   getName() { return this.name; }
+  getId() { return SPREADSHEET_ID; }
   getSheets() { return this.sheets.slice(); }
   getSheetByName(n) { return this.sheets.find(s => s.name === n) || null; }
   insertSheet(n) { const s = new Sheet(n); this.sheets.push(s); return s; }
@@ -120,7 +128,25 @@ class Spreadsheet {
 
 const _ss = new Spreadsheet('HelpfulForms v2');
 _ss.getUrl = () => 'https://docs.google.com/spreadsheets/d/TESTSHEETID/edit';
-const SpreadsheetApp = { getActiveSpreadsheet: () => _ss, flush() { this.flushes = (this.flushes || 0) + 1; } };
+const SPREADSHEET_ID = 'TESTSHEETID';
+
+/*
+ * _noActive stands in for the standalone/library context. The Siri project is
+ * not bound to the spreadsheet, so getActiveSpreadsheet() finds nothing there
+ * and getSpreadsheet() has to fall back to openById. Setting this is the only
+ * way to exercise that branch in node.
+ */
+const SpreadsheetApp = {
+  _noActive: false,
+  _openedIds: [],
+  getActiveSpreadsheet() { return this._noActive ? null : _ss; },
+  openById(id) {
+    this._openedIds.push(id);
+    if (id !== SPREADSHEET_ID) throw new Error('No item with the given ID could be found: ' + id);
+    return _ss;
+  },
+  flush() { this.flushes = (this.flushes || 0) + 1; }
+};
 
 /* -------------------------------- Drive ---------------------------------- */
 
@@ -226,7 +252,27 @@ const LockService = {
   })
 };
 
+/* ---------------------------- ContentService ------------------------------ */
+/*
+ * What the Siri endpoint returns. The real one produces an object the runtime
+ * serialises; the only thing a test needs back out of it is the payload, so
+ * getContent() returns the JSON string exactly as Shortcuts would receive it.
+ */
+const ContentService = {
+  MimeType: { JSON: 'application/json', TEXT: 'text/plain' },
+  createTextOutput(text) {
+    return {
+      _text: text,
+      _mimeType: null,
+      getContent() { return this._text; },
+      getMimeType() { return this._mimeType; },
+      setMimeType(type) { this._mimeType = type; return this; }
+    };
+  }
+};
+
 module.exports = {
   Logger, Session, Utilities, SpreadsheetApp, DriveApp, PropertiesService,
-  MailApp, LockService, HtmlService, _props, _files, _folders, _ss
+  MailApp, LockService, HtmlService, ContentService,
+  _props, _files, _folders, _ss, SPREADSHEET_ID
 };

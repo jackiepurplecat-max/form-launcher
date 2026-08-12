@@ -56,7 +56,7 @@ function archiveHeaders(section) {
 
 function getArchiveSheet(section) {
   const name = archiveSheetName(section);
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  const sheet = getSpreadsheet().getSheetByName(name);
   if (!sheet) {
     throw new Error(`No sheet named "${name}". Run bootstrap() to create it.`);
   }

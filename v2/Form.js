@@ -159,7 +159,17 @@ function uiWritableHeaders(section) {
  */
 function uiCategoryValues(sectionKey) {
   requireUiAccess();
+  return categoryValues(sectionKey);
+}
 
+/*
+ * The same list, without the UI gate, for callers that run their own check.
+ * The Siri endpoint needs it to offer Patient as a tap rather than dictation,
+ * and it authenticates by key rather than by Google sign-in — so the gate has
+ * to sit in the ui* wrapper, not in here. Nothing else may call this without
+ * checking its caller first.
+ */
+function categoryValues(sectionKey) {
   const section = getSection(sectionKey);
   if (!section.category) return [];
 

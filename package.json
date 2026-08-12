@@ -20,7 +20,7 @@
     "clasp:deploy": "clasp deploy",
     "clasp:version": "clasp version",
     "v2:test": "node v2/test/run.js",
-    "v2:check": "node --check v2/Config.js && node --check v2/Core.js && node --check v2/Entries.js && node --check v2/Registry.js && node --check v2/Setup.js && node --check v2/Smoke.js && node --check v2/Web.js && node --check v2/Form.js && node --check v2/Manage.js && node --check v2/Suppliers.js",
+    "v2:check": "node --check v2/Config.js && node --check v2/Core.js && node --check v2/Entries.js && node --check v2/Registry.js && node --check v2/Setup.js && node --check v2/Smoke.js && node --check v2/Web.js && node --check v2/Form.js && node --check v2/Manage.js && node --check v2/Suppliers.js && node --check v2/Siri.js && node --check v2-siri/Shim.js",
     "v2:push": "cd v2 && clasp --user v2 push",
     "v2:pull": "cd v2 && clasp --user v2 pull",
     "v2:open": "cd v2 && clasp --user v2 open-script",
@@ -28,7 +28,12 @@
     "v2:login": "clasp login --user v2",
     "v2:whoami": "cd v2 && clasp --user v2 show-authorized-user",
     "v2:push:force": "cd v2 && clasp --user v2 push --force",
-    "v2:verify": "node v2/test/verify-push.js"
+    "v2:verify": "node v2/test/verify-push.js",
+    "v2:siri:manifest": "node v2-siri/build-manifest.js",
+    "v2:siri:push": "npm run v2:siri:manifest && cd v2-siri && clasp --user v2 push",
+    "v2:siri:push:force": "npm run v2:siri:manifest && cd v2-siri && clasp --user v2 push --force",
+    "v2:siri:verify": "node v2/test/verify-push.js ../v2-siri",
+    "v2:siri:open": "cd v2-siri && clasp --user v2 open-script"
   },
   "keywords": [],
   "author": "",

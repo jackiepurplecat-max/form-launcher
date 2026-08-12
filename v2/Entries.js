@@ -364,7 +364,7 @@ function mailableUrl(url) {
  * same unresolved constraint as the phone, not something this can fix.
  */
 function completionLink(section, sheet, cols, row) {
-  const sheetLink = `${SpreadsheetApp.getActiveSpreadsheet().getUrl()}` +
+  const sheetLink = `${getSpreadsheet().getUrl()}` +
     `#gid=${sheet.getSheetId()}&range=A${row}`;
 
   const base = webAppUrl();

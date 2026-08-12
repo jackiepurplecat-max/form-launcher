@@ -1,0 +1,6 @@
+# The anonymous project. Only these two files exist on the server, and that is
+# the point - see the header of Shim.js. Nothing from v2/ is pushed here; the
+# code is reached as a library instead.
+**/**
+!Shim.js
+!appsscript.json

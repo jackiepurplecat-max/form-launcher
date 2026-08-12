@@ -21,6 +21,16 @@
  * A mismatch is fixed with `npm run v2:push:force`, which also ends the loop:
  * once the server holds the local manifest byte for byte, plain pushes stop
  * being refused.
+ *
+ * TWO PROJECTS. Since the Siri endpoint exists there is a second, separate
+ * Apps Script project — v2-siri/, the anonymous shim. Pass a directory to check
+ * that one instead:
+ *
+ *   npm run v2:verify        the main project
+ *   npm run v2:siri:verify   the shim
+ *
+ * The shim is two files and changes almost never, which is exactly why it needs
+ * checking: nobody would notice it had stopped matching.
  */
 
 const fs = require('fs');
@@ -28,13 +38,40 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const V2 = path.join(__dirname, '..');
+const V2 = path.resolve(__dirname, '..', process.argv[2] || '.');
+const LABEL = path.basename(V2);
 
-/* The files clasp pushes: top-level source, no dotfiles, no test directory. */
-function pushedFiles(dir) {
-  return fs.readdirSync(dir)
+/*
+ * The files clasp pushes.
+ *
+ * Read from .claspignore rather than guessed from the directory listing. Both
+ * projects write their ignore file as "everything, then !name per allowed
+ * file", so the allowlist is exact — and it has to be: v2-siri/ holds
+ * build-manifest.js and appsscript.template.json, which are local tooling.
+ * Inferring the list from the extension would report those as missing from the
+ * server for ever, and a check that always fails is one that gets ignored.
+ */
+function allowedByClaspignore(dir) {
+  const file = path.join(dir, '.claspignore');
+  if (!fs.existsSync(file)) return null;
+
+  const allowed = fs.readFileSync(file, 'utf8')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.startsWith('!'))
+    .map(line => line.slice(1));
+
+  return allowed.length ? allowed.sort() : null;
+}
+
+function pushedFiles(dir, allowlist) {
+  const present = fs.readdirSync(dir)
     .filter(name => !name.startsWith('.'))
-    .filter(name => fs.statSync(path.join(dir, name)).isFile())
+    .filter(name => fs.statSync(path.join(dir, name)).isFile());
+
+  if (allowlist) return present.filter(name => allowlist.indexOf(name) !== -1).sort();
+
+  return present
     .filter(name => ['.js', '.html', '.json'].indexOf(path.extname(name)) !== -1)
     .sort();
 }
@@ -49,7 +86,8 @@ try {
   process.exit(2);
 }
 
-const local = pushedFiles(V2);
+const allowlist = allowedByClaspignore(V2);
+const local = pushedFiles(V2, allowlist);
 const differences = [];
 
 local.forEach(name => {
@@ -63,17 +101,20 @@ local.forEach(name => {
   }
 });
 
-pushedFiles(tmp).forEach(name => {
-  if (local.indexOf(name) === -1) differences.push(`${name} — on the server but not in v2/`);
+// The pulled copy has no .claspignore, so list it by extension: anything the
+// server holds that the allowlist does not name is a real difference — a file
+// left behind by an earlier push, which is exactly what this should catch.
+pushedFiles(tmp, null).forEach(name => {
+  if (local.indexOf(name) === -1) differences.push(`${name} — on the server but not in ${LABEL}/`);
 });
 
 fs.rmSync(tmp, { recursive: true, force: true });
 
 if (differences.length) {
-  console.error(`\nServer does NOT match v2/ (${differences.length}):\n`);
+  console.error(`\nServer does NOT match ${LABEL}/ (${differences.length}):\n`);
   differences.forEach(line => console.error('  ' + line));
-  console.error('\nRun `npm run v2:push:force`, then this again.\n');
+  console.error('\nRun the matching push:force, then this again.\n');
   process.exit(1);
 }
 
-console.log(`Server matches v2/ — ${local.length} files, byte for byte.`);
+console.log(`Server matches ${LABEL}/ — ${local.length} files, byte for byte.`);

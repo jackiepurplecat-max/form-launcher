@@ -18,6 +18,10 @@ node_modules/
 .clasprc.json
 .clasp.json
 
+# Generated: holds the main project's script id, which is why it is not
+# committed. Build it with `npm run v2:siri:manifest`; the template is tracked.
+v2-siri/appsscript.json
+
 # OS files
 .DS_Store
 

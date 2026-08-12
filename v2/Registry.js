@@ -63,7 +63,7 @@ const REGISTRY_SUGGEST_SIMILARITY = 0.6;
  * safe against a registry already in use.
  */
 function getOrCreateRegistrySheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet();
   let sheet = ss.getSheetByName(REGISTRY_SHEET);
   if (!sheet) {
     sheet = ss.insertSheet(REGISTRY_SHEET);

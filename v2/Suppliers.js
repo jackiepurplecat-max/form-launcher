@@ -100,7 +100,7 @@ const SUPPLIER_REPAIR_ROW_LIMIT = 50;
  * fatal — that is a broken installation, not a gap.
  */
 function supplierScanTargets() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet();
   const targets = [];
   const skipped = [];
 
