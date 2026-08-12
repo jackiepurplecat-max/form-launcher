@@ -1237,11 +1237,17 @@ Each step should leave the system working.
 11. **Siri Shortcut** in its own Apps Script project — not a second deployment
     of this one. See Security: anonymous access is per project, and it blanks the
     caller's identity for everyone.
-    **Server side built and pushed; not yet deployed or used from a phone.**
-    `v2/Siri.js` in the main project holds all of it — the key check, the three
-    actions, the whitelist — and the harness covers it. `v2-siri/` is created and
-    pushed. What remains is `siriSetup()`, the anonymous deployment, and building
-    the Shortcuts: `v2/SIRI-SHORTCUT.md` is the recipe.
+    **Server side done, deployed, and every action verified against the real
+    spreadsheet. Not yet used from a phone.** `v2/Siri.js` in the main project
+    holds all of it — the key check, the three actions, the whitelist — and the
+    harness covers it. `v2-siri/` is deployed at `@2` with its scopes granted.
+    Confirmed live: `ping` sees the library's own Script Properties and resolves
+    the spreadsheet through the `openById` fallback; `catalog` reads the category
+    list off the sheet; `resolve` corrected a 0.92 mishearing against the real
+    registry; `create` wrote a row, reported it incomplete, sent the completion
+    mail and taught the registry; a file column and a `Status` field were both
+    refused, naming the column. **What remains is the four Shortcuts** —
+    `v2/SIRI-SHORTCUT.md` is the recipe.
 12. **OCR intake.**
 
 Steps 1–10 restore what you have today, cleanly. 11 and 12 are new capability

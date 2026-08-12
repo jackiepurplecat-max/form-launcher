@@ -17,10 +17,17 @@ after this. This file is disposable: overwrite it at the end of each session.
 | Deployed | main is still **version 23**. Siri is at **@2**, authorised, and answering |
 
 Steps 1–9 and 9c are done and verified by hand. **Step 11's server side is
-built, pushed, harness-covered, deployed, configured and exercised live** —
-`ping`, `catalog` and `resolve` all answer correctly against the real
-spreadsheet. `create` is the only action never run live, because it writes.
-**What is left is the four Shortcuts.** Cutover (step 10) is still not started.
+finished: built, pushed, harness-covered, deployed, configured, and every
+action exercised live against the real spreadsheet** — including `create`, the
+whitelist refusals, and the registry learning what it created. Nothing on the
+server is untested. **What is left is the four Shortcuts.** Cutover (step 10) is
+still not started.
+
+**A test row may still need deleting.** The live `create` left Work row 5,
+`ZZ Siri Test` at €1.23, plus a `ZZ Siri Test` entry in the Suppliers registry —
+delete both, or the registry keeps fuzzy-matching it. The Expense Reason
+`DELETE ME - siri live test` disappears on its own once the row is gone, because
+that list is computed from the sheet.
 
 ## First thing: establish the baseline
 
@@ -69,12 +76,16 @@ phone; nothing below can be done from the CLI.
    revoked, or the deployment's access is not really *Anyone*. Check the latter
    in the editor under Deploy → Manage deployments rather than assume. Redeploy
    with `-i <the @2 id>` to update that URL instead of making a second one.
-3. ~~**Prove the library resolves.**~~ **Done, live.** `ping`, `catalog` for
-   health and work, and `resolve` all answered correctly against the real
-   spreadsheet — including work's `Expense Reason` list coming back as
-   `["2025-26 Education Phoenix"]`, which is `categoryValues()` reading the sheet
-   rather than config. **`create` is the only action never exercised live**, for
-   the obvious reason: it writes a row and sends mail.
+3. ~~**Prove the endpoint works.**~~ **Done, live, all four actions.**
+   - `ping` — `propertiesVisible` all true, `spreadsheet: "HelpfulForms"`.
+   - `catalog` — work's `Expense Reason` came back from the sheet, not config.
+   - `resolve` — sent the mishearing `"zz siri tst"`, got back
+     `"confirm": "ZZ Siri Test", "corrected": true` at **0.92**. That is the
+     exact case the resolve-before-create design exists for, confirmed against
+     the real registry rather than the harness's.
+   - `create` — wrote Work row 5 and returned `complete: false`,
+     `outstanding: ["Receipt"]`, `completionEmailed: true`. A file column and a
+     `Status` field were both refused live, naming the offending column.
 
    To re-run any of these without putting the key in your shell history:
    ```
