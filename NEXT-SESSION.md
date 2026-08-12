@@ -9,7 +9,7 @@ after this. This file is disposable: overwrite it at the end of each session.
 | | |
 |---|---|
 | Branch | `step-7-web-ui`, pushed to `origin` |
-| Last commit | `184e351` |
+| Last code commit | `cd7b65e` — the merge-NIF warning. Doc commits follow it |
 | Working tree | clean |
 | Harness | **531 passing, 0 failed** |
 | Server | matches `v2/` byte for byte, 12 files |
