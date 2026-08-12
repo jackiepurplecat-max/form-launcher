@@ -751,7 +751,7 @@
       supplierBusy(true);
       supplierNote('Checking what this would change…');
 
-      call('uiSupplierPreview', app.supplierForm.row, values.name)
+      call('uiSupplierPreview', app.supplierForm.row, values.name, values.nif)
         .then(function (preview) {
           supplierBusy(false);
           supplierNote('');
@@ -781,6 +781,19 @@
         ? preview.total + (preview.total === 1 ? ' entry' : ' entries') +
           ' will be updated and their documents renamed: ' + counts + '.'
         : 'No entries use this name, so only the registry changes.';
+
+      // The NIF warning comes BEFORE the merge as well as after, because this is
+      // the point where you can still back out. A wrong NIF is a rejected claim.
+      if (preview.nifKept) {
+        body += ' NIFs differ: ' + preview.merge.name + ' keeps ' + preview.nifKept.kept +
+          ' and ' + preview.nifKept.discarded + ' is discarded. Check ' +
+          preview.merge.name + ' is the sound one before you merge.';
+      }
+      if (preview.nifAdopted) {
+        body += ' ' + preview.merge.name + ' has no NIF, so it will take ' +
+          preview.nifAdopted.value + ' from this entry. Check that number is right — ' +
+          'it becomes the one every future claim prefills.';
+      }
 
       if (preview.willStopAt) {
         body += ' This will stop after ' + preview.willStopAt +
@@ -853,10 +866,20 @@
         lines.push('The two disagreed on Type, so the stored default was cleared ' +
           'rather than guessed.');
       }
+      // Named rather than just reported: the point of this warning is to send you
+      // to a specific supplier to check a specific number, not to tell you a
+      // decision was made.
       if (result.nifKept) {
         kind = 'warn';
-        lines.push('Kept NIF ' + result.nifKept.kept + ' and discarded ' +
-          result.nifKept.discarded + '.');
+        lines.push('NIFs differed. ' + result.nifKept.into + ' kept ' +
+          result.nifKept.kept + '; ' + result.nifKept.discarded + ' was discarded.');
+        lines.push('Check ' + result.nifKept.into + ' holds the right one.');
+      }
+      if (result.nifAdopted) {
+        kind = 'warn';
+        lines.push(result.nifAdopted.into + ' had no NIF and has taken ' +
+          result.nifAdopted.value + ' from the entry you merged in.');
+        lines.push('Check that number is right — future claims prefill from it.');
       }
       if (result.documentErrors && result.documentErrors.length) {
         kind = 'error';

@@ -49,6 +49,15 @@
  *   taught. Only you know which it was, so the result says what could be added
  *   and addSupplierAlias() is a second, separate call.
  *
+ * - **A merge keeps the CORE entry's NIF, and says so loudly when that matters.**
+ *   The core is the supplier being merged into — the established record, against
+ *   a row that is by assumption a typo. Choosing between the two by hand was
+ *   considered and rejected: the default is right almost every time, and a picker
+ *   on every merge is a decision you would learn to click through. So it defaults
+ *   and warns instead, both before the merge and after, in the two cases where
+ *   the core ends up holding a number nobody checked — the NIFs disagreed, or the
+ *   core had none and inherited the typo's. See mergeSupplierNif.
+ *
  * - **Report per row and per document.** A rename can fail halfway through, so
  *   this returns what actually happened rather than a tick.
  *
@@ -327,6 +336,45 @@ function mergeSupplierType(a, b) {
   return { value: '', cleared: true };
 }
 
+/**
+ * Which NIF a merge keeps, and what is worth warning about.
+ *
+ * Defaults to the CORE entry's — the supplier being merged into — because that is
+ * the established record and the other row is, by assumption, a typo. It is never
+ * cleared, unlike Type: a supplier really can have two types and cannot have two
+ * NIFs.
+ *
+ * Both ways the core can end up holding a value you did not check are reported,
+ * because a wrong NIF is a rejected claim and that makes a silent change to the
+ * core the one outcome worth being noisy about:
+ *
+ *   kept     the two disagreed. The core's survived; the other is named so you
+ *            can decide whether the core was the right one to trust.
+ *   adopted  the core had NO NIF, so it has just inherited the typo's. If that
+ *            number was wrong, the core is now wrong — and nothing said so
+ *            before this existed.
+ *
+ * Shared by updateSupplier and uiSupplierPreview on purpose, so the warning shown
+ * BEFORE a merge is produced by the rule that runs DURING it rather than by a
+ * second copy free to drift.
+ */
+function mergeSupplierNif(submitted, target, targetName) {
+  const mine = (submitted || '').toString().trim();
+  const theirs = (target || '').toString().trim();
+
+  if (!theirs && mine) {
+    return { value: mine, kept: null, adopted: { value: mine, into: targetName } };
+  }
+  if (theirs && mine && mine !== theirs) {
+    return {
+      value: theirs,
+      kept: { kept: theirs, discarded: mine, into: targetName },
+      adopted: null
+    };
+  }
+  return { value: theirs || mine, kept: null, adopted: null };
+}
+
 /** The later of two Last Used values, either of which may be blank or junk. */
 function laterDate(a, b) {
   const left = a ? new Date(a).getTime() : NaN;
@@ -436,7 +484,10 @@ function updateSupplier(sheetRow, payload, limit) {
       writeCell(sheet, cols, source.row, REGISTRY.aliases,
         aliases.filter(alias => normalizeName(alias) !== ownName).join(', '));
       SpreadsheetApp.flush();
-      return { merged: null, row: source.row, name: newName, typeCleared: false, nifKept: null };
+      return {
+        merged: null, row: source.row, name: newName,
+        typeCleared: false, nifKept: null, nifAdopted: null
+      };
     }
 
     // Merge. Times Used sums, Last Used keeps the later, aliases union, Type
@@ -455,16 +506,10 @@ function updateSupplier(sheetRow, payload, limit) {
       mergedAliases.push(alias);
     });
 
-    let nifKept = null;
-    let mergedNif = target.nif;
-    if (!mergedNif) {
-      mergedNif = nif;
-    } else if (nif && nif !== target.nif) {
-      nifKept = { kept: target.nif, discarded: nif };
-    }
+    const mergedNif = mergeSupplierNif(nif, target.nif, target.name);
 
     writeCell(sheet, cols, target.row, REGISTRY.type, mergedType.value);
-    writeCell(sheet, cols, target.row, REGISTRY.nif, mergedNif);
+    writeCell(sheet, cols, target.row, REGISTRY.nif, mergedNif.value);
     writeCell(sheet, cols, target.row, REGISTRY.aliases, mergedAliases.join(', '));
     writeCell(sheet, cols, target.row, REGISTRY.timesUsed, target.timesUsed + source.timesUsed);
     writeCell(sheet, cols, target.row, REGISTRY.lastUsed,
@@ -480,7 +525,8 @@ function updateSupplier(sheetRow, payload, limit) {
       row: source.row < target.row ? target.row - 1 : target.row,
       name: target.name,
       typeCleared: mergedType.cleared,
-      nifKept: nifKept
+      nifKept: mergedNif.kept,
+      nifAdopted: mergedNif.adopted
     };
   });
 
@@ -495,6 +541,7 @@ function updateSupplier(sheetRow, payload, limit) {
     renamedTo: renaming ? finalName : null,
     typeCleared: registryResult.typeCleared,
     nifKept: registryResult.nifKept,
+    nifAdopted: registryResult.nifAdopted,
     repair: repair,
     // Offered, never applied: only you know whether the old spelling was a
     // recurring mishearing worth teaching or a one-off typo worth forgetting.
@@ -531,10 +578,14 @@ function uiListSuppliers() {
  * What saving this edit would do, before it does it.
  *
  * Called when the name has been changed, so the confirmation can name the
- * damage: how many entries in which sections, and whether this is a merge rather
- * than a rename. Reads only.
+ * damage: how many entries in which sections, whether this is a merge rather
+ * than a rename, and what a merge would do to the surviving NIF. Reads only.
+ *
+ * submittedNif is what the form currently holds, so the NIF verdict is computed
+ * from the same values the save would use — through mergeSupplierNif, the same
+ * function the merge itself calls.
  */
-function uiSupplierPreview(sheetRow, newName) {
+function uiSupplierPreview(sheetRow, newName, submittedNif) {
   requireUiAccess();
 
   const sheet = getOrCreateRegistrySheet();
@@ -554,6 +605,13 @@ function uiSupplierPreview(sheetRow, newName) {
 
   const found = findSupplierEntries(source.name);
 
+  // Undefined means the caller did not say, in which case the stored value is
+  // what a save would send - not a blank, which would read as "clear it".
+  const nif = submittedNif === undefined || submittedNif === null
+    ? source.nif
+    : submittedNif;
+  const nifOutcome = target ? mergeSupplierNif(nif, target.nif, target.name) : null;
+
   return {
     ok: true,
     from: source.name,
@@ -561,6 +619,8 @@ function uiSupplierPreview(sheetRow, newName) {
     merge: target
       ? { name: target.name, timesUsed: target.timesUsed, nif: target.nif, type: target.type }
       : null,
+    nifKept: nifOutcome ? nifOutcome.kept : null,
+    nifAdopted: nifOutcome ? nifOutcome.adopted : null,
     total: found.total,
     bySection: found.bySection,
     // A truthful warning rather than a refusal: the work will stop at the limit

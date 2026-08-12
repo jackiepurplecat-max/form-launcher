@@ -68,7 +68,7 @@ page that no longer exists.
 server side and the form view lives in the same
 page. Fields, order, labels, which are required, which offer a list and which
 accept a document are all derived from `SECTIONS`, so adding a field remains a
-config change plus a re-run of `bootstrap()`. `npm run v2:test` is 521
+config change plus a re-run of `bootstrap()`. `npm run v2:test` is 531
 assertions.
 
 What it does that a Google Form could not, which is the whole reason Forms went:
@@ -950,11 +950,27 @@ Four things the build had to settle that the design above did not:
   one of *its* documents as a side effect of correcting a different row. Changing
   the established spelling is still possible — open that supplier and rename it,
   deliberately.
-- **On a merge a conflicting NIF keeps the established value and reports the one
-  it displaced.** `recordSupplier` never clears a NIF, because it is a fact about
-  the supplier rather than about the visit, and a merge must not be the one place
-  that quietly does. `Type` still follows clear-on-conflict; the two rules differ
-  because a supplier really can have two types and cannot have two NIFs.
+- **On a merge the NIF defaults to the core entry's, and warns rather than
+  asking.** The core is the supplier being merged into — the established record,
+  against a row that is by assumption a typo. Letting you *choose* between the two
+  was considered and rejected: the default is right almost every time, and a
+  picker on every merge is a decision you would learn to click through, which
+  costs the warning its meaning. `recordSupplier` never clears a NIF either,
+  because it is a fact about the supplier rather than about the visit. `Type`
+  still follows clear-on-conflict; the two rules differ because a supplier really
+  can have two types and cannot have two NIFs.
+  - **Two cases leave the core holding a number nobody checked, and both are
+    reported, before the merge and after.** `nifKept` — the two disagreed, so the
+    core's survived and the other is named. `nifAdopted` — the core had *no* NIF
+    and has just inherited the typo's, so if that number was wrong the core is now
+    wrong. The second is the quieter and more dangerous one. A wrong NIF is a
+    rejected claim, so a silent change to the core is the one outcome worth being
+    noisy about; matching NIFs say nothing at all.
+  - `mergeSupplierNif()` is called by **both** `updateSupplier` and
+    `uiSupplierPreview`, so the warning shown before a merge is produced by the
+    rule that runs during it rather than by a second copy free to drift. Same
+    reasoning as the form's `required` flags being generated from the same config
+    as `missingFields()`.
 - **The registry does not move until every row carries the new name.** The row
   limit is 50 (`SUPPLIER_REPAIR_ROW_LIMIT`). Stop short of it, or fail to write a
   cell, and the registry is left completely untouched — because a merge *deletes*

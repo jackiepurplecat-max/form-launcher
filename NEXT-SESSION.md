@@ -10,12 +10,13 @@ after this. This file is disposable: overwrite it at the end of each session.
 |---|---|
 | Branch | `step-7-web-ui`, pushed to `origin` |
 | Working tree | clean |
-| Harness | **521 passing, 0 failed** |
+| Harness | **531 passing, 0 failed** |
 | Server | matches `v2/` byte for byte, 12 files |
-| Deployed | **version 22**, on the existing deployment id |
+| Deployed | **version 23**, on the existing deployment id |
 
-**Steps 1–9 of the build order are done and verified by hand.** Step **9c** is
-**built but never once used in a browser** — that is the main thing outstanding.
+**Steps 1–9 and 9c are done, and all verified by hand** — supplier editing was
+used in a browser and works. What has *not* been seen yet is the NIF warning on a
+merge, added afterwards; see below.
 
 The deferred claim now works end to end, which was the last unexercised path:
 an entry made with no receipt holds its claim, the completion mail goes instead,
@@ -25,13 +26,13 @@ again sends **nothing**. The `Claim Emailed` guard holds.
 ## First thing: establish the baseline
 
 ```
-npm run v2:test     # expect 521 passing, 0 failed
+npm run v2:test     # expect 531 passing, 0 failed
 npm run v2:verify   # expect "Server matches v2/ — 12 files, byte for byte"
 ```
 
 If either disagrees with those numbers, find out why before changing anything.
 
-The web app, version 22:
+The web app, version 23:
 
 ```
 https://script.google.com/macros/s/AKfycbxKHouifK8w8hbpMGZ_W0yklTKCdCgp-YHAk9uS7Omji_RH_fa4Za6DGYk1ZjOL5tuo/exec
@@ -44,16 +45,15 @@ https://script.google.com/macros/s/AKfycbxKHouifK8w8hbpMGZ_W0yklTKCdCgp-YHAk9uS7
 
 Ordered by what unblocks the most.
 
-1. **Hand-test step 9c — supplier editing.** Built this session, 52 new
-   assertions around it, never clicked. There is a **Suppliers** button in the
-   header. The test worth doing is the real one: find an actual typo in the
-   registry, rename it onto the correctly-spelled supplier, and confirm three
-   things agree afterwards — the entry rows say the new name, the **Drive
-   filenames** were rebuilt, and the two registry rows became one with `Times
-   Used` summed. Then check the alias offer appears and that declining it adds
-   nothing. Remember the harness cannot click: everything in `Index.html` has to
-   be exercised by hand, and four of five defects in one earlier session were
-   client-side.
+1. **See the NIF warning on a merge.** 9c itself works and was used by hand, but
+   the NIF handling was tightened afterwards and its two warnings have never been
+   on screen. Merge two suppliers whose NIFs **differ** — the confirmation should
+   name both numbers before you commit, and the toast afterwards should tell you
+   to go and check the surviving supplier. Then merge into a supplier with **no**
+   NIF and confirm it says the core has *inherited* one. Merging two with matching
+   NIFs must say nothing at all; a warning on every merge is one you learn to
+   ignore. Remember the harness cannot click, and four of five defects in one
+   earlier session were client-side.
 2. **The document link on the phone.** Never once confirmed, because every
    previous attempt was stopped by the account gate that has since been
    understood. Now that a private tab works, tap a document link in the table. If
@@ -115,9 +115,14 @@ Ordered by what unblocks the most.
   fixed the junk filing. No mail rule needed.
 - **`Education` and `Boarding Pass`** are on Work's `Type`. The rest of that list
   is still the original proposal, and the `TODO` in `Config.js` says so.
-- **On a supplier merge the target's spelling survives**, a conflicting NIF keeps
-  the established value, and the registry does not move until every row carries
-  the new name. Reasons in the plan under the management module.
+- **On a supplier merge the target's spelling survives**, the NIF defaults to the
+  **core** entry's, and the registry does not move until every row carries the new
+  name. Reasons in the plan under the management module.
+- **The NIF is not chosen by hand on a merge.** Considered and rejected: the
+  default is right almost every time, and a picker on every merge is a decision
+  you learn to click through, which would cost the warning its meaning. It
+  defaults and warns instead — in the two cases where the core ends up holding a
+  number nobody checked, and in no others.
 - **Correcting a supplier's NIF does not rewrite `Emitente NIF` on past IVA
   entries.** Still genuinely open, but the build takes the option that destroys
   nothing.

@@ -1739,6 +1739,71 @@ check('the established NIF survives', supplierNamed('FNAC').nif === '500000000',
 check('and the displaced one is reported, not silently dropped',
   nifMerge.nifKept && nifMerge.nifKept.kept === '500000000' &&
   nifMerge.nifKept.discarded === '999999999', nifMerge.nifKept);
+check('named, so the warning can send you to a specific supplier',
+  nifMerge.nifKept.into === 'FNAC', nifMerge.nifKept);
+check('nothing was adopted', nifMerge.nifAdopted === null, nifMerge.nifAdopted);
+
+// The core keeping its NIF is right almost every time, but the two ways the core
+// can end up holding a number nobody checked both have to be visible BEFORE the
+// merge, which is the only point you can still back out.
+section('the preview warns about the NIF before anything is merged');
+G.uiCreateEntry('iva', {
+  values: { 'Date': '2026-03-13', 'Counterparty': 'Wortenn', 'Número': '2',
+            'Emitente NIF': '111111111', 'IVA Amount': 1, 'Amount': 10 }
+});
+const nifPreview = G.uiSupplierPreview(supplierRow('Wortenn'), 'Worten', '111111111');
+check('the conflict is reported up front',
+  nifPreview.nifKept && nifPreview.nifKept.kept === '500000001' &&
+  nifPreview.nifKept.discarded === '111111111', nifPreview.nifKept);
+check('and it agrees with what the merge then does',
+  G.uiUpdateSupplier(supplierRow('Wortenn'), {
+    name: 'Worten', type: '', nif: '111111111', aliases: '', was: 'Wortenn'
+  }).nifKept.kept === nifPreview.nifKept.kept);
+
+// The quieter half: the core has NO NIF, so it inherits the typo's. If that
+// number was wrong the core is now wrong, and before this nothing said so.
+section('a merge into a supplier with no NIF reports what it adopted');
+G.uiCreateEntry('health', {
+  values: { 'Date': '2026-03-14', 'Counterparty': 'Adopter Co', 'Patient': 'J',
+            'Invoice Date': '2026-03-14', 'Amount': 15 }
+});
+G.uiCreateEntry('health', {
+  values: { 'Date': '2026-03-14', 'Counterparty': 'Adoptor Co', 'Patient': 'J',
+            'Invoice Date': '2026-03-14', 'Amount': 15 }
+});
+const adoptPreview = G.uiSupplierPreview(supplierRow('Adoptor Co'), 'Adopter Co', '222222222');
+check('the preview says the core will inherit it',
+  adoptPreview.nifAdopted && adoptPreview.nifAdopted.value === '222222222' &&
+  adoptPreview.nifAdopted.into === 'Adopter Co', adoptPreview.nifAdopted);
+const adopted = G.uiUpdateSupplier(supplierRow('Adoptor Co'), {
+  name: 'Adopter Co', type: '', nif: '222222222', aliases: '', was: 'Adoptor Co'
+});
+check('the merge reports it too', adopted.nifAdopted &&
+  adopted.nifAdopted.value === '222222222', adopted.nifAdopted);
+check('and the core actually holds it now',
+  supplierNamed('Adopter Co').nif === '222222222', supplierNamed('Adopter Co').nif);
+
+// Agreeing NIFs are not news, and a warning on every merge is one you learn to
+// ignore - which would cost the two above their meaning.
+section('matching NIFs produce no warning at all');
+G.uiCreateEntry('iva', {
+  values: { 'Date': '2026-03-15', 'Counterparty': 'Fnacx', 'Número': '3',
+            'Emitente NIF': '500000000', 'IVA Amount': 1, 'Amount': 10 }
+});
+const quiet = G.uiUpdateSupplier(supplierRow('Fnacx'), {
+  name: 'FNAC', type: '', nif: '500000000', aliases: '', was: 'Fnacx'
+});
+check('nothing kept, nothing adopted',
+  quiet.nifKept === null && quiet.nifAdopted === null, quiet);
+check('and the NIF is untouched', supplierNamed('FNAC').nif === '500000000');
+
+// The preview must describe the save that is actually about to happen, or the
+// confirmation is a guess. Omitting the NIF means "unchanged", not "cleared".
+section('the preview defaults to the stored NIF when the caller omits it');
+check('same verdict as passing it explicitly',
+  JSON.stringify(G.uiSupplierPreview(supplierRow('Adopter Co'), 'FNAC').nifKept) ===
+  JSON.stringify(G.uiSupplierPreview(supplierRow('Adopter Co'), 'FNAC', '222222222').nifKept),
+  G.uiSupplierPreview(supplierRow('Adopter Co'), 'FNAC').nifKept);
 check('past Emitente NIF values are left alone - the open question stays open',
   mocks._ss.getSheetByName('IVA')
     .getRange(G.uiListEntries('iva').rows.filter(r => r.cells['Número'] === '1')[0].row,
