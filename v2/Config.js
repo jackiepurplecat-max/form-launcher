@@ -183,7 +183,35 @@ const SECTIONS = {
     label: 'IVA Claim Receipts',
     sheet: 'IVA',
     counterpartyLabel: 'Retailer',
-    category: null,
+    // Quadro 02's "Tipo" — `codigoBem` in the declaration file, and a CLOSED list
+    // because the tax app will not accept anything else.
+    //
+    // These eight are not a preference. DRORIVA derives the per-line Tipo from
+    // the ENTITY type in Quadro 01, and for `d` — Funcionários de Embaixadas e
+    // Organismos Internacionais, which is what REF_IVA_TIPO holds — exactly these
+    // are legal. Read out of the app's own EntidadeEnum rather than off the
+    // screen, so the list is complete instead of whatever was visible.
+    //
+    // What is deliberately ABSENT matters as much: food and drink, property
+    // works, utilities, catering, accommodation and telephone are all claimable
+    // by the embassy itself (type `c`) and NOT by an employee. Filing one of
+    // those is a rejected line, so the list refuses it at intake instead.
+    //
+    // Codes live in the label so the exporter can recover them without a second
+    // table to keep in step. See v2/IVA-EXPORT-FORMAT.md.
+    category: {
+      header: 'Tipo', label: 'Tipo', managed: false, required: false,
+      options: [
+        '101 — Vestuário e calçado',
+        '102 — Electrodomésticos',
+        '103 — Móveis',
+        '104 — Jóias, bijutarias',
+        '106 — Artigos de escritório',
+        '107 — Outros bens não especificados',
+        '156 — Reparação ou manutenção de veículos automóveis',
+        '157 — Outros serviços não especificados'
+      ]
+    },
     registryTypeField: null,
     registryNifField: 'Emitente NIF',
     states: [
@@ -208,7 +236,12 @@ const SECTIONS = {
     reference: [
       { label: 'JALLC NIF', property: 'REF_JALLC_NIF' },
       { label: 'My NIF', property: 'REF_MY_NIF' },
-      { label: 'Tipo', property: 'REF_IVA_TIPO' }
+      // "Tipo de Entidade", not "Tipo": Quadro 01's entity type, which is fixed
+      // for every claim. Renamed once the per-line Tipo above became a real
+      // column, because two different things called Tipo on one screen — the
+      // claimant's category and the purchase's — is a mis-selection waiting to
+      // happen. The declaration calls them TipoEntidade and CodigoBem.
+      { label: 'Tipo de Entidade', property: 'REF_IVA_TIPO' }
     ],
     // Sent when the entry is created (receipt uploaded), NOT on status change,
     // so no transition can re-send it.

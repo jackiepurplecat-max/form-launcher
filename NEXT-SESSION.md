@@ -12,7 +12,7 @@ after this. This file is disposable: overwrite it at the end of each session.
 | Branch | `step-7-web-ui`, pushed to `origin` |
 | Last code commit | the tip — `resetAllData()`. `3ece923` before it is `findDebris()`. No hash here on purpose: a commit cannot cite its own |
 | Working tree | clean, and pushed to `origin` |
-| Harness | **719 passing, 0 failed** (was 710) |
+| Harness | **727 passing, 0 failed** (was 719) |
 | Main project | matches `v2/` byte for byte, **13 files** — `Siri.js` is new |
 | Siri project | **new** — `v2-siri/`, matches byte for byte, 2 files |
 | Deployed | main at **version 27**. Siri at **@2**, authorised and answering |
@@ -29,6 +29,40 @@ main thing standing between this and daily use.
 session — the home screen icon works**, which was the last thing daily use
 needed. **Cutover (step 10) is the next thing and it is operational, not code**:
 four toggles in the old account. See "Pick up here", item 7.
+
+## Do this first: IVA gained a Tipo column, and the order matters
+
+**`bootstrap()` has NOT been run and the deployment has NOT been cut.** Both are
+waiting on you, and doing them the wrong way round breaks IVA entry.
+
+IVA's category went from `null` to a **closed list of eight `codigoBem` values** —
+the only per-line Tipo codes the tax app accepts from entity type `d`. That adds a
+**`Tipo` column** to the IVA sheet, because headers are generated from `SECTIONS`.
+
+1. **Run `bootstrap()`** from the main project's editor. It appends `Tipo` to the
+   IVA sheet. Idempotent, and it reports what it added.
+2. **Then cut a new deployment.** `/exec` still serves **version 27**, which
+   predates this, so the live form is unchanged until you do:
+   ```
+   cd v2 && clasp --user v2 deploy -i AKfycbxKHouifK8w8hbpMGZ_W0yklTKCdCgp-YHAk9uS7Omji_RH_fa4Za6DGYk1ZjOL5tuo -d "IVA Tipo"
+   ```
+
+**That order is not a preference.** Deploying first gives you a form that offers
+Tipo and then fails on write with `Unknown column` — the trap already recorded for
+`Receipt Medium`. The push is HEAD-only, so nothing is live yet and there is no
+rush.
+
+**The IVA Shortcut will now be asked for a Tipo.** `catalog` returns the category
+where it previously returned `null`, so the phone gets a closed eight-value
+picker. The Shortcut has **not** been updated — see `SIRI-SHORTCUT-REBUILD.md` for
+how the health picker is wired; IVA needs the same, reading
+`category.values`. Until then IVA entries from Siri simply arrive without a Tipo,
+which is a deferred field like any other rather than a failure.
+
+**`REF_IVA_TIPO` is now labelled "Tipo de Entidade"** in the reference block. It
+was always the Quadro 01 *entity* type, and leaving two different things called
+Tipo on one screen was a mis-selection waiting to happen. Display only — the
+property name is unchanged.
 
 **What is genuinely left, in four handfuls:**
 
@@ -166,7 +200,7 @@ already gone.
 ## First thing: establish the baseline
 
 ```
-npm run v2:test          # expect 719 passing, 0 failed
+npm run v2:test          # expect 727 passing, 0 failed
 npm run v2:verify        # expect "Server matches v2/ — 13 files, byte for byte"
 npm run v2:siri:verify   # expect "Server matches v2-siri/ — 2 files, byte for byte"
 ```

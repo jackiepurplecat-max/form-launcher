@@ -686,13 +686,34 @@ check('counterparty labels come from config',
   ['work:Supplier', 'iva:Retailer', 'health:Provider', 'income:Paid by']
     .every(pair => metaOf(pair.split(':')[0]).counterpartyLabel === pair.split(':')[1]),
   boot.sections.map(s => [s.key, s.counterpartyLabel]));
-check('category shown only where it exists',
-  !!metaOf('work').category && metaOf('iva').category === null && !!metaOf('health').category,
+check('every section exposes its configured category',
+  ['work', 'iva', 'health', 'income'].every(k => !!metaOf(k).category),
   boot.sections.map(s => [s.key, s.category]));
+
+/*
+ * IVA's Tipo is codigoBem in the declaration, and the tax app accepts exactly
+ * these eight for entity type `d`. A ninth value is a line Finanças rejects, so
+ * the count is pinned rather than merely "closed".
+ */
+const ivaTipo = metaOf('iva').category;
+check('iva Tipo is the eight legal codigoBem values',
+  ivaTipo.options.length === 8, ivaTipo.options);
+check('iva Tipo carries the numeric codes the exporter needs',
+  ivaTipo.options.every(o => /^\d{3} — /.test(o)), ivaTipo.options);
+check('iva Tipo excludes what only the embassy itself may claim',
+  !ivaTipo.options.some(o => /^(105|151|152|153|154|155) /.test(o)), ivaTipo.options);
 check('IVA reference block filled from Script Properties',
   metaOf('iva').reference.length === 3 &&
-  metaOf('iva').reference.some(r => r.label === 'Tipo' && r.value === 'Despesas gerais familiares'),
+  metaOf('iva').reference.some(r =>
+    r.label === 'Tipo de Entidade' && r.value === 'Despesas gerais familiares'),
   metaOf('iva').reference);
+
+// The entity type and the per-line purchase type are different things, and both
+// were called Tipo until the column existed. One screen, two Tipos, one of them
+// picked in error - so the collision is pinned shut.
+check('the entity Tipo and the per-line Tipo are not both called Tipo',
+  metaOf('iva').reference.every(r => r.label !== metaOf('iva').category.label),
+  { reference: metaOf('iva').reference.map(r => r.label), category: metaOf('iva').category.label });
 check('other sections have no reference block',
   ['work', 'health', 'income'].every(k => metaOf(k).reference.length === 0));
 check('a blank reference property is dropped rather than shown empty',
@@ -1312,7 +1333,12 @@ section('an open category populates itself from what is used');
 const reasons = G.uiCategoryValues('work');
 check('a value entered earlier comes back as a suggestion',
   reasons.indexOf('Lisbon trip') !== -1, reasons);
-check('a section with no category offers nothing', G.uiCategoryValues('iva').length === 0);
+// IVA's is closed and declared, so it offers its eight regardless of what the
+// column happens to contain - the opposite of the open list above.
+const ivaValues = G.uiCategoryValues('iva');
+check('a closed category offers exactly its declared values', ivaValues.length === 8, ivaValues);
+check('and does not learn new ones from the sheet',
+  ivaValues.every(v => /^\d{3} — /.test(v)), ivaValues);
 
 /* -------------------------------- gating --------------------------------- */
 section('every form function checks the caller');
@@ -2264,8 +2290,16 @@ check('health: the list has values to tap', healthCatalog.category.values.length
   healthCatalog.category.values);
 check('health: counterparty is called Provider', healthCatalog.counterpartyLabel === 'Provider');
 
-check('iva: no category to ask about',
-  siriPost({ key: SIRI_KEY, action: 'catalog', section: 'iva' }).category === null);
+/*
+ * IVA used to have no category, so the Shortcut never asked. It does now, and
+ * the list is closed - Siri must offer these eight and accept nothing else,
+ * because a free-text Tipo is a line the tax app refuses.
+ */
+const ivaCatalog = siriPost({ key: SIRI_KEY, action: 'catalog', section: 'iva' });
+check('iva: category is Tipo', ivaCatalog.category.header === 'Tipo', ivaCatalog.category);
+check('iva: Tipo is a closed list', ivaCatalog.category.closed === true, ivaCatalog.category);
+check('iva: all eight codes reach the phone',
+  ivaCatalog.category.values.length === 8, ivaCatalog.category.values);
 check('income: category present but not required',
   siriPost({ key: SIRI_KEY, action: 'catalog', section: 'income' }).category.required === false);
 
@@ -2608,9 +2642,20 @@ const suspects = wFound.filter(f => f.confidence === 'suspect');
 check('the ambiguous case is labelled suspect, not certain',
   suspects.length > 0 && suspects.every(f => f.reasons.join() === 'siri, awaiting, no category'),
   suspects);
-check('totals agree with the findings',
-  debris.totals.certain === certain.length && debris.totals.suspect === suspects.length,
-  debris.totals);
+/*
+ * Summed across every section, not just work. Comparing the totals to work's
+ * findings alone only ever passed because no other section produced any - which
+ * stopped being true the moment IVA gained a category, since "no category" is
+ * half the suspect rule.
+ */
+const allFindings = Object.keys(debris.sections)
+  .reduce((all, key) => all.concat(debris.sections[key]), []);
+check('totals agree with the findings, across all sections',
+  debris.totals.certain === allFindings.filter(f => f.confidence === 'certain').length &&
+  debris.totals.suspect === allFindings.filter(f => f.confidence === 'suspect').length,
+  { totals: debris.totals, counted: allFindings.length });
+check('work findings are still a subset of the total',
+  certain.length + suspects.length <= allFindings.length);
 
 const windowed = G.findDebris('2026-08-13').sections.work.map(f => f.row);
 check('since keeps rows on the day', windowed.includes(blankRow) && windowed.includes(noAmountRow));
