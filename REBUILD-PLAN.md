@@ -1249,6 +1249,13 @@ Each step should leave the system working.
     refused, naming the column. **What remains is the four Shortcuts** —
     `v2/SIRI-SHORTCUT.md` is the recipe.
 12. **OCR intake.**
+13. **Field validation** — see `VALIDATION-PLAN.md`. Amounts must be numeric and
+    2dp, NIFs exactly 9 digits, IVA under the total, `Número` stripped to
+    alphanumerics and `/`. **Nothing validates values today** — the Siri
+    whitelist checks column names only, and neither the form nor the edit dialog
+    checks more. Collected as one spec because the rules share a home: declared
+    in `Config.js` beside the field, enforced in `createEntry()` and the edit
+    path so no intake route can skip them.
 
 Steps 1–10 restore what you have today, cleanly. 11 and 12 are new capability
 and can wait.

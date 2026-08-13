@@ -113,6 +113,12 @@ phone; nothing below can be done from the CLI.
    - **A durable phone session** — try **Add to Home Screen** from the working
      private tab; iOS gives home-screen web apps their own cookie jar.
 6. **Cutover — step 10.** See the plan.
+7. **Validation — `VALIDATION-PLAN.md`**, written this session and not started.
+   Five rules noticed in use. The one to know now: **nothing validates values
+   anywhere**, on any intake path. A quoted `"Amount":"abc"` would be written to
+   the sheet as text; it only failed during the Siri build because unquoted it
+   broke the JSON parse first. Not urgent, but it is a hole rather than a polish
+   item.
 
 ## Things that will waste your time if you do not know them
 
