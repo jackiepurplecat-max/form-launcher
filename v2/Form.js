@@ -233,6 +233,116 @@ function uploadFilename(name, mimeType) {
   return cleaned + (UPLOAD_EXTENSIONS[(mimeType || '').toLowerCase()] || '');
 }
 
+/* ============================= Staging folder ============================= */
+
+/**
+ * The folder scans and saved mail attachments land in before they belong to an
+ * entry.
+ *
+ * WHY PICKING BEATS UPLOADING. A document that is already in Drive does not need
+ * uploading again — `nameAndFileDocuments()` works from a file ID and does not
+ * care where the file came from, so choosing one MOVES and renames it into the
+ * HelpfulForms tree and it leaves this folder by itself. Uploading a second copy
+ * would instead leave the original behind for ever, doubling storage against a
+ * quota managed by hand, and leaving a folder that only grows — which destroys
+ * the one useful property it has: that what is in it is what is not yet filed.
+ */
+function uiStagingFolderId() {
+  return PropertiesService.getScriptProperties().getProperty(STAGING_FOLDER_PROPERTY);
+}
+
+/**
+ * What is waiting to be filed. Empty list when no folder is configured, rather
+ * than an error: the picker is an addition, and the form must still work
+ * without it.
+ */
+function uiStagingFiles() {
+  requireUiAccess();
+
+  const folderId = uiStagingFolderId();
+  if (!folderId) return [];
+
+  const files = [];
+  const iterator = DriveApp.getFolderById(folderId).getFiles();
+  while (iterator.hasNext()) {
+    const file = iterator.next();
+    files.push({ id: file.getId(), name: file.getName() });
+  }
+
+  return files.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Turn a picked id into a file, refusing anything not actually in the staging
+ * folder.
+ *
+ * The check is the point. `extractFileId` will take a Drive id out of any
+ * string, and this script runs as me — so without it a stale or mistyped id
+ * would have some unrelated file of mine renamed and moved into HelpfulForms.
+ * The web UI is gated to my own account, so this is guarding against an accident
+ * rather than an attacker, but it is the same accident either way.
+ */
+function uiResolveStagingPick(fileId) {
+  const wanted = extractFileId((fileId || '').toString());
+  if (!wanted) throw new Error('No file was chosen.');
+
+  const folderId = uiStagingFolderId();
+  if (!folderId) {
+    throw new Error(`${STAGING_FOLDER_PROPERTY} is not set in Script Properties.`);
+  }
+
+  const iterator = DriveApp.getFolderById(folderId).getFiles();
+  while (iterator.hasNext()) {
+    const file = iterator.next();
+    if (file.getId() === wanted) return file;
+  }
+
+  throw new Error('That file is not in the staging folder. Refresh the list and try again.');
+}
+
+/**
+ * Documents for one submission, from uploads and picks together.
+ *
+ * `picked` is tracked per file and it matters: the callers trash everything in
+ * this list if the write then fails, which is right for an upload they just
+ * created and WRONG for a pick — that is the original, sitting in the staging
+ * folder, and trashing it would destroy the only copy.
+ */
+function uiCollectDocuments(section, uploads, picks) {
+  const collected = [];
+
+  // Cleans up after ITSELF. A second upload failing must not strand the first
+  // one, which has already been created in the section inbox — an unreferenced
+  // file in the tree is the orphan state that cannot be told from a live
+  // document by looking. The callers only see all-or-nothing.
+  try {
+    (uploads || []).forEach(upload => {
+      collected.push({ header: upload.header, file: uiStoreUpload(section, upload), picked: false });
+    });
+
+    (picks || []).forEach(pick => {
+      const header = (pick && pick.header) || '';
+      if (!section.fileColumns.some(col => col.header === header)) {
+        throw new Error(`Not a document column for ${section.sheet}: "${header}"`);
+      }
+      collected.push({ header: header, file: uiResolveStagingPick(pick.id), picked: true });
+    });
+  } catch (error) {
+    uiDiscardDocuments(collected);
+    throw error;
+  }
+
+  return collected;
+}
+
+/** Undo stored documents after a failed write. Never touches a picked file. */
+function uiDiscardDocuments(collected) {
+  collected.forEach(item => {
+    if (item.picked) return;
+    try { item.file.setTrashed(true); } catch (ignored) { /* best effort */ }
+  });
+}
+
 /**
  * Put one uploaded document in the section's inbox and return its file.
  *
@@ -345,13 +455,10 @@ function uiCreateEntry(sectionKey, payload) {
     values[header] = value;
   });
 
-  const stored = [];
+  const documents = uiCollectDocuments(section, uploads, (payload && payload.picked) || []);
+
   try {
-    uploads.forEach(upload => {
-      const file = uiStoreUpload(section, upload);
-      stored.push(file);
-      values[upload.header] = file.getId();
-    });
+    documents.forEach(item => { values[item.header] = item.file.getId(); });
 
     const result = createEntry(sectionKey, values, 'form');
     result.entry = uiEntry(sectionKey, result.row);
@@ -360,9 +467,9 @@ function uiCreateEntry(sectionKey, payload) {
   } catch (error) {
     // Nothing points at these now, and an unreferenced file in the tree is the
     // orphan state that is impossible to tell from a live document by looking.
-    stored.forEach(file => {
-      try { file.setTrashed(true); } catch (ignored) { /* best effort */ }
-    });
+    // A PICKED file is left alone — it is the original in the staging folder,
+    // and trashing it would destroy the only copy of the receipt.
+    uiDiscardDocuments(documents);
     throw error;
   }
 }

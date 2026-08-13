@@ -363,6 +363,56 @@ function mailableUrl(url) {
  * account is not the default this link opens as the wrong person. That is the
  * same unresolved constraint as the phone, not something this can fix.
  */
+/**
+ * Where to go and find the document, for the completion mail.
+ *
+ * Returns null when there is nothing useful to say — no medium recorded, or no
+ * document outstanding — because a line that appears on every reminder saying
+ * something vague is a line you stop reading, and this one has to still be worth
+ * reading on the day it matters.
+ *
+ * The staging folder is where Genius Scan and saved mail attachments land. It is
+ * linked rather than described, and the link carries `authuser` for the usual
+ * reason: several accounts are signed in on every device, and without it the
+ * default account answers and the failure reads as a missing folder.
+ */
+function documentLocationHint(section, sheet, cols, row, needsDocument) {
+  if (!needsDocument) return null;
+
+  const medium = sectionReceiptMedium(section);
+  if (!medium) return null;
+
+  const value = (readCell(sheet, cols, row, medium.header) || '').toString().trim();
+  if (!value) return null;
+
+  const where = {};
+  where[RECEIPT_MEDIUM.electronic] = 'It was electronic — look in your mail.';
+  where[RECEIPT_MEDIUM.physical] = 'It was on paper — scan it.';
+  where[RECEIPT_MEDIUM.both] = 'There was paper AND an email — either will do.';
+
+  const sentence = where[value];
+  if (!sentence) return null;
+
+  const folderId = PropertiesService.getScriptProperties()
+    .getProperty(STAGING_FOLDER_PROPERTY);
+  if (!folderId) return { sentence: sentence, folderUrl: null };
+
+  // The effective user is the account the script runs as, which is also who
+  // this mail goes to — so it is the right account to open the folder as.
+  let viewer = '';
+  try {
+    viewer = (Session.getEffectiveUser().getEmail() || '').toString();
+  } catch (error) {
+    viewer = '';
+  }
+
+  const url = `https://drive.google.com/drive/folders/${folderId}`;
+  return {
+    sentence: sentence,
+    folderUrl: viewer ? `${url}?authuser=${encodeURIComponent(viewer)}` : url
+  };
+}
+
 function completionLink(section, sheet, cols, row) {
   const sheetLink = `${getSpreadsheet().getUrl()}` +
     `#gid=${sheet.getSheetId()}&range=A${row}`;
@@ -428,12 +478,18 @@ function sendCompletionRequest(section, sheet, cols, row, missing, receiptState)
         }
       });
 
+    const hint = documentLocationHint(section, sheet, cols, row, needsDocument);
+
     const lines = [
       `A ${section.label} entry was created but is not finished.`,
       '',
       'Still needed:'
     ];
     outstanding.forEach(label => lines.push(`  - ${label}`));
+    if (hint) {
+      lines.push('', hint.sentence);
+      if (hint.folderUrl) lines.push(`Scans and saved attachments: ${hint.folderUrl}`);
+    }
     lines.push('', 'What was captured:');
     captured.forEach(item => lines.push(`  ${item.label}: ${item.value}`));
     lines.push('', `Finish it here: ${link}`);
@@ -458,6 +514,9 @@ function sendCompletionRequest(section, sheet, cols, row, missing, receiptState)
       `<p>A ${escapeHtml(section.label)} entry was created but is not finished.</p>`,
       `<p><strong>Still needed</strong></p>`,
       `<ul>${outstanding.map(label => `<li>${escapeHtml(label)}</li>`).join('')}</ul>`,
+      hint ? `<p>${escapeHtml(hint.sentence)}${hint.folderUrl
+        ? ` <a href="${escapeHtml(hint.folderUrl)}">Scans and saved attachments</a>`
+        : ''}</p>` : '',
       `<p><strong>What was captured</strong></p>`,
       `<ul>${captured.map(item =>
         `<li>${escapeHtml(item.label)}: ${escapeHtml(item.value)}</li>`).join('')}</ul>`,

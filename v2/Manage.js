@@ -289,10 +289,7 @@ function uiUpdateEntry(sectionKey, sheetRow, payload) {
   // creating: a failed upload then changes nothing at all, rather than leaving
   // the field edits applied and the document missing. If writing the row then
   // fails, the new files are trashed rather than stranded.
-  const stored = [];
-  uploads.forEach(upload => {
-    stored.push({ header: upload.header, file: uiStoreUpload(section, upload) });
-  });
+  const stored = uiCollectDocuments(section, uploads, (payload && payload.picked) || []);
 
   const replaced = [];
   try {
@@ -317,9 +314,9 @@ function uiUpdateEntry(sectionKey, sheetRow, payload) {
       }
     });
   } catch (error) {
-    stored.forEach(item => {
-      try { item.file.setTrashed(true); } catch (ignored) { /* best effort */ }
-    });
+    // Uploads are undone; a picked file is the staging-folder original and is
+    // left exactly where it is.
+    uiDiscardDocuments(stored);
     throw error;
   }
 

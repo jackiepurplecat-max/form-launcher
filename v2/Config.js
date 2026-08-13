@@ -54,6 +54,45 @@ const RECEIPT_STATE = {
 };
 
 /**
+ * WHERE THE DOCUMENT IS, as opposed to whether it has arrived yet.
+ *
+ * `Receipt State` says whether a document is attached. This says where to go and
+ * find it when it is not: in the mail, or on paper in a bag, or both. The
+ * completion mail reads it and tells you where to look.
+ *
+ * It exists because it is only reliably knowable AT CAPTURE TIME. Standing at
+ * the counter you know whether you were handed paper; three days later, reading
+ * a reminder, you do not. That is the same argument the prompted-questions
+ * design rests on — a question that is asked cannot be forgotten.
+ *
+ * NOT REQUIRED, deliberately. Making it required would turn every work expense
+ * submitted through the web form with its receipt already attached into an
+ * INCOMPLETE entry, and mail a completion request for something that is
+ * finished. It earns its place by being useful when set, not by being demanded.
+ */
+const RECEIPT_MEDIUM = {
+  electronic: 'Electronic',
+  physical: 'Physical',
+  both: 'Both'
+};
+
+/**
+ * One definition, shared by the three sections that have documents. Income has
+ * no fileColumns, so it has nothing to find and does not get the field.
+ *
+ * Shared BY REFERENCE on purpose — that is what makes it one definition rather
+ * than three that drift. Nothing may mutate it; the renderers build their own
+ * objects from it.
+ */
+const RECEIPT_MEDIUM_FIELD = {
+  header: 'Receipt Medium',
+  label: 'Receipt is',
+  type: 'choice',
+  required: false,
+  options: [RECEIPT_MEDIUM.electronic, RECEIPT_MEDIUM.physical, RECEIPT_MEDIUM.both]
+};
+
+/**
  * WHY extraFields EXIST
  *
  * The point of these forms is that a claim can be submitted without reopening
@@ -128,7 +167,8 @@ const SECTIONS = {
           'Taxi', 'Train', 'Flight', 'Boarding Pass', 'Hotel', 'Meals',
           'Parking', 'Fuel', 'Education', 'Other'
         ]
-      }
+      },
+      RECEIPT_MEDIUM_FIELD
     ],
     // v1 mailed every work expense on form submission, receipt attached. That
     // is the claim being filed, so it carries forward - but tied to creation
@@ -160,7 +200,8 @@ const SECTIONS = {
     extraFields: [
       { header: 'Número', label: 'Número', type: 'text', required: true },
       { header: 'Emitente NIF', label: 'Emitente NIF', type: 'text', required: true },
-      { header: 'IVA Amount', label: 'Valor do IVA', type: 'number', required: true }
+      { header: 'IVA Amount', label: 'Valor do IVA', type: 'number', required: true },
+      RECEIPT_MEDIUM_FIELD
     ],
     // Fixed for every claim, so they are shown for reference rather than asked
     // per row. Values come from Script Properties, not from this file.
@@ -221,7 +262,8 @@ const SECTIONS = {
       {
         header: 'Type', label: 'Type', type: 'choice', required: false,
         options: ['Doctor', 'Dentist', 'Optician', 'Prescription', 'Exam/Test']
-      }
+      },
+      RECEIPT_MEDIUM_FIELD
     ],
     emailOnCreate: null
   },
@@ -274,6 +316,17 @@ const ROOT_FOLDER_PROPERTY = 'ROOT_FOLDER_ID';
  * no container to resolve. See getSpreadsheet() in Core.js.
  */
 const SPREADSHEET_ID_PROPERTY = 'SPREADSHEET_ID';
+
+/**
+ * Script Property holding the Drive folder that scans and saved mail
+ * attachments land in, before they belong to an entry.
+ *
+ * Documents are PICKED out of it rather than uploaded again, so choosing one
+ * moves it into the HelpfulForms tree and it leaves the folder by itself. That
+ * is what stops this becoming a second copy of every receipt against a quota
+ * managed by hand, and what keeps the folder's contents meaning "not yet filed".
+ */
+const STAGING_FOLDER_PROPERTY = 'STAGING_FOLDER_ID';
 
 /** Folder used for entries in a state that declares no folder of its own. */
 const INBOX_FOLDER = 'Inbox';
@@ -370,6 +423,13 @@ const SCRIPT_PROPERTY_INFO = {
     required: false, secret: true,
     description: 'Key held only in the Shortcut, for the create-only endpoint'
   },
+  STAGING_FOLDER_ID: {
+    required: false, secret: false,
+    description: 'Drive folder that Genius Scan and saved email attachments write to. ' +
+      'The completion mail links to it, and the form lists what is in it so a document ' +
+      'can be PICKED rather than uploaded - picking moves the file out, which is what ' +
+      'keeps the folder meaningful and avoids a second copy of every receipt'
+  },
   SPREADSHEET_ID: {
     required: false, secret: false,
     description: 'This spreadsheet\'s own id. Never read by anything running inside ' +
@@ -382,6 +442,18 @@ const SCRIPT_PROPERTY_INFO = {
 /** The state a newly created entry starts in: the first in the list. */
 function initialState(section) {
   return section.states[0].name;
+}
+
+/**
+ * The Receipt Medium field for a section, or null where it has none.
+ *
+ * Asked rather than inferred from `fileColumns`, so that a section could have
+ * documents without being asked where they are — the two are related but not
+ * the same question, and the config should decide, not this function.
+ */
+function sectionReceiptMedium(section) {
+  return (section.extraFields || [])
+    .filter(field => field.header === RECEIPT_MEDIUM_FIELD.header)[0] || null;
 }
 
 /** Display label for the Counterparty column in a given section. */

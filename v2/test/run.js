@@ -1982,6 +1982,135 @@ calledNames.forEach(name => {
 });
 mocks.Session._setActiveUser(mocks.Session._owner);
 
+/* ------------------- Receipt Medium and the staging folder ---------------- */
+{
+section('Receipt Medium — the field');
+
+check('work has it', !!G.sectionReceiptMedium(G.getSection('work')));
+check('iva has it', !!G.sectionReceiptMedium(G.getSection('iva')));
+check('health has it', !!G.sectionReceiptMedium(G.getSection('health')));
+// Income has no fileColumns, so there is no document to go and find.
+check('income does NOT', G.sectionReceiptMedium(G.getSection('income')) === null);
+
+check('the header was generated onto the sheet',
+  !!G.resolveColumns(mocks._ss.getSheetByName('Work'))['Receipt Medium']);
+
+// Required would turn every completed web-form expense into an incomplete one
+// and mail a reminder for something already finished.
+check('it is NOT required', G.sectionReceiptMedium(G.getSection('work')).required === false);
+
+const mediumEntry = G.createEntry('work', {
+  Counterparty: 'Paper Shop', Amount: 5, Date: '2026-05-05',
+  'Receipt Medium': 'Physical'
+}, 'siri');
+check('an entry with only the medium set is still just incomplete, not refused',
+  mediumEntry.row > 1);
+
+section('The completion mail says where to look');
+
+const mediumSheet = mocks._ss.getSheetByName('Work');
+const mediumCols = G.resolveColumns(mediumSheet);
+const savedStaging = mocks._props.STAGING_FOLDER_ID;
+mocks._props.STAGING_FOLDER_ID = 'fold-staging-test';
+
+function hintFor(value, needsDocument) {
+  G.writeCell(mediumSheet, mediumCols, mediumEntry.row, 'Receipt Medium', value);
+  return G.documentLocationHint(G.getSection('work'), mediumSheet, mediumCols,
+    mediumEntry.row, needsDocument !== false);
+}
+
+check('electronic says look in the mail',
+  /mail/i.test((hintFor('Electronic') || {}).sentence || ''));
+check('physical says scan it',
+  /scan/i.test((hintFor('Physical') || {}).sentence || ''));
+check('both mentions both',
+  /paper/i.test((hintFor('Both') || {}).sentence || ''));
+check('the folder link carries authuser',
+  /authuser=/.test((hintFor('Physical') || {}).folderUrl || ''));
+
+// A line that appears on every reminder saying nothing useful is a line you
+// stop reading, and this one has to work on the day it matters.
+check('silent when no medium was recorded', hintFor('') === null);
+check('silent when the document already arrived',
+  hintFor('Physical', false) === null);
+check('silent for a section that has no medium field',
+  G.documentLocationHint(G.getSection('income'), mediumSheet, mediumCols,
+    mediumEntry.row, true) === null);
+
+delete mocks._props.STAGING_FOLDER_ID;
+const noFolder = hintFor('Physical');
+check('still advises when no staging folder is configured', !!noFolder && !!noFolder.sentence);
+check('but offers no link', noFolder.folderUrl === null);
+if (savedStaging === undefined) delete mocks._props.STAGING_FOLDER_ID;
+else mocks._props.STAGING_FOLDER_ID = savedStaging;
+
+section('Picking a document out of the staging folder');
+
+const staging = mocks.DriveApp.createFolder('Staging');
+mocks._props.STAGING_FOLDER_ID = staging.getId();
+const waiting = staging.createFile({ name: 'scan-001.pdf' });
+const elsewhere = mocks.DriveApp.createFile({ name: 'private.pdf' });
+
+check('the picker lists what is waiting',
+  G.uiStagingFiles().some(f => f.id === waiting.getId()), G.uiStagingFiles());
+check('and nothing that is not in the folder',
+  !G.uiStagingFiles().some(f => f.id === elsewhere.getId()));
+
+// THE check that matters. extractFileId takes an id out of any string and the
+// script runs as me, so an id from outside the folder must not be accepted.
+let refusedOutside = null;
+try { G.uiResolveStagingPick(elsewhere.getId()); } catch (e) { refusedOutside = e.message; }
+check('a file outside the staging folder is REFUSED',
+  /not in the staging folder/.test(refusedOutside || ''), refusedOutside);
+check('and it was not moved or renamed',
+  elsewhere.getName() === 'private.pdf' && !elsewhere.trashed);
+
+const picked = G.uiCreateEntry('work', {
+  values: {
+    Counterparty: 'Picked Co', Amount: 20, Date: '2026-06-06',
+    'Expense Reason': 'Staging test'
+  },
+  picked: [{ header: 'Receipt URL', id: waiting.getId() }]
+});
+check('picking attaches the document', picked.ok !== false, picked);
+check('and the entry is complete — a picked file counts as attached',
+  picked.receiptState === 'attached');
+check('the row points at the picked file',
+  G.readCell(mediumSheet, G.resolveColumns(mediumSheet), picked.row, 'Receipt URL')
+    .indexOf(waiting.getId()) !== -1);
+// The whole reason picking beats uploading: no second copy, and the folder
+// empties itself.
+check('the file LEFT the staging folder', !G.uiStagingFiles()
+  .some(f => f.id === waiting.getId()), G.uiStagingFiles());
+check('it was renamed into the tree, not copied',
+  waiting.getName() !== 'scan-001.pdf', waiting.getName());
+check('and it still exists — picking never trashes', !waiting.trashed);
+
+// A failed write must not destroy the staged original.
+const survivor = staging.createFile({ name: 'scan-002.pdf' });
+let pickFailure = null;
+try {
+  G.uiCreateEntry('work', {
+    values: { Counterparty: 'Doomed', Amount: 1, Nonsense: 'x' },
+    picked: [{ header: 'Receipt URL', id: survivor.getId() }]
+  });
+} catch (e) { pickFailure = e.message; }
+check('a failed create still throws', !!pickFailure, pickFailure);
+check('the PICKED file was NOT trashed — it is the only copy', !survivor.trashed);
+
+let badColumn = null;
+try {
+  G.uiCollectDocuments(G.getSection('work'), [], [{ header: 'Amount', id: survivor.getId() }]);
+} catch (e) { badColumn = e.message; }
+check('a pick aimed at a non-document column is refused',
+  /Not a document column/.test(badColumn || ''), badColumn);
+
+delete mocks._props.STAGING_FOLDER_ID;
+check('no staging folder configured: the picker is empty, not broken',
+  G.uiStagingFiles().length === 0);
+if (savedStaging !== undefined) mocks._props.STAGING_FOLDER_ID = savedStaging;
+}
+
 /* ----------------------------- Siri endpoint ------------------------------ */
 /*
  * This is the one path with no human in front of it and no Google sign-in, so

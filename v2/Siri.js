@@ -107,6 +107,7 @@ function siriAuthorised(request) {
  */
 function siriCatalog(request) {
   const section = getSection(request.section);
+  const medium = sectionReceiptMedium(section);
 
   return {
     ok: true,
@@ -115,6 +116,14 @@ function siriCatalog(request) {
     counterpartyLabel: counterpartyLabel(section),
     currency: SIRI_DEFAULT_CURRENCY,
     date: today(),
+    // Sent so the Shortcut offers the choices without hardcoding them. Null for
+    // Income, which has no documents and so nothing to go looking for.
+    receiptMedium: medium ? {
+      header: medium.header,
+      label: medium.label,
+      required: medium.required === true,
+      values: medium.options.slice()
+    } : null,
     category: section.category ? {
       header: section.category.header,
       label: section.category.label,
@@ -262,6 +271,16 @@ const SIRI_DEFAULT_CURRENCY = 'EUR';
 function siriAllowedFields(section) {
   const allowed = [COMMON.counterparty, COMMON.amount, COMMON.currency, COMMON.date];
   if (section.category) allowed.push(section.category.header);
+
+  // The one deliberate exception to "Siri captures the core only". That rule
+  // exists so adding a field never means re-editing four Shortcuts on a phone,
+  // and it is a good rule. This field breaks it because it is the only one that
+  // is knowable ONLY at capture time: standing at the counter you know whether
+  // you were handed paper, and by the time the completion mail arrives you do
+  // not. A field that can only be answered now must be asked now.
+  const medium = sectionReceiptMedium(section);
+  if (medium) allowed.push(medium.header);
+
   return allowed;
 }
 
