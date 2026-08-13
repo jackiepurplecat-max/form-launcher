@@ -567,6 +567,50 @@ try { G.uiBootstrap(); } catch (e) { strangerCall = e.message; }
 check('google.script.run is gated too, not just doGet', /Not authorized/.test(strangerCall || ''), strangerCall);
 check('the denial says nothing about who IS allowed',
   (strangerCall || '').indexOf('owner@example.test') === -1, strangerCall);
+
+/*
+ * The denial page has to be actionable. Wrong-account is the LIKELY denial here
+ * - several Google accounts are signed in on every device and the v2 account is
+ * never the default - and a bare "Not authorized." sends you hunting a broken
+ * deployment instead of a wrong login.
+ */
+const deniedHtml = strangerPage.getContent();
+check('the denial names the account you ARE signed in as',
+  deniedHtml.indexOf('someone.else@example.test') !== -1, deniedHtml);
+check('but still never names the account that IS allowed',
+  deniedHtml.indexOf('owner@example.test') === -1, deniedHtml);
+check('it offers a way out rather than being a dead end',
+  /accounts\.google\.com\/AccountChooser/.test(deniedHtml), deniedHtml);
+check('the switch link carries no address, so it cannot leak or go stale',
+  !/AccountChooser[^"]*(Email|authuser)=/.test(deniedHtml), deniedHtml);
+
+/*
+ * WEB_APP_URL is optional and getService().getUrl() throws often enough to plan
+ * for, so the button must survive having no URL to come back to. Losing
+ * `continue` costs a tap; losing the button restores the dead end.
+ */
+check('the way out survives an unknown app URL', /AccountChooser"/.test(deniedHtml),
+  deniedHtml.slice(deniedHtml.indexOf('AccountChooser') - 20, deniedHtml.indexOf('AccountChooser') + 40));
+
+mocks._props['WEB_APP_URL'] = 'https://script.google.com/macros/s/AKfycbTEST/exec';
+const deniedWithUrl = G.doGet().getContent();
+check('and when the URL IS known, the chooser returns to the app',
+  /AccountChooser\?continue=https%3A%2F%2Fscript\.google\.com/.test(deniedWithUrl),
+  deniedWithUrl);
+check('the returned-to address is the pinned /exec, never /dev',
+  /continue=[^"]*%2Fexec/.test(deniedWithUrl) && !/%2Fdev/.test(deniedWithUrl),
+  deniedWithUrl);
+delete mocks._props['WEB_APP_URL'];
+check('the denial page is readable on a phone',
+  strangerPage.metaTags.some(t => t.name === 'viewport'), strangerPage.metaTags);
+
+// The visitor's address is interpolated, so it is the one value on this page
+// that could arrive as markup.
+mocks.Session._setActiveUser('<img src=x onerror=alert(1)>@example.test');
+const injectedPage = G.doGet().getContent();
+check('the signed-in address is escaped into the denial page',
+  injectedPage.indexOf('<img src=x') === -1 && /&lt;img/.test(injectedPage), injectedPage);
+mocks.Session._setActiveUser('someone.else@example.test');
 let strangerList = null;
 try { G.uiListEntries('work'); } catch (e) { strangerList = e.message; }
 check('listing is gated', /Not authorized/.test(strangerList || ''), strangerList);

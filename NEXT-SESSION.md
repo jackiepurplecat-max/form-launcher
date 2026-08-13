@@ -12,10 +12,10 @@ after this. This file is disposable: overwrite it at the end of each session.
 | Branch | `step-7-web-ui`, pushed to `origin` |
 | Last code commit | the tip — `resetAllData()`. `3ece923` before it is `findDebris()`. No hash here on purpose: a commit cannot cite its own |
 | Working tree | clean, and pushed to `origin` |
-| Harness | **710 passing, 0 failed** (was 699) |
+| Harness | **719 passing, 0 failed** (was 710) |
 | Main project | matches `v2/` byte for byte, **13 files** — `Siri.js` is new |
 | Siri project | **new** — `v2-siri/`, matches byte for byte, 2 files |
-| Deployed | main at **version 26**. Siri at **@2**, authorised and answering |
+| Deployed | main at **version 27**. Siri at **@2**, authorised and answering |
 | Shortcuts | **All four working again** — health, work, iva, income. Three were destroyed and rebuilt 13 Aug; see below |
 
 Steps 1–9, 9c and **11 are done**. The Siri endpoint is built, harness-covered,
@@ -153,7 +153,7 @@ already gone.
 ## First thing: establish the baseline
 
 ```
-npm run v2:test          # expect 710 passing, 0 failed
+npm run v2:test          # expect 719 passing, 0 failed
 npm run v2:verify        # expect "Server matches v2/ — 13 files, byte for byte"
 npm run v2:siri:verify   # expect "Server matches v2-siri/ — 2 files, byte for byte"
 ```
@@ -370,7 +370,7 @@ clean-up above, then step 5.**
   ```
   cd v2 && clasp --user v2 deploy -i AKfycbxKHouifK8w8hbpMGZ_W0yklTKCdCgp-YHAk9uS7Omji_RH_fa4Za6DGYk1ZjOL5tuo -d "what changed"
   ```
-  **The main deployment is version 26 and is current** — checked 13 Aug. The only
+  **The main deployment is version 27 and is current** — checked 13 Aug. The only
   `v2/` source to change since is `Smoke.js`, which is editor-only tooling and
   reaches no user-facing surface, so `/exec` and the tree agree on everything the
   web UI runs. Nothing to redeploy before cutover.
@@ -387,7 +387,7 @@ clean-up above, then step 5.**
 - **Diagnose access failures from `appsscript.json`, not from the error text.**
   - *"You need access"* = right file, wrong account.
   - *"Cannot open the file"* = no rights to the script itself.
-- **The web app, version 26** — the home page. This is the address to open, to
+- **The web app, version 27** — the home page. This is the address to open, to
   bookmark and to add to the home screen. **Always with `authuser`**, or whichever
   Google account the device happens to default to answers and the failure reads
   as a missing file rather than the wrong identity:
@@ -399,9 +399,26 @@ clean-up above, then step 5.**
   page can call checks `Session.getActiveUser()` besides. On the desktop it opens
   as normal; on the iPhone it has been used in a Safari **Private Browsing** tab
   signed in as the v2 account.
+- **`authuser=` does NOT switch accounts, and this cost time on 13 Aug.** It
+  *selects* among accounts **already signed in to that browser**. If the v2
+  account is not signed in there, there is nothing for it to select, the default
+  answers, and the page refuses. So the address alone can never override a Safari
+  logged in as `jackiepurplecat` — no URL can.
+
+  **`/u/N/` does not work either.** The Drive trick
+  `drive.google.com/u/1/file/d/…` has no equivalent for a web app:
+  `script.google.com/u/1/macros/s/<id>/exec` returns **404** for every N. Tested
+  0, 1 and 2 on 13 Aug — do not spend the hour again.
+
+  **The fix is to sign in to BOTH accounts in the same Safari.** Google account
+  menu → *Add another account* → the v2 address. `authuser=` then has something to
+  resolve to and the link works. Both are needed anyway while the v1 backlog is
+  being worked down, so signing out of `jackiepurplecat` is the wrong move.
 - **Add to Home Screen is the durable phone session**, and the reason it works is
   that iOS gives a home-screen web app **its own cookie jar**, separate from
-  Safari's. That is what stops the default account from winning.
+  Safari's. That is what stops the default account from winning, and it is a
+  stronger fix than `authuser=` because it removes the ambiguity rather than
+  resolving it.
 
   Open the link above in Safari, sign in as the v2 account, confirm the entry list
   actually renders, *then* Share → **Add to Home Screen**. Adding it before
@@ -409,12 +426,26 @@ clean-up above, then step 5.**
 
   Two things to watch, neither yet seen here:
   - **The separate cookie jar cuts both ways** — the icon may open logged out the
-    first time even though Safari is signed in. Sign in once inside it; it should
-    then persist.
+    first time even though Safari is signed in. That is the behaviour working as
+    intended: sign in **as the v2 account only** inside it, and that jar then
+    never knows any other account, which is the whole point.
   - **Apps Script serves through a redirect to `googleusercontent.com`.** If a
     standalone web app follows that out to Safari, the home-screen session is lost
     and it will keep asking. If that happens, the fallback is the Private Browsing
     tab, which is what has been used until now and works.
+
+  **iOS 17 Safari Profiles** is the other clean answer if the home-screen jar
+  misbehaves: a profile gets its own cookies, so one signed in only as v2 gives
+  the same isolation without depending on standalone mode.
+- **A refused visitor now gets a page that says why** — version 27. It names the
+  account you are signed in as and offers **Switch Google account**, returning to
+  the pinned `/exec`. It still never names the address that *is* allowed, for the
+  reason `requireUiAccess()` does not.
+
+  Before 27 the page was a bare `Not authorized.` with no viewport tag, so on a
+  phone it was both uninformative and rendered at desktop width. Wrong-account is
+  the *likely* denial here rather than an exotic one, and that page sent you
+  hunting a broken deployment instead of a wrong login.
 - **The harness still cannot click.** It now covers the Siri endpoint end to end
   — the gate, the whitelist, injection, all four sections — but the phone, the
   deployment and the library resolution are all outside it.

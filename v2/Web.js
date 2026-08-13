@@ -167,13 +167,70 @@ function doGet(e) {
   if (!verdict.ok) {
     Logger.log(`doGet denied (${verdict.email || 'anonymous'}): ${verdict.reason}`);
     return HtmlService
-      .createHtmlOutput('<p style="font:16px system-ui">Not authorized.</p>')
-      .setTitle(UI_TITLE);
+      .createHtmlOutput(uiDeniedPageHtml(verdict))
+      .setTitle(UI_TITLE)
+      // The success path has always carried this and the denial path never did,
+      // so the one page you meet on a phone when something is wrong was also the
+      // one rendered at desktop width.
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
 
   return HtmlService.createHtmlOutputFromFile(UI_PAGE)
     .setTitle(UI_TITLE)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/**
+ * The page a refused visitor sees.
+ *
+ * WHY IT NAMES THE VISITOR BUT NOT THE ALLOWED LIST
+ *
+ * It says which account you are signed in as, which discloses nothing - it is
+ * telling someone their own identity, and they can read it from any Google page
+ * anyway. It still says nothing about WHICH address is allowed, for exactly the
+ * reason requireUiAccess() does not.
+ *
+ * That one fact is the whole point. Several Google accounts are signed in on
+ * every device here and the v2 account is never the default, so "signed in as
+ * the wrong one" is the LIKELY denial rather than an exotic one. A bare
+ * "Not authorized." sends you looking for a broken deployment, a revoked scope
+ * or a bad URL - none of which is the problem - and offers no way out. Printing
+ * the address turns that into something you can act on in one read.
+ *
+ * The switch link goes to Google's account chooser, with `continue` pointing back
+ * at the pinned /exec so that choosing lands on the app rather than on a Google
+ * home page. It carries no address, so it leaks nothing and cannot go stale.
+ *
+ * The button is rendered whether or not that URL can be established, because
+ * WEB_APP_URL is optional and getService().getUrl() throws often enough to plan
+ * for. Losing `continue` costs one extra tap to reopen the link; losing the
+ * button would put the page back to being a dead end, which is the whole defect
+ * this exists to fix.
+ */
+function uiDeniedPageHtml(verdict) {
+  const target = webAppUrl();
+  const chooser = 'https://accounts.google.com/AccountChooser' +
+    (target ? '?continue=' + encodeURIComponent(target) : '');
+
+  const who = verdict.email
+    ? `You are signed in as <strong>${escapeHtml(verdict.email)}</strong>, ` +
+      'which is not the account this runs on.'
+    : 'You are not signed in to a Google account this page can see.';
+
+  return [
+    '<div style="font:16px/1.5 system-ui,-apple-system,sans-serif;',
+    'max-width:34em;margin:12vh auto;padding:0 1.25em;color:#202124">',
+    '<h1 style="font-size:1.35em;margin:0 0 .6em">Not authorized.</h1>',
+    `<p style="margin:0 0 1em">${who}</p>`,
+    `<p style="margin:0 0 1.5em"><a href="${escapeHtml(chooser)}" `,
+    'style="display:inline-block;padding:11px 18px;background:#1a73e8;color:#fff;',
+    'border-radius:6px;text-decoration:none">Switch Google account</a></p>',
+    '<p style="margin:0;color:#5f6368;font-size:.9em">If you have more than one ',
+    'Google account signed in, the one you want may not be the default. Switching ',
+    'above is the fix; adding <code>?authuser=</code> to the address only chooses ',
+    'between accounts already signed in to this browser.</p>',
+    '</div>'
+  ].join('');
 }
 
 /* ============================ Section metadata ============================ */
