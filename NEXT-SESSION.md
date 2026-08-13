@@ -1,9 +1,12 @@
 # Start here
 
-Handover note, written 12 Aug 2026, **revised 13 Aug** after three of the four
-Shortcuts were destroyed and rebuilt the same day. **Operational state only** — the design and
-the reasons live in `REBUILD-PLAN.md`, which is the source of truth. Read that
-after this. This file is disposable: overwrite it at the end of each session.
+Handover note, written 12 Aug 2026, **rewritten 13 Aug as a plan for the 14th.**
+Read *The plan for 14 Aug* below and work down it; everything after it is the
+record of how things got here, and is reference rather than instruction.
+
+**Operational state only** — the design and the reasons live in
+`REBUILD-PLAN.md`, which is the source of truth. This file is disposable:
+overwrite it at the end of each session.
 
 ## Where things stand
 
@@ -27,53 +30,120 @@ main thing standing between this and daily use.
 **Everything code-side is done and checked.** Closed on 13 Aug: the debris audit
 (clean), the staging picker, the phone document link, and **a durable phone
 session — the home screen icon works**, which was the last thing daily use
-needed. **Cutover (step 10) is the next thing and it is operational, not code**:
-four toggles in the old account. See "Pick up here", item 7.
+needed.
 
-## Do this first: IVA gained a Tipo column, and the order matters
+---
 
-**`bootstrap()` has NOT been run and the deployment has NOT been cut.** Both are
-waiting on you, and doing them the wrong way round breaks IVA entry.
+# The plan for 14 Aug
 
-IVA's category went from `null` to a **closed list of eight `codigoBem` values** —
-the only per-line Tipo codes the tax app accepts from entity type `d`. That adds a
-**`Tipo` column** to the IVA sheet, because headers are generated from `SECTIONS`.
+In order. **Steps 1 and 2 are blocking** — one leaves IVA entry broken if skipped,
+the other is the moment of cutover. Everything after them is a choice.
 
-1. **Run `bootstrap()`** from the main project's editor. It appends `Tipo` to the
-   IVA sheet. Idempotent, and it reports what it added.
-2. **Then cut a new deployment.** `/exec` still serves **version 27**, which
-   predates this, so the live form is unchanged until you do:
+## 1. Finish the IVA Tipo change — 10 minutes, and the order is not optional
+
+Left deliberately half-done on 13 Aug: **pushed to HEAD, not bootstrapped, not
+deployed.** IVA's category went from `null` to a closed list of the eight
+`codigoBem` values the tax app accepts, which adds a **`Tipo` column** to the IVA
+sheet, because headers are generated from `SECTIONS`.
+
+1. **Run `bootstrap()`** from the main project's editor. It appends `Tipo` to IVA,
+   is idempotent, and reports what it added.
+2. **Then** cut the deployment:
    ```
    cd v2 && clasp --user v2 deploy -i AKfycbxKHouifK8w8hbpMGZ_W0yklTKCdCgp-YHAk9uS7Omji_RH_fa4Za6DGYk1ZjOL5tuo -d "IVA Tipo"
    ```
 
-**That order is not a preference.** Deploying first gives you a form that offers
-Tipo and then fails on write with `Unknown column` — the trap already recorded for
-`Receipt Medium`. The push is HEAD-only, so nothing is live yet and there is no
-rush.
+**Deploying first gives you a form that offers Tipo and then fails on write with
+`Unknown column`** — the trap already recorded for `Receipt Medium`. `/exec`
+serves version 27, which predates all of this, so nothing is live until step 2
+and there is no rush.
 
-**The IVA Shortcut will now be asked for a Tipo.** `catalog` returns the category
-where it previously returned `null`, so the phone gets a closed eight-value
-picker. The Shortcut has **not** been updated — see `SIRI-SHORTCUT-REBUILD.md` for
-how the health picker is wired; IVA needs the same, reading
-`category.values`. Until then IVA entries from Siri simply arrive without a Tipo,
-which is a deferred field like any other rather than a failure.
+Then **open the IVA form and confirm the eight appear**, because a closed list
+that renders as free text is the failure this project has hit before.
 
-**`REF_IVA_TIPO` is now labelled "Tipo de Entidade"** in the reference block. It
-was always the Quadro 01 *entity* type, and leaving two different things called
-Tipo on one screen was a mis-selection waiting to happen. Display only — the
-property name is unchanged.
+## 2. Cutover — the four toggles
 
-**What is genuinely left, in four handfuls:**
+The thing that has been "next" for three sessions, and there is now no code
+between you and it. `findDebris()` came back clean so **step 1 of the plan's
+cutover is done.**
 
-1. **Cutover** — turn the old forms off, work the v1 backlog down, decommission.
-   No code.
-2. **One unseen verification** — the NIF warnings on a supplier merge. Everything
-   else has now been on screen at least once.
-3. **Field validation, step 13** — `VALIDATION-PLAN.md`. **Nothing validates
-   values on any intake path today.** The real hole rather than a polish item.
-4. **OCR intake, step 12**, plus the plan's open questions. New capability; can
-   wait.
+Signed in as **jackiepurplecat@gmail.com**: `forms.google.com` → each of the four
+forms → **Responses** → **Accepting responses** off. Reversible, so the risk is
+the gap between the first and the fourth — do them in one sitting.
+
+Then freeze v1, both in the old account:
+- Delete the `ICLOUD_EMAIL` Script Property. `getIcloudEmail()` throws, the caller
+  catches, no mail is sent, and Health Done still flips status and renames files.
+- Delete the iOS automation so the failure notifications stop.
+
+Leave the old GitHub Pages page live and untouched to work the backlog down.
+
+## 3. The IVA Shortcut needs its Tipo picker
+
+`catalog` now returns a category for IVA where it returned `null`, so the phone
+can offer the closed eight. **The Shortcut has not been updated.**
+`SIRI-SHORTCUT-REBUILD.md` shows how health's picker is wired; IVA needs the same,
+reading `category.values`.
+
+Not urgent: until it is done, Siri IVA entries arrive with no Tipo, which is a
+deferred field like any other rather than a failure. **Export needs it**, though —
+see step 5.
+
+**Export the Shortcut to a file the moment it works.** That rule exists because
+three of them were lost on 13 Aug.
+
+## 4. The last unseen surface — NIF warnings on a merge
+
+Everything else in the app has now been on screen at least once. 9c works and has
+been used, but the NIF handling was tightened afterwards and its two warnings have
+never been seen. Merge two suppliers whose NIFs **differ**; then merge into one
+with **no** NIF and confirm it says the core has *inherited* one. Matching NIFs
+must say nothing at all.
+
+## 5. The IVA export — the new thing, and the reason today mattered
+
+Goal: **open DRORIVA pre-filled from the IVA section instead of retyping every
+invoice.** The format is fully reverse-engineered in **`v2/IVA-EXPORT-FORMAT.md`** —
+read that first, it has five traps that each produce a file the app silently
+refuses.
+
+Two decisions to make before writing code, neither of them mechanical:
+
+- **Round-trip proof first.** Regenerate the existing sample from its own values
+  and confirm DRORIVA opens it identically — in particular whether omitting the
+  61k NUL padding bytes is fine. Cheap, and it de-risks everything after it. Do
+  not wire it to real rows before this passes.
+- **Which rows, and how does the sheet know?** Presumably complete IVA entries not
+  yet submitted, which needs a *submitted* marker the sheet does not have — a new
+  column and probably a new state. That is a design decision, not a detail.
+
+Then the generator itself. Where it lives is open: an Apps Script function has the
+sheet and Drive to hand but holds the whole base64 payload in memory, and one
+invoice was 111 KB of PDF for 231 KB of XML. **Size is the thing most likely to
+break first.**
+
+## 6. Field validation — step 13
+
+`VALIDATION-PLAN.md`, five rules, none implemented. **Nothing validates values on
+any intake path today** — a quoted `"Amount":"abc"` from Siri would be written to
+the sheet as text. This is a hole, not a polish item.
+
+Today produced independent evidence the rules are right: AT's own `Decimal_15` is
+`fractionDigits=2 minInclusive=0` (rules 1 and 2) and `NifFatura` is `xs:long`
+(rule 3). Two routes to the same rules.
+
+Doing it **after** step 5 is deliberate: the export is what turns a bad value from
+an annoyance into a rejected submission, so build the thing that punishes bad data
+before hardening against it.
+
+## 7. Not tomorrow
+
+- **OCR intake, step 12** — new capability, can wait.
+- **The plan's open questions** — `3-45` versus `3.45` in filenames, whether
+  `Invoiced` is really every Income row's starting state, whether a state can be
+  advanced without its date, and confirming Work's `Type` list against reality.
+- **The NIFs in the public repo** — decided 13 Aug to leave. See the section near
+  the end; it cannot be closed cleanly until v1 is decommissioned anyway.
 
 ## The Shortcuts were destroyed and rebuilt, 13 Aug
 
@@ -232,12 +302,15 @@ documents. Kept below because the reasons still apply.
    is fetched rather than hardcoded, and it goes in `fields` as
    `"Receipt Medium"`.
 
-## Pick up here
+## Pick up here — SUPERSEDED, kept as the record
+
+**The plan for 14 Aug at the top of this file is the live one.** Everything below
+is the trail that got here: what was proved, the commands worth re-running, and
+the reasons behind decisions. Items 1–5 are all done. Items 6–8 survive in the new
+plan as steps 4, 2 and 6 — read them there, and use these for the detail.
 
 **Step 11 is finished** — endpoint and all four Shortcuts, twice over for three of
-them. Steps 1–4 below are struck through and kept only because what they proved is
-worth knowing and the commands are worth re-running. **Start with the debris
-clean-up above, then step 5.**
+them.
 
 1. ~~**Run `siriSetup()`.**~~ **Done.** `SPREADSHEET_ID` and `SIRI_API_KEY` are
    both set on the **main** project. The key is in `.env` as `V2_SIRI_API_KEY`
