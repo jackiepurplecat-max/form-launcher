@@ -115,6 +115,12 @@ class Sheet {
     this.cells = next;
     return this;
   }
+  // Apps Script has both; resetAllData() uses the bulk form so clearing a sheet
+  // is one call rather than one per row.
+  deleteRows(start, howMany) {
+    for (let i = 0; i < howMany; i++) this.deleteRow(start);
+    return this;
+  }
 }
 
 class Spreadsheet {

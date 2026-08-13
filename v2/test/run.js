@@ -2583,5 +2583,72 @@ check('findDebris deletes nothing', wSheet.getLastRow() === oldRow, wSheet.getLa
 
 console.log('\n--- Suppliers sheet ---\n' + dump('Suppliers'));
 console.log('\n--- Work sheet ---\n' + dump('Work'));
+/* ---------------------------- resetAllData() ------------------------------- */
+/*
+ * Runs last, because it empties everything the assertions above were reading.
+ */
+section('resetAllData()');
+
+const stagingFolder = mocks.DriveApp.getFolderById(mocks._props.STAGING_FOLDER_ID);
+stagingFolder.createFile({ name: 'dummy scan.pdf' });
+
+const SHEETS = { work: 'Work', iva: 'IVA', health: 'Health', income: 'Income' };
+const resetRowsBefore = {};
+Object.keys(SHEETS).forEach(k => {
+  resetRowsBefore[k] = mocks._ss.getSheetByName(SHEETS[k]).getLastRow();
+});
+const registryBefore = mocks._ss.getSheetByName('Suppliers').getLastRow();
+
+let refused = false;
+try { G.resetAllData('yes'); } catch (e) { refused = true; }
+check('a wrong confirmation is refused', refused);
+check('a refused reset removes nothing',
+  mocks._ss.getSheetByName('Work').getLastRow() === resetRowsBefore.work);
+
+/*
+ * The literal, not G.RESET_CONFIRMATION: a top-level `const` in the sandbox is a
+ * lexical binding and never becomes a property of the global, so reaching for it
+ * from out here yields undefined and the reset refuses itself. Spelling it out
+ * also pins the contract - changing the constant without changing this fails.
+ */
+const wiped = G.resetAllData('DELETE ALL TEST DATA');
+
+Object.keys(SHEETS).forEach(k => {
+  const sheet = mocks._ss.getSheetByName(SHEETS[k]);
+  check(`${SHEETS[k]} is headers only`, sheet.getLastRow() === 1, sheet.getLastRow());
+  check(`${SHEETS[k]} reported the rows it removed`,
+    wiped.rows[k] === resetRowsBefore[k] - 1, { got: wiped.rows[k], had: resetRowsBefore[k] - 1 });
+});
+
+// The headers are the schema. Losing them would mean bootstrap() had to run again
+// and every column lookup would fail until it did.
+const workAfter = mocks._ss.getSheetByName('Work');
+const headerRow = workAfter.getRange(1, 1, 1, workAfter.getLastColumn()).getValues()[0];
+check('headers survived the reset',
+  headerRow.includes('Counterparty') && headerRow.includes('Amount'), headerRow);
+
+const archive = mocks._ss.getSheetByName('Work Archive');
+check('the archive sheet was cleared too, not recreated',
+  !archive || archive.getLastRow() === 1, archive && archive.getLastRow());
+check('no empty archive sheets were conjured for sections that had none',
+  mocks._ss.getSheetByName('Income Archive') === null ||
+  mocks._ss.getSheetByName('Income Archive').getLastRow() === 1);
+
+check('registry cleared', mocks._ss.getSheetByName('Suppliers').getLastRow() === 1);
+check('registry count reported', wiped.registry === registryBefore - 1,
+  { got: wiped.registry, had: registryBefore - 1 });
+
+check('documents were trashed', wiped.filesTrashed > 0, wiped.filesTrashed);
+check('staging was emptied', wiped.stagingTrashed >= 1, wiped.stagingTrashed);
+check('staging folder lists nothing afterwards', !stagingFolder.getFiles().hasNext());
+check('the staging folder itself survives',
+  !!mocks.DriveApp.getFolderById(mocks._props.STAGING_FOLDER_ID));
+
+// The two tools agree: after a full reset there is nothing left to find.
+const afterReset = G.findDebris();
+check('findDebris finds nothing after a reset',
+  afterReset.totals.certain === 0 && afterReset.totals.suspect === 0 &&
+  afterReset.totals.registry === 0, afterReset.totals);
+
 console.log(`\n================  ${pass} passed, ${fail} failed  ================`);
 process.exit(fail ? 1 : 0);

@@ -211,6 +211,136 @@ function smokeCleanup() {
   return removed;
 }
 
+/* =============================== Full reset =============================== */
+
+/**
+ * The exact string resetAllData() demands before it will do anything.
+ *
+ * A confirmation dialog is not available here - this runs from the editor, where
+ * the last function you picked is one click from running again. So the safeguard
+ * is structural, in the same spirit as hardDeleteEntry() only being able to see
+ * the archive: the destructive path cannot be reached by clicking Run, only by
+ * typing this out.
+ */
+const RESET_CONFIRMATION = 'DELETE ALL TEST DATA';
+
+/**
+ * Trash the documents a sheet's rows point at, then delete the rows.
+ *
+ * Documents first, deliberately: the row is the only record of which file
+ * belongs to it, so deleting rows first would leave files that nothing can
+ * identify. The reverse leaves rows pointing at trashed files, which is visible
+ * and harmless for the two lines it survives. Same argument as archiveEntry's
+ * write-before-remove.
+ */
+function _resetSheetData(sheet, section, report, label) {
+  const last = sheet.getLastRow();
+  if (last < 2) return 0;
+
+  const cols = resolveColumns(sheet);
+  const values = sheet.getRange(2, 1, last - 1, sheet.getLastColumn()).getValues();
+
+  (section.fileColumns || []).forEach(fileCol => {
+    if (!cols[fileCol.header]) return;
+    const at = cols[fileCol.header] - 1;
+    values.forEach((rowValues, i) => {
+      const fileId = extractFileId(rowValues[at]);
+      if (!fileId) return;
+      try {
+        DriveApp.getFileById(fileId).setTrashed(true);
+        report.filesTrashed++;
+      } catch (error) {
+        // Already gone is the common case and not worth failing over, but it is
+        // still reported: a reset that silently skipped files would be the same
+        // class of lie as a status change that renames nothing.
+        report.warnings.push(`${label} row ${i + 2}: ${error}`);
+      }
+    });
+  });
+
+  sheet.deleteRows(2, last - 1);
+  return last - 1;
+}
+
+/**
+ * Empty every sheet of data and trash the documents behind it. Headers, sheets
+ * and folders all survive, so nothing needs re-bootstrapping afterwards.
+ *
+ * Written for Cutover step 1 in the case where the answer to "which of these are
+ * test rows" turns out to be "all of them". findDebris() is the tool when the
+ * sheet holds a mix; this one is for a clean slate.
+ *
+ * WHAT IT CLEARS
+ *
+ * Data rows in all four section sheets and any archive sheets that exist, the
+ * documents those rows reference, the whole supplier registry, and everything in
+ * the Staging folder. The Staging folder itself stays, because Genius Scan is
+ * pointed at it by id.
+ *
+ * WHAT IT DOES NOT TOUCH
+ *
+ * Headers, sheet structure, the Drive folder tree, and Script Properties. So
+ * bootstrap() does not need re-running and no id changes.
+ *
+ * @param {string} confirmation Must be exactly RESET_CONFIRMATION.
+ * @return {Object} What was actually removed, also written to the log.
+ */
+function resetAllData(confirmation) {
+  if (confirmation !== RESET_CONFIRMATION) {
+    throw new Error(
+      `resetAllData() refused: pass exactly resetAllData('${RESET_CONFIRMATION}')`
+    );
+  }
+
+  const report = {
+    rows: {}, archiveRows: {}, registry: 0,
+    filesTrashed: 0, stagingTrashed: 0, warnings: []
+  };
+
+  Object.keys(SECTIONS).forEach(key => {
+    const section = SECTIONS[key];
+    report.rows[key] = _resetSheetData(getSheet(section), section, report, key);
+
+    // getSheetByName rather than getArchiveSheet: the latter creates one, and a
+    // reset that left four new empty sheets behind would be absurd.
+    const archive = getSpreadsheet().getSheetByName(archiveSheetName(section));
+    report.archiveRows[key] = archive
+      ? _resetSheetData(archive, section, report, `${key} archive`)
+      : 0;
+  });
+
+  const registry = getOrCreateRegistrySheet();
+  const registryLast = registry.getLastRow();
+  if (registryLast >= 2) {
+    registry.deleteRows(2, registryLast - 1);
+    report.registry = registryLast - 1;
+  }
+
+  // Ids collected before anything is trashed: a Drive iterator walking a folder
+  // that is being emptied underneath it is not something to rely on.
+  const stagingId = uiStagingFolderId();
+  if (stagingId) {
+    try {
+      const ids = [];
+      const iterator = DriveApp.getFolderById(stagingId).getFiles();
+      while (iterator.hasNext()) ids.push(iterator.next().getId());
+      ids.forEach(id => {
+        try {
+          DriveApp.getFileById(id).setTrashed(true);
+          report.stagingTrashed++;
+        } catch (error) {
+          report.warnings.push(`staging ${id}: ${error}`);
+        }
+      });
+    } catch (error) {
+      report.warnings.push(`staging folder: ${error}`);
+    }
+  }
+
+  Logger.log(JSON.stringify(report, null, 2));
+  return report;
+}
+
 /* ============================== Debris audit ============================== */
 
 /**

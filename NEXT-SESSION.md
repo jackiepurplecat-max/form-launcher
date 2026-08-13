@@ -10,9 +10,9 @@ after this. This file is disposable: overwrite it at the end of each session.
 | | |
 |---|---|
 | Branch | `step-7-web-ui`, pushed to `origin` |
-| Last code commit | `8e7f27f` — the Siri endpoint. Doc commits follow it |
-| Working tree | clean |
-| Harness | **679 passing, 0 failed** (was 663) |
+| Last code commit | the tip — `resetAllData()`. `3ece923` before it is `findDebris()`. No hash here on purpose: a commit cannot cite its own |
+| Working tree | clean. **Committed but not yet pushed to `origin`** — `git push` when you pick this up |
+| Harness | **699 passing, 0 failed** (was 663) |
 | Main project | matches `v2/` byte for byte, **13 files** — `Siri.js` is new |
 | Siri project | **new** — `v2-siri/`, matches byte for byte, 2 files |
 | Deployed | main at **version 26**. Siri at **@2**, authorised and answering |
@@ -115,10 +115,31 @@ Then delete by hand, or via `archiveEntry()`. A typo entered through
 `+ New reason` is permanent too, because `catalog` reads the column from the
 sheet — fix those in the sheet, not in code.
 
+**If the answer turns out to be "all of them", `resetAllData()` is the other
+tool** — also in `v2/Smoke.js`, added 13 Aug and harness-covered. `findDebris()`
+is for a sheet holding a mix; this one is for a clean slate, and it is the
+shorter road into cutover if nothing on the sheet is real yet.
+
+It clears data rows from all four sections and from any archive sheets that
+exist, trashes the documents those rows point at, empties the supplier registry,
+and empties the Staging folder. **Headers, sheets, the Drive tree, the Staging
+folder itself and Script Properties all survive**, so `bootstrap()` does not need
+re-running and no id changes — Genius Scan keeps working, because it is pointed
+at Staging by id.
+
+It **refuses to run** unless called as `resetAllData('DELETE ALL TEST DATA')`.
+There is no confirmation dialog in the editor, where the last function you picked
+is one click from running again, so the safeguard is structural instead: the
+destructive path can only be reached by typing the string out. Documents are
+trashed **before** their rows are deleted, because the row is the only record of
+which file belongs to it. It returns what it actually removed — counts per
+section, registry, files, staging — plus a `warnings` list for files that were
+already gone.
+
 ## First thing: establish the baseline
 
 ```
-npm run v2:test          # expect 679 passing, 0 failed
+npm run v2:test          # expect 699 passing, 0 failed
 npm run v2:verify        # expect "Server matches v2/ — 13 files, byte for byte"
 npm run v2:siri:verify   # expect "Server matches v2-siri/ — 2 files, byte for byte"
 ```
