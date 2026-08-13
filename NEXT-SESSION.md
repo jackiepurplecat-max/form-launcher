@@ -24,8 +24,9 @@ the four Shortcuts were destroyed on 13 Aug and rebuilt the same day; **all four
 are confirmed working.** Cutover (step 10) is still not started, and is again the
 main thing standing between this and daily use.
 
-**Owed from the rebuild: the debris.** Three Shortcuts were built and tested
-against the live sheet. See the debris note below — it is the one loose end.
+**The debris is cleared and the staging picker works** — both closed 13 Aug, and
+they were the last two loose ends before cutover. **Cutover (step 10) is now the
+next thing**, and it is operational rather than code: see "Pick up here", item 7.
 
 ## The Shortcuts were destroyed and rebuilt, 13 Aug
 
@@ -83,13 +84,12 @@ file:
 **The curl test left nothing behind** — its Work row and `ZZ Siri Test` registry
 entry were deleted and the removal verified through the endpoint.
 
-**Building the Shortcuts leaves debris, and this is now the top outstanding
-item.** Each failed run writes a blank or part-filled row and sends a completion
-mail, and `create` teaches the registry whatever it was given. The debris from
-the *first* health and work builds was cleared and verified. **Never checked:
-the first iva and income builds, plus everything the 13 Aug rebuild of all three
-added.** A stray blank row is indistinguishable from a real deferred entry —
-which is the whole point of deferred entries and the reason this matters.
+**Building the Shortcuts leaves debris — audited 13 Aug and the sheet came back
+clean.** Kept because the mechanism is still live: each failed run writes a blank
+or part-filled row and sends a completion mail, and `create` teaches the registry
+whatever it was given. So any future Shortcut work owes another audit. A stray
+blank row is indistinguishable from a real deferred entry — which is the whole
+point of deferred entries and the reason this matters.
 
 **Run `findDebris()` from the editor** — added 13 Aug, in `v2/Smoke.js`, and it is
 the tool for Cutover step 1. It **reports and never deletes**, because a
@@ -107,17 +107,13 @@ and likeliest to be debris. Registry entries with `timesUsed <= 1` are reported
 and **over-report by design**: a genuine one-off supplier looks identical, and
 under-reporting means junk survives cutover.
 
-**It was run live on 13 Aug and returned all zeros — and that result is not yet
-interpretable.** At the time it reported findings only, with no denominator, so
-"scanned forty rows and they are all fine" and "scanned nothing" printed
-identically. `scanned` and a prose `summary` were added straight afterwards for
-exactly that reason, and are pushed and verified. **Re-run it.** The answer is
-now in the first line:
-
-- `Nothing to audit: … it is an empty sheet.` — the sections really are empty,
-  and the debris question is closed because there is nothing there.
-- `Scanned 40 of 40 row(s) … no malformed rows.` — there is real data and none
-  of it is malformed. A different, better answer.
+**Run live on 13 Aug, twice, and the sheet is clean — the debris question is
+closed.** The first run returned all zeros and was *not interpretable*: the
+report carried findings only, so "scanned forty rows, all fine" and "scanned
+nothing" printed identically. `scanned` and a prose `summary` went in for
+exactly that reason, and the re-run confirmed it clean for real. The first line
+of the report now says which of those two you are looking at, and it is worth
+keeping that in mind for any future audit tool here.
 
 **An empty report never means "ready for cutover".** A test run that *succeeded*
 writes a complete, well-formed row, and nothing about `Bolt, 8 EUR, taxi` says
@@ -267,13 +263,9 @@ clean-up above, then step 5.**
    spelled — "Log Eva receipt", because that is how IVA is said. Siri matches
    sound, not spelling.
 
-5. **Click the staging picker — it has never been used.** Built, deployed and
-   harness-covered, but every defect it could still have is client-side, and
-   four of five in an earlier session were exactly that. Open an entry awaiting
-   a document and check the *"— or choose a scan —"* dropdown lists what Genius
-   Scan put in `Staging`. Picking one should **move it out of that folder** and
-   into the section tree, renamed. If the file is still in `Staging` afterwards,
-   something wrote the id without filing it.
+5. ~~**Click the staging picker.**~~ **Done — tested and works.** The last
+   never-once-used surface in the web UI, and the one where four of five defects
+   in an earlier session were client-side. It picks, files and renames.
 6. **Then the older items**, still outstanding from last session and still
    needing a phone:
    - **See the NIF warning on a merge** — 9c works and was used by hand, but the
@@ -287,7 +279,29 @@ clean-up above, then step 5.**
      already around it.
    - **A durable phone session** — try **Add to Home Screen** from the working
      private tab; iOS gives home-screen web apps their own cookie jar.
-7. **Cutover — step 10.** See the plan.
+7. **Cutover — step 10, and it is now the next thing.** The plan lists five
+   steps; **step 1 is done** — `findDebris()` was re-run after the denominator
+   went in and came back clean, so there is no test debris to clear. The rest is
+   operational, not code:
+
+   2. **Turn off "Accepting responses" on all four old v1 forms.** In the *old*
+      account. This is the actual moment of cutover and the one irreversible-in-
+      practice step, because until it happens a claim can land in either system
+      and you will not know which — the split-brain the plan names.
+   3. New submissions go to the new account from here.
+   4. **The old GitHub Pages page stays live and untouched**, pointed at the old
+      account, used only to work the remaining backlog down.
+   5. **When that backlog hits zero:** unpublish the old page, delete the old web
+      app deployment, keep the old sheet and Drive as archive.
+
+   **Do the phone document link in item 6 first.** It is five minutes, it is the
+   one unverified thing that daily use hits constantly, and it is far cheaper to
+   find broken while the old system is still accepting.
+
+   **Then stop changing v1** — see "What stays frozen" in the plan. Its known
+   bugs are accepted. To stop the iCloud emails without touching its code, delete
+   the `ICLOUD_EMAIL` Script Property on the old account, then delete the iOS
+   automation so the failure notifications stop.
 8. **Validation — `VALIDATION-PLAN.md`**, written this session and not started.
    Five rules noticed in use. The one to know now: **nothing validates values
    anywhere**, on any intake path. A quoted `"Amount":"abc"` would be written to
