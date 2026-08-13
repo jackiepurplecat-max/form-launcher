@@ -1246,8 +1246,9 @@ Each step should leave the system working.
     list off the sheet; `resolve` corrected a 0.92 mishearing against the real
     registry; `create` wrote a row, reported it incomplete, sent the completion
     mail and taught the registry; a file column and a `Status` field were both
-    refused, naming the column. **What remains is the four Shortcuts** —
-    `v2/SIRI-SHORTCUT.md` is the recipe.
+    refused, naming the column. **All four Shortcuts are built and working** —
+    `v2/SIRI-SHORTCUT.md` is the recipe, rewritten around what the first one
+    actually cost. **Step 11 is done.**
 12. **OCR intake.**
 13. **Field validation** — see `VALIDATION-PLAN.md`. Amounts must be numeric and
     2dp, NIFs exactly 9 digits, IVA under the total, `Número` stripped to

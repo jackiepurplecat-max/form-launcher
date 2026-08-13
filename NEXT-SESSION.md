@@ -15,24 +15,22 @@ after this. This file is disposable: overwrite it at the end of each session.
 | Main project | matches `v2/` byte for byte, **13 files** — `Siri.js` is new |
 | Siri project | **new** — `v2-siri/`, matches byte for byte, 2 files |
 | Deployed | main at **version 26**. Siri at **@2**, authorised and answering |
-| Shortcuts | **"Log health claim" and "Log expense" built and working.** `iva` and `income` still to build |
+| Shortcuts | **All four built and working** — health, work, iva, income |
 
-Steps 1–9 and 9c are done and verified by hand. **Step 11's server side is
-finished: built, pushed, harness-covered, deployed, configured, and every
-action exercised live against the real spreadsheet** — including `create`, the
-whitelist refusals, and the registry learning what it created. Nothing on the
-server is untested. **Two of the four Shortcuts are built.** Cutover (step 10) is
-still not started.
+Steps 1–9, 9c and **11 are done**. The Siri endpoint is built, harness-covered,
+deployed, configured, exercised live against the real spreadsheet, and **all
+four Shortcuts work** — health, work, iva, income. Cutover (step 10) is still
+not started, and is now the main thing standing between this and daily use.
 
 **The curl test left nothing behind** — its Work row and `ZZ Siri Test` registry
 entry were deleted and the removal verified through the endpoint.
 
-**The Shortcut build left rows behind, and they have been deleted.** Getting the
-first two working took many runs, each writing a blank or part-filled row and
-sending a completion mail. All were removed, along with the junk suppliers they
-taught the registry, and the removal was verified through the endpoint. **Expect
-the same debris from `iva` and `income`, and clear it the same way** — a stray
-blank row is indistinguishable from a real deferred entry.
+**Building the Shortcuts leaves debris.** Each failed run writes a blank or
+part-filled row and sends a completion mail, and `create` teaches the registry
+whatever it was given. The health and work debris was cleared and verified;
+**check for rows and junk suppliers left by the iva and income builds** — a
+stray blank row is indistinguishable from a real deferred entry, which is the
+whole point of deferred entries and the reason this matters.
 
 ## First thing: establish the baseline
 
@@ -44,9 +42,11 @@ npm run v2:siri:verify   # expect "Server matches v2-siri/ — 2 files, byte for
 
 If any of those disagree, find out why before changing anything.
 
-## Setup — mostly done, one left
+## Setup — done
 
-Built, deployed and harness-covered. Only step 4 remains.
+`bootstrap()` re-run, `HEALTH_PATIENTS` set and verified live, the Staging
+folder adopted, and the medium question added to the three Shortcuts that have
+documents. Kept below because the reasons still apply.
 
 1. **Run `bootstrap()`** from the main project's editor. It appends the new
    `Receipt Medium` header to Work, IVA and Health. Idempotent, so it is safe to
@@ -59,16 +59,16 @@ Built, deployed and harness-covered. Only step 4 remains.
 3. ~~**Set `HEALTH_PATIENTS`.**~~ **Done and verified live** — `catalog` returns
    `Jackie, Kit, Auryn, Phoenix`, `closed: true`. The sheet now stores full
    names, and the initials already in the Patient column were replaced.
-4. **Add the medium question to the three Shortcuts** — Health, Work and IVA, not
-   Income. `catalog` now returns `receiptMedium.values`, so use a Choose from List
-   fed from it rather than hardcoding, and send it in `fields` as
-   `"Receipt Medium"`. It is the fourth allowed field on those sections.
+4. ~~**Add the medium question to the three Shortcuts.**~~ **Done** — Health, Work
+   and IVA have it; Income has no documents so there is nothing to ask.
+   `catalog` returns `receiptMedium.values`, so the list is fetched rather than
+   hardcoded, and it goes in `fields` as `"Receipt Medium"`.
 
-## Pick up here — finishing Siri
+## Pick up here
 
-Steps 1–3 are done — kept here struck through, because what they proved is worth
-knowing and the commands are worth re-running. **Start at step 4.** It needs a
-phone; nothing below can be done from the CLI.
+**Step 11 is finished** — endpoint and all four Shortcuts. Steps 1–4 below are
+struck through and kept only because what they proved is worth knowing and the
+commands are worth re-running. **Start at step 5.**
 
 1. ~~**Run `siriSetup()`.**~~ **Done.** `SPREADSHEET_ID` and `SIRI_API_KEY` are
    both set on the **main** project. The key is in `.env` as `V2_SIRI_API_KEY`
@@ -122,25 +122,21 @@ phone; nothing below can be done from the CLI.
    ```
    Note there is **no `-X POST`** — see the curl trap below; `-d` already makes
    it a POST.
-4. **Build the Shortcuts.** `v2/SIRI-SHORTCUT.md` is the full recipe — protocol,
-   per-section field whitelist, and a *Read this before building anything*
-   section that did not exist when health was built.
+4. ~~**Build the Shortcuts.**~~ **All four done and working.** `v2/SIRI-SHORTCUT.md`
+   is the recipe, rewritten around what building them actually cost.
 
-   **"Log health claim" and "Log expense" are built and working.** Two left:
+   Named to match how the phrase is actually spoken rather than how it is
+   spelled — "Log Eva receipt", because that is how IVA is said. Siri matches
+   sound, not spelling.
 
-   - **`iva`** — the simplest. Duplicate either, delete the whole category block
-     (catalog call, picker, everything), and send `Counterparty` and `Amount`
-     only. Número, Emitente NIF and Valor do IVA are completion-step fields, so
-     every entry arrives incomplete by design.
-   - **`income`** — closest to a copy of `work`. Same open-list picker sent as
-     `Reason` (no space), plus a `(none)` marker, since Income's category is the
-     one that is not required.
-
-   That first build took hours and **none of it was this project's server** —
-   every delay was a Shortcuts behaviour, mostly its habit of guessing which
-   identically-named magic variable you meant. The recipe now front-loads all six
-   traps and documents the open-list picker. Read those before starting.
-5. **Then the older items**, still outstanding from last session and still
+5. **Click the staging picker — it has never been used.** Built, deployed and
+   harness-covered, but every defect it could still have is client-side, and
+   four of five in an earlier session were exactly that. Open an entry awaiting
+   a document and check the *"— or choose a scan —"* dropdown lists what Genius
+   Scan put in `Staging`. Picking one should **move it out of that folder** and
+   into the section tree, renamed. If the file is still in `Staging` afterwards,
+   something wrote the id without filing it.
+6. **Then the older items**, still outstanding from last session and still
    needing a phone:
    - **See the NIF warning on a merge** — 9c works and was used by hand, but the
      NIF handling was tightened afterwards and its two warnings have never been
@@ -153,8 +149,8 @@ phone; nothing below can be done from the CLI.
      already around it.
    - **A durable phone session** — try **Add to Home Screen** from the working
      private tab; iOS gives home-screen web apps their own cookie jar.
-6. **Cutover — step 10.** See the plan.
-7. **Validation — `VALIDATION-PLAN.md`**, written this session and not started.
+7. **Cutover — step 10.** See the plan.
+8. **Validation — `VALIDATION-PLAN.md`**, written this session and not started.
    Five rules noticed in use. The one to know now: **nothing validates values
    anywhere**, on any intake path. A quoted `"Amount":"abc"` would be written to
    the sheet as text; it only failed during the Siri build because unquoted it
