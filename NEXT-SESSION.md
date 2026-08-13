@@ -387,11 +387,34 @@ clean-up above, then step 5.**
 - **Diagnose access failures from `appsscript.json`, not from the error text.**
   - *"You need access"* = right file, wrong account.
   - *"Cannot open the file"* = no rights to the script itself.
-- **The web app, version 26**, on the desktop as normal; on the iPhone a Safari
-  **Private Browsing** tab signed in as the v2 account:
+- **The web app, version 26** — the home page. This is the address to open, to
+  bookmark and to add to the home screen. **Always with `authuser`**, or whichever
+  Google account the device happens to default to answers and the failure reads
+  as a missing file rather than the wrong identity:
   ```
-  https://script.google.com/macros/s/AKfycbxKHouifK8w8hbpMGZ_W0yklTKCdCgp-YHAk9uS7Omji_RH_fa4Za6DGYk1ZjOL5tuo/exec
+  https://script.google.com/macros/s/AKfycbxKHouifK8w8hbpMGZ_W0yklTKCdCgp-YHAk9uS7Omji_RH_fa4Za6DGYk1ZjOL5tuo/exec?authuser=purplecat.admin@gmail.com
   ```
+  Safe to write down, unlike the Siri `/exec`: it is **not** anonymous. A signed-out
+  request 302s to `accounts.google.com` — verified 13 Aug — and every function the
+  page can call checks `Session.getActiveUser()` besides. On the desktop it opens
+  as normal; on the iPhone it has been used in a Safari **Private Browsing** tab
+  signed in as the v2 account.
+- **Add to Home Screen is the durable phone session**, and the reason it works is
+  that iOS gives a home-screen web app **its own cookie jar**, separate from
+  Safari's. That is what stops the default account from winning.
+
+  Open the link above in Safari, sign in as the v2 account, confirm the entry list
+  actually renders, *then* Share → **Add to Home Screen**. Adding it before
+  signing in saves a logged-out page.
+
+  Two things to watch, neither yet seen here:
+  - **The separate cookie jar cuts both ways** — the icon may open logged out the
+    first time even though Safari is signed in. Sign in once inside it; it should
+    then persist.
+  - **Apps Script serves through a redirect to `googleusercontent.com`.** If a
+    standalone web app follows that out to Safari, the home-screen session is lost
+    and it will keep asking. If that happens, the fallback is the Private Browsing
+    tab, which is what has been used until now and works.
 - **The harness still cannot click.** It now covers the Siri endpoint end to end
   — the gate, the whitelist, injection, all four sections — but the phone, the
   deployment and the library resolution are all outside it.
