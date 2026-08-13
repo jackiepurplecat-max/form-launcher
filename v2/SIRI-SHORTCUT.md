@@ -105,43 +105,145 @@ did not:
 No document column is accepted from Siri, on purpose — see the header of
 `v2/Siri.js`. Photograph the receipt later, through the web form.
 
+## Read this before building anything
+
+Health was built first, by hand, and cost far longer than it should have.
+**Every one of the delays came from the same few Shortcuts behaviours**, none of
+them to do with this project's server. They are listed here because they will
+happen again on the next three.
+
+**1. Name every result the moment it exists.** An action's output is a "magic
+variable", and Shortcuts names it after the *kind* of action — `Contents of
+URL`, `Dictionary Value`, `Provided Input`. A finished Shortcut here has **three
+`Contents of URL` and four `Dictionary Value`, all with the same name**, so when
+you drop one into a field Shortcuts *guesses* which you meant. It guesses "most
+recent". **Five separate bugs in the first build were wrong guesses**, including
+one that silently sent an empty supplier for two runs.
+
+So: after every action whose result is used later, add **Set Variable** and give
+it a real name. It is not optional discipline, it is the difference between an
+hour and ten minutes.
+
+**2. A variable chip can carry a *property* instead of the value.** Sometimes
+Shortcuts attaches a property and shows the *property's* name on the chip —
+`File Size`, `Values`. The condition then tests something you never meant. Tap
+the chip; the sheet lets you pick the variable and clear the property.
+
+**3. `Get Dictionary Value` output has no known type**, because it could return
+anything. So an `If` on it offers only *has any value* / *does not have any
+value* — no `is` or `is not`. To compare text, force the type: a **Text** action
+containing only that variable, then **Set Variable**. A Text action always
+outputs text, so the comparisons appear.
+
+**4. Booleans do not compare to numbers.** `ok` comes back as JSON `true`, not
+`1`. `If ok is not 1` fails with *"couldn't convert from Boolean to Dictionary"*.
+Test the **presence of `error`** instead — see step 14.
+
+**5. Quick Look is the debugger.** Drop one after any action to see exactly what
+it produced, then delete it. Every fault in the first build was found this way in
+one or two steps. Pair it with **Count → Characters** when a value looks right
+but behaves wrong: a key that had a trailing space read as 33 characters.
+
+**6. It is slow, and that is normal.** `catalog` ≈ 2s, `resolve` ≈ 3–4s,
+`create` ≈ 3–5s. **Roughly ten seconds of waiting across the three calls**, with
+the worst pause between the amount prompt and the alert. It is not frozen.
+
 ## Building "Log health claim"
 
-The others are the same with a different `section` and one fewer or one more
-question. Build this one first and duplicate it.
+Build this one, get it working, then duplicate for the other three.
 
-1. **Text** → paste the key. Rename the variable **Key**.
-   *Do not type the key into each Get Contents action* — one place to change it.
-2. **Text** → paste the endpoint URL. Rename to **URL**.
-3. **Get Contents of URL** — URL, Method `POST`, Request Body `JSON`:
-   `key` = Key, `section` = `health`, `action` = `catalog`.
-4. **Get Dictionary Value** → `category.values` from the result.
-   Shortcuts reads dotted keys, so this gets the list in one step.
-5. **Choose from List** → that value. Prompt: *Who is it for?*
-   This is a tap. A patient cannot be misheard.
-6. **Ask for Input** → Text. *Which provider?*
-7. **Ask for Input** → **Number**. *How much?*
-   Number, not Text. Amount errors are the dangerous ones — a supplier typo is
-   obvious in a list, "29.80" instead of "298" is not.
-8. **Get Contents of URL** — `key`, `section` = `health`, `action` = `resolve`,
-   `counterparty` = the provider from step 6.
-9. **Get Dictionary Value** → `confirm`.
-10. **Show Alert** (not a notification — you are looking at the phone):
+**Setup — the two constants**
+
+1. **Text** → paste the endpoint URL. → **Set Variable** `URL`.
+2. **Text** → paste the key. → **Set Variable** `Key`.
+   One place to change when the key is rotated. Both Text actions are called
+   `Text` in the picker, which is exactly why they need names.
+
+**Ask the questions**
+
+3. **Get Contents of URL** → `URL`. Method `POST`; header `Content-Type` =
+   `application/json`; Request Body `JSON` with `key` = `Key` variable,
+   `section` = `health`, `action` = `catalog`.
+4. **Get Dictionary Value** → `Value` for `category.values`.
+   *`category.values` is a **key you type**, not a variable.* If dotted paths do
+   not resolve, split into two actions.
+5. **Choose from List** → prompt *Who is it for?* → **Set Variable** `Patient`.
+   A tap, so it cannot be misheard.
+6. **Ask for Input** → Text, *Which provider?* → **Set Variable** `Provider`.
+7. **Ask for Input** → **Number**, *How much?*
+8. **Get Numbers from Input** → **Set Variable** `Amount`.
+9. **If** `Amount` **does not have any value** → **Show Alert** *"Amount must be
+   a number"* → **Stop This Shortcut** → **End If**.
+   Steps 8–9 exist because letters typed at the prompt otherwise travel all the
+   way to the server and come back as a JSON parse error. The Number input type
+   gives a numeric keypad on iOS but does not constrain typing on a Mac.
+
+**Confirm before anything is written**
+
+10. **Get Contents of URL** — duplicate the one from step 3 rather than building
+    it again; it carries the method, header and body structure. Change `action`
+    to `resolve` and add `counterparty` = `Provider`.
+11. **Get Dictionary Value** → `confirm` → **Set Variable** `Confirmed`.
+    Check the source is the **resolve** response, not the catalog one.
+12. **Show Alert**, title *Log health claim*, **Show Cancel Button** on:
 
     ```
-    Health claim
-    <Choose from List result> · <confirm>
-    €<amount> · today
+    Patient · Confirmed
+    €Amount · Current Date
     ```
 
-    Buttons **Save** and **Cancel**. Cancel stops the Shortcut here and nothing
-    has been written.
-11. **Get Contents of URL** — `key`, `section` = `health`, `action` = `create`,
-    and a `fields` dictionary: `Counterparty` = the value from step 9 *(the
-    resolved one, not what was dictated)*, `Amount` = step 7, `Patient` = step 5.
-12. **Get Dictionary Value** → `ok`. **If** it is not `1`, get `error` and
-    **Show Alert** with it. Otherwise get `complete`; if that is `0`, show
-    *"Saved — completion mail sent"*.
+    **Use `Confirmed`, never `Provider`** — the corrected name is the entire
+    point of step 10. Cancel stops the Shortcut and nothing has been written.
+
+**Save**
+
+13. **Get Contents of URL** — duplicate again; `action` = `create`, and a fourth
+    row `fields` with **Type: Dictionary**. *Its expander is the **`>` chevron on
+    the left**, not the "0 items" text on the right.* Inside it:
+
+    | Key | Type | Value |
+    |---|---|---|
+    | `Counterparty` | Text | `Confirmed` |
+    | `Amount` | **Number** | `Amount` |
+    | `Patient` | Text | `Patient` |
+
+    **`Amount` must be Type `Number`.** As Text it arrives as a string and gets
+    parsed against the spreadsheet's Portuguese locale, where the decimal
+    separator is a comma. No error, just a wrong figure.
+
+    → **Set Variable** `CreateResult`.
+14. **Get Dictionary Value** → `error` in `CreateResult` → **Set Variable**
+    `ErrorText`.
+15. **If** `ErrorText` **has any value** → **Show Alert** `ErrorText`;
+    **Otherwise** → **Show Alert** *"Saved — finish it from the completion
+    mail"*; **End If**.
+
+    Testing `error` rather than `ok` avoids the Boolean problem entirely: on
+    success the server sends no `error` key, so it is empty.
+
+**Step 15 is not optional.** A refusal returns **HTTP 200** with `ok: false`, so
+without it a rejected entry looks exactly like a saved one and you find out from
+a gap in the sheet weeks later.
+
+### Test the failure path
+
+With `"section":"pets"` temporarily in the create request you should see
+*"Unknown section: pets…"*. Change it back. Nothing is written either way, so
+there is nothing to clean up.
+
+### Alternative to the Dictionary builder
+
+If the nested editor will not open, send the body as raw text instead: a **Text**
+action holding the whole JSON, and Request Body set to **`File`** pointing at it.
+
+```
+{"key":"Key","section":"health","action":"create","fields":{"Counterparty":"Confirmed","Amount":Amount,"Patient":"Patient"}}
+```
+
+Quotes around every variable **except `Amount`**, which stays bare so it is a
+JSON number. Type the line with placeholder words first and swap each for a
+variable afterwards — it is far easier than inserting them as you go. Quick Look
+it before running: you want `"Amount":70`, not `"Amount":"70"`.
 
 Step 12 is not optional. Without it a refusal is silent and you find out weeks
 later, from a sheet with a gap in it.
@@ -152,16 +254,26 @@ later, from a sheet with a gap in it.
 
 ### The other three
 
+**Duplicate the finished health Shortcut** and edit the copy. Change `section`
+in **all three** requests — missing one is the obvious mistake, and it fails in a
+confusing way: catalog and resolve would answer for the wrong section while
+create writes to the right one.
+
 - **Log expense** (`work`) — step 5 becomes **Ask for Input**, Text, *What for?*,
-  sent as `Expense Reason`. It is an open list, so offer `category.values` from
-  `catalog` as suggestions if you like, but free text must stay allowed. `Type`
-  is not asked: the registry fills it, because Uber is always a Taxi.
-- **Log receipt** (`iva`) — drop step 5 entirely. Número, Emitente NIF and Valor
-  do IVA are **not** asked; they are retyped into Finanças from the completion
-  form later. Every IVA entry made this way arrives incomplete, and that is
-  expected.
+  sent as `Expense Reason`; free text must stay allowed, so do not turn it into a
+  Choose from List even though `catalog` returns suggestions. `Type` is not
+  asked: the registry fills it, because Uber is always a Taxi.
+- **Log receipt** (`iva`) — **delete steps 3, 4 and 5 entirely.** IVA has no
+  category, so there is nothing to fetch and nothing to choose, and dropping the
+  `catalog` call makes this the fastest of the four by about two seconds. Número,
+  Emitente NIF and Valor do IVA are **not** asked; they are retyped into Finanças
+  from the completion form later. Every IVA entry made this way arrives
+  incomplete — expected, not a fault.
 - **Log income** (`income`) — step 5 becomes an optional **Ask for Input** sent
   as `Reason`.
+
+Only `iva` changes shape. The other two are a one-word `section` change plus
+swapping the category question.
 
 ## When it does not work
 

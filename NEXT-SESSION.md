@@ -15,6 +15,7 @@ after this. This file is disposable: overwrite it at the end of each session.
 | Main project | matches `v2/` byte for byte, **13 files** — `Siri.js` is new |
 | Siri project | **new** — `v2-siri/`, matches byte for byte, 2 files |
 | Deployed | main is still **version 23**. Siri is at **@2**, authorised, and answering |
+| Shortcuts | **"Log health claim" built and working.** Three still to build |
 
 Steps 1–9 and 9c are done and verified by hand. **Step 11's server side is
 finished: built, pushed, harness-covered, deployed, configured, and every
@@ -23,10 +24,15 @@ whitelist refusals, and the registry learning what it created. Nothing on the
 server is untested. **What is left is the four Shortcuts.** Cutover (step 10) is
 still not started.
 
-**The live test left nothing behind.** Its Work row and its `ZZ Siri Test`
-registry entry were deleted and the removal was verified through the endpoint:
-the mishearing that had matched at 0.92 now returns `known: false`, and the
-Expense Reason list is back to one value. Nothing to clean up.
+**The curl test left nothing behind** — its Work row and `ZZ Siri Test` registry
+entry were deleted and the removal verified through the endpoint.
+
+**The Shortcut build did.** Getting "Log health claim" working took several runs,
+each writing a row: **Health rows 3, 4 and 6 at least**, most of them blank or
+part-filled, plus whatever the later runs added and a junk supplier or two in the
+registry (`sfsd` among them). Every one also sent a completion mail. **Delete
+them before building the other three**, or the next debugging session cannot tell
+its own rows from these.
 
 ## First thing: establish the baseline
 
@@ -96,9 +102,20 @@ phone; nothing below can be done from the CLI.
    ```
    Note there is **no `-X POST`** — see the curl trap below; `-d` already makes
    it a POST.
-4. **Build the Shortcuts.** `v2/SIRI-SHORTCUT.md` is the full recipe, including
-   the protocol and the per-section field whitelist. Build "Log health claim"
-   first and duplicate it.
+4. **Build the Shortcuts.** `v2/SIRI-SHORTCUT.md` is the full recipe — protocol,
+   per-section field whitelist, and a *Read this before building anything*
+   section that did not exist when health was built.
+
+   **"Log health claim" is built and working.** The remaining three are
+   duplicates of it: change `section` in **all three** requests, swap the
+   category question, and for `iva` delete the catalog call entirely since it has
+   no category.
+
+   That first build took hours, and **none of it was this project's server** —
+   every delay was a Shortcuts behaviour, mostly its habit of guessing which
+   identically-named magic variable you meant. The rewritten recipe front-loads
+   all six of them. Read that section before starting; it is the difference
+   between ten minutes and an afternoon.
 5. **Then the older items**, still outstanding from last session and still
    needing a phone:
    - **See the NIF warning on a merge** — 9c works and was used by hand, but the
