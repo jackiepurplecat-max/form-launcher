@@ -11,10 +11,10 @@ after this. This file is disposable: overwrite it at the end of each session.
 | Branch | `step-7-web-ui`, pushed to `origin` |
 | Last code commit | `8e7f27f` — the Siri endpoint. Doc commits follow it |
 | Working tree | clean |
-| Harness | **655 passing, 0 failed** (was 531) |
+| Harness | **663 passing, 0 failed** (was 531) |
 | Main project | matches `v2/` byte for byte, **13 files** — `Siri.js` is new |
 | Siri project | **new** — `v2-siri/`, matches byte for byte, 2 files |
-| Deployed | main at **version 24** (the picker). Siri at **@2**, authorised and answering |
+| Deployed | main at **version 25**. Siri at **@2**, authorised and answering |
 | Shortcuts | **"Log health claim" and "Log expense" built and working.** `iva` and `income` still to build |
 
 Steps 1–9 and 9c are done and verified by hand. **Step 11's server side is
@@ -37,7 +37,7 @@ blank row is indistinguishable from a real deferred entry.
 ## First thing: establish the baseline
 
 ```
-npm run v2:test          # expect 655 passing, 0 failed
+npm run v2:test          # expect 663 passing, 0 failed
 npm run v2:verify        # expect "Server matches v2/ — 13 files, byte for byte"
 npm run v2:siri:verify   # expect "Server matches v2-siri/ — 2 files, byte for byte"
 ```
@@ -52,9 +52,10 @@ Built, deployed and harness-covered; **inert until these are done.**
    `Receipt Medium` header to Work, IVA and Health. Idempotent, so it is safe to
    run and it reports what it added. Until it runs, writing that field fails with
    `Unknown column`.
-2. **Set `STAGING_FOLDER_ID`** in Project Settings → Script Properties, to the
-   Drive folder Genius Scan and saved mail attachments write to. Without it the
-   picker shows nothing and the completion mail advises but does not link.
+2. ~~**Set `STAGING_FOLDER_ID`.**~~ **`bootstrap()` now does it** — it adopts an
+   existing `Staging` folder under the root by name rather than creating a second
+   one beside it, and records the id. Genius Scan is already pointed at that
+   folder. An id set by hand always wins, even if it points outside the tree.
 3. **Add the medium question to the three Shortcuts** — Health, Work and IVA, not
    Income. `catalog` now returns `receiptMedium.values`, so use a Choose from List
    fed from it rather than hardcoding, and send it in `fields` as

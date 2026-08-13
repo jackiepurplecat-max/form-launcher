@@ -379,19 +379,20 @@ function mailableUrl(url) {
 function documentLocationHint(section, sheet, cols, row, needsDocument) {
   if (!needsDocument) return null;
 
+  // The medium refines step one; it does not gate it. A document is still
+  // wanted whether or not anyone recorded where it came from, so this returns
+  // a hint with no sentence rather than nothing at all.
   const medium = sectionReceiptMedium(section);
-  if (!medium) return null;
-
-  const value = (readCell(sheet, cols, row, medium.header) || '').toString().trim();
-  if (!value) return null;
+  const value = medium
+    ? (readCell(sheet, cols, row, medium.header) || '').toString().trim()
+    : '';
 
   const where = {};
-  where[RECEIPT_MEDIUM.electronic] = 'It was electronic — look in your mail.';
-  where[RECEIPT_MEDIUM.physical] = 'It was on paper — scan it.';
-  where[RECEIPT_MEDIUM.both] = 'There was paper AND an email — either will do.';
+  where[RECEIPT_MEDIUM.electronic] = 'It was electronic — save it out of your mail.';
+  where[RECEIPT_MEDIUM.physical] = 'It was on paper — scan it with Genius Scan.';
+  where[RECEIPT_MEDIUM.both] = 'There was paper and an email — either will do.';
 
-  const sentence = where[value];
-  if (!sentence) return null;
+  const sentence = where[value] || null;
 
   const folderId = PropertiesService.getScriptProperties()
     .getProperty(STAGING_FOLDER_PROPERTY);
@@ -480,16 +481,34 @@ function sendCompletionRequest(section, sheet, cols, row, missing, receiptState)
 
     const hint = documentLocationHint(section, sheet, cols, row, needsDocument);
 
+    /*
+     * TWO NUMBERED STEPS when a document is outstanding, because it is two
+     * separate jobs done in two different apps, and the second cannot be
+     * started until the first is finished. Written as one list of things
+     * needed, the "get the receipt into Drive" part reads as a note rather
+     * than as work, and you open the form, find you have nothing to attach,
+     * and close it again.
+     *
+     * When only fields are blank there is no first job, so there are no steps
+     * — just the link. Numbering a single step is a form of noise.
+     */
     const lines = [
       `A ${section.label} entry was created but is not finished.`,
       '',
       'Still needed:'
     ];
     outstanding.forEach(label => lines.push(`  - ${label}`));
-    if (hint) {
-      lines.push('', hint.sentence);
-      if (hint.folderUrl) lines.push(`Scans and saved attachments: ${hint.folderUrl}`);
+    lines.push('');
+
+    if (needsDocument) {
+      lines.push(`Step 1 — get the document into ${STAGING_FOLDER_NAME}`);
+      if (hint && hint.sentence) lines.push(`  ${hint.sentence}`);
+      lines.push('  Save it there from your mail, or scan straight to it.');
+      if (hint && hint.folderUrl) lines.push(`  ${hint.folderUrl}`);
+      lines.push('', 'Step 2 — finish the entry');
+      lines.push('  Open the form and choose the document from the list.');
     }
+
     lines.push('', 'What was captured:');
     captured.forEach(item => lines.push(`  ${item.label}: ${item.value}`));
     lines.push('', `Finish it here: ${link}`);
@@ -514,15 +533,26 @@ function sendCompletionRequest(section, sheet, cols, row, missing, receiptState)
       `<p>A ${escapeHtml(section.label)} entry was created but is not finished.</p>`,
       `<p><strong>Still needed</strong></p>`,
       `<ul>${outstanding.map(label => `<li>${escapeHtml(label)}</li>`).join('')}</ul>`,
-      hint ? `<p>${escapeHtml(hint.sentence)}${hint.folderUrl
-        ? ` <a href="${escapeHtml(hint.folderUrl)}">Scans and saved attachments</a>`
-        : ''}</p>` : '',
+
+      // Same two steps as the plain-text alternative. The two bodies must say
+      // the same thing: which one a client renders is not ours to choose.
+      needsDocument
+        ? `<p><strong>Step 1 — get the document into ${escapeHtml(STAGING_FOLDER_NAME)}</strong><br>` +
+          (hint && hint.sentence ? `${escapeHtml(hint.sentence)}<br>` : '') +
+          `Save it there from your mail, or scan straight to it.` +
+          (hint && hint.folderUrl
+            ? `<br><a href="${escapeHtml(hint.folderUrl)}">Open the ${escapeHtml(STAGING_FOLDER_NAME)} folder</a>`
+            : '') +
+          `</p><p><strong>Step 2 — finish the entry</strong><br>` +
+          `Open the form and choose the document from the list.</p>`
+        : '',
+
       `<p><strong>What was captured</strong></p>`,
       `<ul>${captured.map(item =>
         `<li>${escapeHtml(item.label)}: ${escapeHtml(item.value)}</li>`).join('')}</ul>`,
       `<p><a href="${escapeHtml(link)}" style="display:inline-block;padding:10px 16px;`,
       `background:#1a73e8;color:#fff;border-radius:8px;text-decoration:none;`,
-      `font-weight:600">Finish this entry</a></p>`,
+      `font-weight:600">${needsDocument ? 'Step 2 — finish this entry' : 'Finish this entry'}</a></p>`,
       `</div>`
     ].join('');
 

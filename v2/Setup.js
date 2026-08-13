@@ -22,6 +22,9 @@
 /** Name of the Drive folder created to hold everything, if one is not set. */
 const ROOT_FOLDER_NAME = 'HelpfulForms';
 
+/** Subfolder of the root that scans and saved attachments land in. */
+const STAGING_FOLDER_NAME = 'Staging';
+
 /* ============================== Header spine ============================== */
 
 /**
@@ -148,6 +151,46 @@ function ensureRootFolder() {
 }
 
 /**
+ * Find or create the staging folder under the root, and record its ID.
+ *
+ * Where scans and saved mail attachments land before they belong to an entry.
+ * It lives in the tree with everything else rather than off on its own, because
+ * it is part of how documents get here — and because a folder you have to
+ * remember the location of is one you point the scanner at once and then lose.
+ *
+ * FINDS BEFORE IT CREATES, by name under the root. The folder is typically made
+ * by hand first — you have to point Genius Scan at something before this code
+ * exists — and creating a second one beside it would silently split incoming
+ * scans across two places, with the picker showing only half of them.
+ *
+ * An already-set STAGING_FOLDER_ID always wins, even if it points somewhere
+ * outside the tree. Someone chose that on purpose.
+ */
+function ensureStagingFolder(root) {
+  const props = PropertiesService.getScriptProperties();
+  const existingId = props.getProperty(STAGING_FOLDER_PROPERTY);
+
+  if (existingId) {
+    try {
+      const folder = DriveApp.getFolderById(existingId);
+      return { id: existingId, name: folder.getName(), created: false, configured: true };
+    } catch (error) {
+      throw new Error(
+        `${STAGING_FOLDER_PROPERTY} is set to "${existingId}" but that folder ` +
+        `cannot be opened. Clear the property to adopt or create one under the ` +
+        `root, or fix the ID. (${error})`
+      );
+    }
+  }
+
+  const before = root.getFoldersByName(STAGING_FOLDER_NAME).hasNext();
+  const folder = childFolder(root, STAGING_FOLDER_NAME);
+  props.setProperty(STAGING_FOLDER_PROPERTY, folder.getId());
+
+  return { id: folder.getId(), name: folder.getName(), created: !before, configured: false };
+}
+
+/**
  * Every folder a section needs: the inbox, one per state that declares a
  * folder, and the archive.
  *
@@ -234,6 +277,7 @@ function bootstrap() {
     created: root.created,
     url: root.folder.getUrl()
   };
+  report.stagingFolder = ensureStagingFolder(root.folder);
   Object.keys(SECTIONS).forEach(key => {
     report.sections[key].folders = ensureSectionFolders(SECTIONS[key]);
   });

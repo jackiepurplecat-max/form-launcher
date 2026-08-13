@@ -2028,14 +2028,14 @@ check('both mentions both',
 check('the folder link carries authuser',
   /authuser=/.test((hintFor('Physical') || {}).folderUrl || ''));
 
-// A line that appears on every reminder saying nothing useful is a line you
-// stop reading, and this one has to work on the day it matters.
-check('silent when no medium was recorded', hintFor('') === null);
-check('silent when the document already arrived',
-  hintFor('Physical', false) === null);
-check('silent for a section that has no medium field',
-  G.documentLocationHint(G.getSection('income'), mediumSheet, mediumCols,
-    mediumEntry.row, true) === null);
+// The medium REFINES step one, it does not gate it: a document is still wanted
+// whether or not anyone recorded where it came from.
+const blankMedium = hintFor('');
+check('no medium recorded: still points at the folder', !!blankMedium && !!blankMedium.folderUrl);
+check('but says nothing it does not know', blankMedium.sentence === null);
+
+// Nothing to fetch once it has arrived, so no step one at all.
+check('silent when the document already arrived', hintFor('Physical', false) === null);
 
 delete mocks._props.STAGING_FOLDER_ID;
 const noFolder = hintFor('Physical');
@@ -2043,6 +2043,37 @@ check('still advises when no staging folder is configured', !!noFolder && !!noFo
 check('but offers no link', noFolder.folderUrl === null);
 if (savedStaging === undefined) delete mocks._props.STAGING_FOLDER_ID;
 else mocks._props.STAGING_FOLDER_ID = savedStaging;
+
+section('The completion mail is two steps when a document is awaited');
+
+mocks._props.STAGING_FOLDER_ID = 'fold-staging-test';
+
+// Awaiting a document: two jobs, in two apps, and the second cannot start
+// until the first is done.
+mocks.MailApp.sent.length = 0;
+G.createEntry('work', {
+  Counterparty: 'Two Step Co', Amount: 15, Date: '2026-06-01',
+  'Expense Reason': 'Steps', 'Receipt Medium': 'Physical'
+}, 'siri');
+const twoStep = mocks.MailApp.sent.filter(m => /more info needed/.test(m.subject))[0];
+check('the mail went', !!twoStep);
+check('step one names the staging folder', /Step 1 — get the document into Staging/.test(twoStep.body), twoStep.body);
+check('step one says how, from the medium', /scan it with Genius Scan/i.test(twoStep.body));
+check('step two is finishing the entry', /Step 2 — finish the entry/.test(twoStep.body));
+check('the steps are in the HTML body too',
+  /Step 1/.test(twoStep.opts.htmlBody) && /Step 2/.test(twoStep.opts.htmlBody));
+
+// Only a field missing, with the document already attached: one job, so
+// numbering it would be noise.
+mocks.MailApp.sent.length = 0;
+G.createEntry('work', {
+  Counterparty: 'One Step Co', Amount: 15, Date: '2026-06-02',
+  'Receipt URL': mocks.DriveApp.createFile({ name: 'already.pdf' }).getId()
+}, 'form');
+const oneStep = mocks.MailApp.sent.filter(m => /more info needed/.test(m.subject))[0];
+check('a field-only reminder still goes', !!oneStep, mocks.MailApp.sent.map(m => m.subject));
+check('and has NO steps', !/Step 1/.test(oneStep.body), oneStep.body);
+check('nor in the HTML', !/Step 1/.test(oneStep.opts.htmlBody));
 
 section('Picking a document out of the staging folder');
 
