@@ -97,10 +97,23 @@ did not:
 
 | Section | Allowed in `fields` |
 |---|---|
-| work | `Counterparty`, `Amount`, `Currency`, `Date`, `Expense Reason` |
-| health | `Counterparty`, `Amount`, `Currency`, `Date`, `Patient` |
-| iva | `Counterparty`, `Amount`, `Currency`, `Date` |
+| work | `Counterparty`, `Amount`, `Currency`, `Date`, `Expense Reason`, `Receipt Medium` |
+| health | `Counterparty`, `Amount`, `Currency`, `Date`, `Patient`, `Receipt Medium` |
+| iva | `Counterparty`, `Amount`, `Currency`, `Date`, `Receipt Medium` |
 | income | `Counterparty`, `Amount`, `Currency`, `Date`, `Reason` |
+
+**`Receipt Medium`** — `Electronic`, `Physical` or `Both` — is where the document
+*is*, as opposed to whether it has arrived. Add it as one more **Choose from
+List**, fed from `catalog`'s `receiptMedium.values` rather than hardcoded. The
+completion mail reads it and tells you where to look, and links the staging
+folder; the web form then lets you pick the file out of that folder rather than
+uploading it again.
+
+It is the one field Siri asks that is not core, and deliberately so: it is only
+knowable **at capture time**. Standing at the counter you know whether you were
+handed paper; three days later, reading a reminder, you do not. Income has no
+documents, so `catalog` returns `receiptMedium: null` and there is nothing to
+ask.
 
 No document column is accepted from Siri, on purpose — see the header of
 `v2/Siri.js`. Photograph the receipt later, through the web form.

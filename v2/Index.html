@@ -201,6 +201,8 @@
     #formCard input, #formCard select,
     #supplierCard input { width: 100%; padding: .55rem .6rem; }
     #formCard input[type="file"] { padding: .45rem; background: #fbfcfd; }
+    /* Sits directly under its file input, as the alternative to it. */
+    #formCard select.pickFile { margin-top: .35rem; }
     #formCard .field.missing input, #formCard .field.missing select { border-color: var(--err); }
     /* What the registry thinks, when it is not confident enough to fill it in.
        Shown rather than applied, because a wrong NIF is worse than a blank. */
@@ -401,6 +403,7 @@
       confirm: null,      // what the open confirmation will do when accepted
       suppliers: false,   // showing the registry rather than a section
       supplierList: [],   // the registry as the server last reported it
+      staging: [],        // scans waiting in the staging folder, refreshed per form
       supplierForm: null  // non-null while the supplier editor is open
     };
 
@@ -1470,6 +1473,53 @@
           }
         }).catch(function () { /* suggestions are optional; typing still works */ });
       }
+
+      // Fetched on open, like the category values and for the same reason: the
+      // folder empties as documents are picked, so a list cached at startup
+      // would offer files that have already been filed.
+      call('uiStagingFiles').then(function (files) {
+        app.staging = files || [];
+        if (app.form) refreshStagingSelects();
+      }).catch(function () { /* picking is an addition; uploading still works */ });
+    }
+
+    /**
+     * Add or update the "choose a scan" dropdown on every document field.
+     *
+     * Done by patching the rendered form rather than re-rendering it — the list
+     * arrives after the fields are on screen, and re-rendering would wipe
+     * anything already typed.
+     */
+    function refreshStagingSelects() {
+      formFields().forEach(function (field) {
+        if (field.type !== 'file') return;
+
+        var input = fieldInput(field.header);
+        if (!input) return;
+
+        var selectId = 'pick_f_' + cssId(field.header);
+        var select = document.getElementById(selectId);
+
+        if (!(app.staging || []).length) {
+          if (select) select.parentNode.removeChild(select);
+          return;
+        }
+
+        if (!select) {
+          select = document.createElement('select');
+          select.className = 'pickFile';
+          select.id = selectId;
+          select.setAttribute('data-pick-header', field.header);
+          input.parentNode.insertBefore(select, input.nextSibling);
+        }
+
+        var chosen = select.value;
+        select.innerHTML = '<option value="">— or choose a scan —</option>' +
+          app.staging.map(function (f) {
+            return '<option value="' + escapeHtml(f.id) + '">' + escapeHtml(f.name) + '</option>';
+          }).join('');
+        if (chosen) select.value = chosen;
+      });
     }
 
     function closeForm() {
@@ -1498,6 +1548,22 @@
       if (field.type === 'file') {
         input = '<input type="file" id="' + id + '" data-header="' +
           escapeHtml(field.header) + '">';
+
+        // Anything already scanned or saved to the staging folder can be chosen
+        // rather than uploaded again. Picking MOVES the file into the tree, so
+        // it leaves the folder by itself and there is never a second copy. Only
+        // shown when there is something to pick — an empty dropdown on every
+        // document field is noise.
+        if ((app.staging || []).length) {
+          input += '<select class="pickFile" id="pick_' + id + '" data-pick-header="' +
+            escapeHtml(field.header) + '">' +
+            '<option value="">— or choose a scan —</option>' +
+            app.staging.map(function (f) {
+              return '<option value="' + escapeHtml(f.id) + '">' +
+                escapeHtml(f.name) + '</option>';
+            }).join('') + '</select>';
+        }
+
         if (row) {
           var attached = (row.files || []).filter(function (f) {
             return f.label === field.label;
@@ -1677,6 +1743,23 @@
       });
     }
 
+    /**
+     * Documents chosen out of the staging folder, as {header, id}.
+     *
+     * No upload and no base64: the file is already in Drive, so the server only
+     * needs its id — and it re-checks that the id really is in the staging
+     * folder before touching it.
+     */
+    function collectPicks() {
+      var picks = [];
+      formFields().forEach(function (field) {
+        if (field.type !== 'file') return;
+        var select = document.getElementById('pick_f_' + cssId(field.header));
+        if (select && select.value) picks.push({ header: field.header, id: select.value });
+      });
+      return picks;
+    }
+
     /** Read every chosen file as base64, in parallel. */
     function collectFiles() {
       var fileFields = formFields().filter(function (field) { return field.type === 'file'; });
@@ -1685,6 +1768,13 @@
       fileFields.forEach(function (field) {
         var input = fieldInput(field.header);
         if (!input || !input.files || !input.files.length) return;
+
+        // An upload and a pick on the same field would write one id and strand
+        // the other. The upload wins because it is the more deliberate act —
+        // you had to go and find the file.
+        var select = document.getElementById('pick_f_' + cssId(field.header));
+        if (select && select.value) select.value = '';
+
         var file = input.files[0];
 
         if (file.size > MAX_UPLOAD_BYTES) {
@@ -1795,7 +1885,7 @@
         .catch(function () { /* the registry is an aid, never a blocker */ })
         .then(collectFiles)
         .then(function (files) {
-          var payload = { values: collectValues(), files: files };
+          var payload = { values: collectValues(), files: files, picked: collectPicks() };
           return editingRow
             ? call('uiUpdateEntry', app.current, editingRow, payload)
             : call('uiCreateEntry', app.current, payload);
