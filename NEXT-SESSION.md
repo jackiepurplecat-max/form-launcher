@@ -15,24 +15,24 @@ after this. This file is disposable: overwrite it at the end of each session.
 | Main project | matches `v2/` byte for byte, **13 files** — `Siri.js` is new |
 | Siri project | **new** — `v2-siri/`, matches byte for byte, 2 files |
 | Deployed | main is still **version 23**. Siri is at **@2**, authorised, and answering |
-| Shortcuts | **"Log health claim" built and working.** Three still to build |
+| Shortcuts | **"Log health claim" and "Log expense" built and working.** `iva` and `income` still to build |
 
 Steps 1–9 and 9c are done and verified by hand. **Step 11's server side is
 finished: built, pushed, harness-covered, deployed, configured, and every
 action exercised live against the real spreadsheet** — including `create`, the
 whitelist refusals, and the registry learning what it created. Nothing on the
-server is untested. **What is left is the four Shortcuts.** Cutover (step 10) is
+server is untested. **Two of the four Shortcuts are built.** Cutover (step 10) is
 still not started.
 
 **The curl test left nothing behind** — its Work row and `ZZ Siri Test` registry
 entry were deleted and the removal verified through the endpoint.
 
-**The Shortcut build did.** Getting "Log health claim" working took several runs,
-each writing a row: **Health rows 3, 4 and 6 at least**, most of them blank or
-part-filled, plus whatever the later runs added and a junk supplier or two in the
-registry (`sfsd` among them). Every one also sent a completion mail. **Delete
-them before building the other three**, or the next debugging session cannot tell
-its own rows from these.
+**The Shortcut build left rows behind, and they have been deleted.** Getting the
+first two working took many runs, each writing a blank or part-filled row and
+sending a completion mail. All were removed, along with the junk suppliers they
+taught the registry, and the removal was verified through the endpoint. **Expect
+the same debris from `iva` and `income`, and clear it the same way** — a stray
+blank row is indistinguishable from a real deferred entry.
 
 ## First thing: establish the baseline
 
@@ -106,16 +106,20 @@ phone; nothing below can be done from the CLI.
    per-section field whitelist, and a *Read this before building anything*
    section that did not exist when health was built.
 
-   **"Log health claim" is built and working.** The remaining three are
-   duplicates of it: change `section` in **all three** requests, swap the
-   category question, and for `iva` delete the catalog call entirely since it has
-   no category.
+   **"Log health claim" and "Log expense" are built and working.** Two left:
 
-   That first build took hours, and **none of it was this project's server** —
+   - **`iva`** — the simplest. Duplicate either, delete the whole category block
+     (catalog call, picker, everything), and send `Counterparty` and `Amount`
+     only. Número, Emitente NIF and Valor do IVA are completion-step fields, so
+     every entry arrives incomplete by design.
+   - **`income`** — closest to a copy of `work`. Same open-list picker sent as
+     `Reason` (no space), plus a `(none)` marker, since Income's category is the
+     one that is not required.
+
+   That first build took hours and **none of it was this project's server** —
    every delay was a Shortcuts behaviour, mostly its habit of guessing which
-   identically-named magic variable you meant. The rewritten recipe front-loads
-   all six of them. Read that section before starting; it is the difference
-   between ten minutes and an afternoon.
+   identically-named magic variable you meant. The recipe now front-loads all six
+   traps and documents the open-list picker. Read those before starting.
 5. **Then the older items**, still outstanding from last session and still
    needing a phone:
    - **See the NIF warning on a merge** — 9c works and was used by hand, but the

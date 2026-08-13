@@ -252,6 +252,49 @@ later, from a sheet with a gap in it.
 > the screen. It is wrong in an unattended automation, where it stalls waiting
 > for a tap — which is why one was removed from the v1 iCloud Shortcut.
 
+### The open-list picker — for Work and Income
+
+Health's Patient list is **closed**: `Choose from List` and nothing else, because
+the values are the whole set. Work's `Expense Reason` and Income's `Reason` are
+**open** — free text is allowed and the list populates itself from the sheet.
+
+Free text alone drifts. Expense Reason is how a trip's expenses group together
+and, unlike suppliers, **nothing fuzzy-matches it** — so "Amsterdam trip" and
+"Amsterdam Trip" become two silently separate things. So: offer the list *and* a
+way out of it.
+
+Replacing step 5:
+
+```
+Get Dictionary Value  category.values
+Set Variable          Reasons
+Text                  + New reason
+Set Variable          NewMarker
+Add to Variable       Reasons          ← the marker becomes one of the choices
+Choose from List      Reasons            prompt: What for?
+Text                  (the chosen item, alone)
+Set Variable          ReasonChoice     ← forces the type; see trap 3
+If  ReasonChoice  is  NewMarker
+    Ask for Input     Text               prompt: New reason?
+    Set Variable      Reason
+Otherwise
+    Set Variable      Reason  ← input set to ReasonChoice
+End If
+```
+
+Two deliberate details:
+
+- **The marker is a variable, not a typed string.** It is compared in the `If`
+  and appended to the list, so writing it twice invites a mismatch that would
+  make "new reason" silently unreachable. Define it once.
+- **The Text action before `ReasonChoice`** is not decoration. `Choose from List`
+  output is untyped, so without it the `If` offers only *has any value*.
+
+A reason entered through `+ New reason` appears in the list next time by itself,
+because `catalog` reads the column from the sheet. Nothing to maintain — and by
+the same token a **typo becomes a permanent option**, so fix it in the sheet
+rather than living with it.
+
 ### The other three
 
 **Duplicate the finished health Shortcut** and edit the copy. Change `section`
@@ -259,21 +302,24 @@ in **all three** requests — missing one is the obvious mistake, and it fails i
 confusing way: catalog and resolve would answer for the wrong section while
 create writes to the right one.
 
-- **Log expense** (`work`) — step 5 becomes **Ask for Input**, Text, *What for?*,
-  sent as `Expense Reason`; free text must stay allowed, so do not turn it into a
-  Choose from List even though `catalog` returns suggestions. `Type` is not
-  asked: the registry fills it, because Uber is always a Taxi.
+- **Log expense** (`work`) — **built and working.** Step 5 becomes the open-list
+  picker above, sent as `Expense Reason` *(note the space — it is the real column
+  header)*. `Type` is not asked: the registry fills it on an exact supplier
+  match, because Uber is always a Taxi.
 - **Log receipt** (`iva`) — **delete steps 3, 4 and 5 entirely.** IVA has no
   category, so there is nothing to fetch and nothing to choose, and dropping the
   `catalog` call makes this the fastest of the four by about two seconds. Número,
   Emitente NIF and Valor do IVA are **not** asked; they are retyped into Finanças
   from the completion form later. Every IVA entry made this way arrives
   incomplete — expected, not a fault.
-- **Log income** (`income`) — step 5 becomes an optional **Ask for Input** sent
-  as `Reason`.
+- **Log income** (`income`) — the same open-list picker, sent as `Reason` (no
+  space). Income's `Reason` is the one category that is **not required**, so add
+  a second marker — `(none)` — alongside `+ New reason`, and in that branch set
+  `Reason` to an empty Text action. Sending an empty string is fine; the field is
+  optional and blank is a legitimate value everywhere in this system.
 
-Only `iva` changes shape. The other two are a one-word `section` change plus
-swapping the category question.
+`iva` is the only one that loses actions. `income` is the closest thing to a
+straight copy of `work`.
 
 ## When it does not work
 
