@@ -12,7 +12,7 @@ after this. This file is disposable: overwrite it at the end of each session.
 | Branch | `step-7-web-ui`, pushed to `origin` |
 | Last code commit | the tip — `resetAllData()`. `3ece923` before it is `findDebris()`. No hash here on purpose: a commit cannot cite its own |
 | Working tree | clean, and pushed to `origin` |
-| Harness | **699 passing, 0 failed** (was 663) |
+| Harness | **710 passing, 0 failed** (was 699) |
 | Main project | matches `v2/` byte for byte, **13 files** — `Siri.js` is new |
 | Siri project | **new** — `v2-siri/`, matches byte for byte, 2 files |
 | Deployed | main at **version 26**. Siri at **@2**, authorised and answering |
@@ -107,6 +107,24 @@ and likeliest to be debris. Registry entries with `timesUsed <= 1` are reported
 and **over-report by design**: a genuine one-off supplier looks identical, and
 under-reporting means junk survives cutover.
 
+**It was run live on 13 Aug and returned all zeros — and that result is not yet
+interpretable.** At the time it reported findings only, with no denominator, so
+"scanned forty rows and they are all fine" and "scanned nothing" printed
+identically. `scanned` and a prose `summary` were added straight afterwards for
+exactly that reason, and are pushed and verified. **Re-run it.** The answer is
+now in the first line:
+
+- `Nothing to audit: … it is an empty sheet.` — the sections really are empty,
+  and the debris question is closed because there is nothing there.
+- `Scanned 40 of 40 row(s) … no malformed rows.` — there is real data and none
+  of it is malformed. A different, better answer.
+
+**An empty report never means "ready for cutover".** A test run that *succeeded*
+writes a complete, well-formed row, and nothing about `Bolt, 8 EUR, taxi` says
+whether it came from a taxi or from proving a Shortcut works. Those are silent
+here by design — same reason it never deletes. Read the sheet for that; this
+tool only finds rows that are malformed.
+
 `smokeCleanup()` is no use here — it only matches rows carrying `SMOKE_MARKER` in
 Notes, which it wrote itself. Nothing marks a row abandoned by a half-built
 Shortcut.
@@ -139,7 +157,7 @@ already gone.
 ## First thing: establish the baseline
 
 ```
-npm run v2:test          # expect 699 passing, 0 failed
+npm run v2:test          # expect 710 passing, 0 failed
 npm run v2:verify        # expect "Server matches v2/ — 13 files, byte for byte"
 npm run v2:siri:verify   # expect "Server matches v2-siri/ — 2 files, byte for byte"
 ```

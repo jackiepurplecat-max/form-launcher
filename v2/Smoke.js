@@ -372,6 +372,22 @@ function resetAllData(confirmation) {
  * document with no category set. Ordinary for a genuine deferred entry, which is
  * why it is only ever a prompt to look. Narrow it with `sinceIso`.
  *
+ * WHAT IT CANNOT SEE, WHICH MATTERS BEFORE CUTOVER
+ *
+ * A test run that SUCCEEDED writes a complete, well-formed row. Nothing about
+ * "Bolt, 8 EUR, taxi" says whether it came from a real taxi or from proving a
+ * Shortcut works, so this function is silent about it by design - the same
+ * reason it never deletes. An empty report therefore means "no malformed rows",
+ * NOT "the sheet is ready for cutover". Read the sheet for that.
+ *
+ * WHY IT COUNTS WHAT IT SCANNED
+ *
+ * `scanned` carries the denominator, because an all-zero report is otherwise
+ * ambiguous in the worst way: "looked at forty rows and they are all fine" and
+ * "looked at nothing" print identically, and the second reads as the first. Per
+ * section it gives `rows` present and `considered` after `sinceIso` is applied,
+ * so a date filter that excluded everything is visible rather than silent.
+ *
  * @param {string} [sinceIso] Only consider rows created on or after this date,
  *   e.g. '2026-08-13'. Rows with an unreadable timestamp are always included -
  *   a filter that silently dropped them would hide the worst-formed rows, which
@@ -387,6 +403,8 @@ function findDebris(sinceIso) {
 
   const report = {
     since: sinceIso || '(everything)',
+    summary: '',
+    scanned: {},
     sections: {},
     registry: [],
     totals: { certain: 0, suspect: 0, registry: 0 }
@@ -397,6 +415,11 @@ function findDebris(sinceIso) {
     const sheet = getSheet(section);
     const findings = [];
     report.sections[key] = findings;
+
+    // Recorded before the early return, so a section with no data rows reports
+    // a hard zero rather than being absent from the report entirely.
+    const counts = { rows: 0, considered: 0 };
+    report.scanned[key] = counts;
     if (sheet.getLastRow() < 2) return;
 
     const cols = resolveColumns(sheet);
@@ -417,10 +440,13 @@ function findDebris(sinceIso) {
       ? cols[section.category.header] - 1
       : -1;
 
+    counts.rows = values.length;
+
     values.forEach((rowValues, i) => {
       const created = rowValues[iTime];
       const readable = created instanceof Date && !isNaN(created.getTime());
       if (since && readable && created < since) return;
+      counts.considered++;
 
       const party = (rowValues[iParty] || '').toString().trim();
       const amount = Number(rowValues[iAmount]);
@@ -456,10 +482,18 @@ function findDebris(sinceIso) {
   // debris as the row that taught it. timesUsed <= 1 over-reports by design: a
   // genuine one-off supplier looks identical, and under-reporting here means
   // junk survives cutover.
-  loadRegistry().forEach(entry => {
-    if (entry.timesUsed > 1) return;
+  const entries = loadRegistry();
+  const registryCounts = { rows: entries.length, considered: 0 };
+  report.scanned.registry = registryCounts;
+
+  // The date guard runs before the timesUsed one so `considered` means the same
+  // thing here as it does for a section: survived `sinceIso`. timesUsed is the
+  // finding criterion, not a narrowing of scope.
+  entries.forEach(entry => {
     const last = entry.lastUsed instanceof Date ? entry.lastUsed : null;
     if (since && last && last < since) return;
+    registryCounts.considered++;
+    if (entry.timesUsed > 1) return;
     report.registry.push({
       row: entry.row,
       name: entry.name,
@@ -468,6 +502,34 @@ function findDebris(sinceIso) {
     });
   });
   report.totals.registry = report.registry.length;
+
+  const rows = Object.keys(SECTIONS)
+    .reduce((sum, key) => sum + report.scanned[key].rows, 0);
+  const considered = Object.keys(SECTIONS)
+    .reduce((sum, key) => sum + report.scanned[key].considered, 0);
+  const found = report.totals.certain + report.totals.suspect + report.totals.registry;
+
+  // Spelled out in prose because the caller is a human reading the editor log,
+  // and the distinction this makes is the one the numbers alone lost.
+  if (!rows && !registryCounts.rows) {
+    report.summary =
+      'Nothing to audit: no data rows in any section and an empty registry. ' +
+      'This is not a clean bill of health, it is an empty sheet.';
+  } else if (!considered && !registryCounts.considered) {
+    report.summary =
+      `Nothing considered: ${rows} row(s) and ${registryCounts.rows} registry ` +
+      `entr(ies) exist, but all fall before ${report.since}.`;
+  } else if (!found) {
+    report.summary =
+      `Scanned ${considered} of ${rows} row(s) and ${registryCounts.considered} ` +
+      `of ${registryCounts.rows} registry entr(ies): no malformed rows. ` +
+      'Complete rows left by successful test runs are invisible here - read the sheet.';
+  } else {
+    report.summary =
+      `Scanned ${considered} of ${rows} row(s) and ${registryCounts.considered} ` +
+      `of ${registryCounts.rows} registry entr(ies): ${report.totals.certain} certain, ` +
+      `${report.totals.suspect} suspect, ${report.totals.registry} registry.`;
+  }
 
   Logger.log(JSON.stringify(report, null, 2));
   return report;

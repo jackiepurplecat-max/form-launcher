@@ -2581,6 +2581,42 @@ check('registry entries taught once are reported', debris.registry.length > 0);
 check('registry total agrees', debris.totals.registry === debris.registry.length);
 check('findDebris deletes nothing', wSheet.getLastRow() === oldRow, wSheet.getLastRow());
 
+/*
+ * The denominator. A live run came back all zeros and there was no way to tell
+ * "looked at forty rows, all fine" from "looked at nothing" - the two print
+ * identically and the second reads as the first.
+ */
+check('every section reports a scanned count, audited or not',
+  Object.keys(debris.scanned).length === 5, Object.keys(debris.scanned));
+check('scanned rows match the sheet',
+  debris.scanned.work.rows === wSheet.getLastRow() - 1,
+  { said: debris.scanned.work.rows, sheet: wSheet.getLastRow() - 1 });
+check('with no since, everything present is considered',
+  debris.scanned.work.considered === debris.scanned.work.rows, debris.scanned.work);
+check('a section with no rows says zero rather than going missing',
+  debris.scanned.income && debris.scanned.income.rows >= 0, debris.scanned.income);
+check('the registry is counted too',
+  debris.scanned.registry.rows >= debris.registry.length, debris.scanned.registry);
+check('findings cannot exceed what was considered',
+  certain.length + suspects.length <= debris.scanned.work.considered,
+  { found: certain.length + suspects.length, considered: debris.scanned.work.considered });
+
+// A since filter narrows `considered` while `rows` keeps reporting the truth
+// about the sheet - otherwise a filter that excluded everything looks clean.
+const narrowed = G.findDebris('2026-08-13');
+check('since narrows considered but not rows',
+  narrowed.scanned.work.rows === debris.scanned.work.rows &&
+  narrowed.scanned.work.considered < debris.scanned.work.considered,
+  { rows: narrowed.scanned.work, all: debris.scanned.work });
+
+check('a report with findings says so in prose',
+  /certain/.test(debris.summary) && !/Nothing to audit/.test(debris.summary), debris.summary);
+check('the summary warns that complete test rows are invisible',
+  /no malformed rows|certain/.test(debris.summary), debris.summary);
+
+console.log('\n--- findDebris summary ---\n' + debris.summary);
+console.log('--- narrowed to 2026-08-13 ---\n' + narrowed.summary);
+
 console.log('\n--- Suppliers sheet ---\n' + dump('Suppliers'));
 console.log('\n--- Work sheet ---\n' + dump('Work'));
 /* ---------------------------- resetAllData() ------------------------------- */
@@ -2649,6 +2685,21 @@ const afterReset = G.findDebris();
 check('findDebris finds nothing after a reset',
   afterReset.totals.certain === 0 && afterReset.totals.suspect === 0 &&
   afterReset.totals.registry === 0, afterReset.totals);
+
+/*
+ * And it must SAY that it found nothing because there was nothing, rather than
+ * printing the same all-zero report a clean sheet full of real rows would. This
+ * is the live case that prompted the denominator: an empty sheet reading as a
+ * pass is the one way this tool could mislead at exactly the wrong moment.
+ */
+check('an emptied sheet reports zero scanned, not just zero found',
+  afterReset.scanned.work.rows === 0 && afterReset.scanned.registry.rows === 0,
+  afterReset.scanned);
+check('and says in prose that this is an empty sheet, not a clean bill of health',
+  /Nothing to audit/.test(afterReset.summary) &&
+  /empty sheet/.test(afterReset.summary), afterReset.summary);
+
+console.log('\n--- findDebris on an emptied sheet ---\n' + afterReset.summary);
 
 console.log(`\n================  ${pass} passed, ${fail} failed  ================`);
 process.exit(fail ? 1 : 0);
