@@ -1,7 +1,7 @@
 # Start here
 
 Handover note, written 12 Aug 2026, **revised 13 Aug** after three of the four
-Shortcuts were destroyed. **Operational state only** — the design and
+Shortcuts were destroyed and rebuilt the same day. **Operational state only** — the design and
 the reasons live in `REBUILD-PLAN.md`, which is the source of truth. Read that
 after this. This file is disposable: overwrite it at the end of each session.
 
@@ -16,18 +16,22 @@ after this. This file is disposable: overwrite it at the end of each session.
 | Main project | matches `v2/` byte for byte, **13 files** — `Siri.js` is new |
 | Siri project | **new** — `v2-siri/`, matches byte for byte, 2 files |
 | Deployed | main at **version 26**. Siri at **@2**, authorised and answering |
-| Shortcuts | **Only `Log health claim` survives.** The other three were destroyed 13 Aug — see below |
+| Shortcuts | **All four working again** — health, work, iva, income. Three were destroyed and rebuilt 13 Aug; see below |
 
 Steps 1–9, 9c and **11 are done**. The Siri endpoint is built, harness-covered,
-deployed, configured and exercised live against the real spreadsheet — none of
-that changed. What changed is the client end: **three of the four Shortcuts no
-longer exist.** Cutover (step 10) is still not started, and now sits behind the
-rebuild.
+deployed, configured and exercised live against the real spreadsheet. Three of
+the four Shortcuts were destroyed on 13 Aug and rebuilt the same day; **all four
+are confirmed working.** Cutover (step 10) is still not started, and is again the
+main thing standing between this and daily use.
 
-## The Shortcuts were destroyed, 13 Aug — read this before rebuilding
+**Owed from the rebuild: the debris.** Three Shortcuts were built and tested
+against the live sheet. See the debris note below — it is the one loose end.
 
-`Log expense`, `Log receipt` and `Log income` are **gone and unrecoverable.**
-`Log health claim` survives and is the template for the other three.
+## The Shortcuts were destroyed and rebuilt, 13 Aug
+
+`Log expense`, `Log receipt` and `Log income` were **lost and unrecoverable**,
+and were rebuilt from the surviving `Log health claim`. Kept here because the
+cause is a standing trap, not a one-off.
 
 **Cause: iCloud Drive was switched off on the phone.** That single setting did
 two separate things, and the second is what cost the work:
@@ -52,24 +56,45 @@ Recently Deleted was empty on both devices.
 - The verified template backup is
   `iCloud Drive/Downloads/Log health claim.shortcut` — 26,163 bytes, `AEA1`
   signed, confirmed downloaded on the Mac rather than a placeholder.
-- To get it back into Shortcuts on the Mac, **double-click the file.** Importing
+- To get one back into Shortcuts on the Mac, **double-click the file.** Importing
   needs no signing, so it works regardless of sync state.
 
-The rebuild recipe is **`v2/SIRI-SHORTCUT-REBUILD.md`**, written as a diff
-against the surviving health Shortcut. It also corrects a now-wrong instruction
-in `SIRI-SHORTCUT.md` — see step 4 below.
+**`v2/SIRI-SHORTCUT-REBUILD.md` is the rebuild record** — three tap-by-tap
+walkthroughs as actually performed, replacing the diff table it started as. It is
+now the better of the two Shortcut documents to work from; `SIRI-SHORTCUT.md`
+keeps the protocol and the six behaviours that cost the original build hours.
+
+**It corrects `SIRI-SHORTCUT.md:322`**, which is wrong and cost time on the
+rebuild: it says to delete steps 3, 4 and 5 for IVA, but that predates the medium
+question, and step 3 is the `catalog` call feeding `receiptMedium.values`. Keep
+step 3, delete only 4 and 5.
+
+**Two decisions taken during the rebuild**, both recorded with reasons in that
+file:
+
+- **Income's `(none)` option was deliberately not built** — there is no occasion
+  to log income without knowing what earned it, at the moment of logging it. The
+  picker guarantees a value anyway.
+- **`Config.js:284` stays `required: false`.** Enforcing it server-side would
+  turn existing blank-Reason income rows into INCOMPLETE entries and nag about
+  finished work — the trap already documented at `Config.js:68`. Capture-time
+  enforcement in the Shortcut is where the design puts it.
 
 **The curl test left nothing behind** — its Work row and `ZZ Siri Test` registry
 entry were deleted and the removal verified through the endpoint.
 
-**Building the Shortcuts leaves debris.** Each failed run writes a blank or
-part-filled row and sends a completion mail, and `create` teaches the registry
-whatever it was given. The health and work debris was cleared and verified;
-**the rows and junk suppliers left by the first iva and income builds were never
-checked, and the rebuild will add more** — a stray blank row is
-indistinguishable from a real deferred entry, which is the whole point of
-deferred entries and the reason this matters. Clear it while you still remember
-which rows are yours.
+**Building the Shortcuts leaves debris, and this is now the top outstanding
+item.** Each failed run writes a blank or part-filled row and sends a completion
+mail, and `create` teaches the registry whatever it was given. The debris from
+the *first* health and work builds was cleared and verified. **Never checked:
+the first iva and income builds, plus everything the 13 Aug rebuild of all three
+added.** A stray blank row is indistinguishable from a real deferred entry —
+which is the whole point of deferred entries and the reason this matters.
+
+Look for, in Work, IVA and Income: blank or part-filled rows, and junk suppliers
+and payers in the registry. A typo entered through `+ New reason` is also
+permanent, because `catalog` reads the column from the sheet — fix those in the
+sheet, not in code.
 
 ## First thing: establish the baseline
 
@@ -98,20 +123,20 @@ documents. Kept below because the reasons still apply.
 3. ~~**Set `HEALTH_PATIENTS`.**~~ **Done and verified live** — `catalog` returns
    `Jackie, Kit, Auryn, Phoenix`, `closed: true`. The sheet now stores full
    names, and the initials already in the Patient column were replaced.
-4. ~~**Add the medium question to the three Shortcuts.**~~ **Done, then lost with
-   them.** Health has it and is the template; Work and IVA must get it again on
-   the rebuild. Income has no documents, so there is nothing to ask — and
-   `Receipt Medium` must be *absent* from its `fields`, not blank.
-   `catalog` returns `receiptMedium.values`, so the list is fetched rather than
-   hardcoded, and it goes in `fields` as `"Receipt Medium"`.
+4. ~~**Add the medium question to the three Shortcuts.**~~ **Done, lost, and done
+   again.** Health, Work and IVA have it. Income has no documents, so there is
+   nothing to ask — and `Receipt Medium` must be *absent* from its `fields`, not
+   blank: unknown keys are refused outright rather than dropped, so leaving it in
+   fails every income entry. `catalog` returns `receiptMedium.values`, so the list
+   is fetched rather than hardcoded, and it goes in `fields` as
+   `"Receipt Medium"`.
 
 ## Pick up here
 
-**Step 11's server half is finished; its client half was destroyed.** Steps 1–3
-below are struck through and kept only because what they proved is worth knowing
-and the commands are worth re-running. **Start at step 4 — the Shortcut
-rebuild.** Nothing after it needs doing first, and cutover cannot happen without
-it.
+**Step 11 is finished** — endpoint and all four Shortcuts, twice over for three of
+them. Steps 1–4 below are struck through and kept only because what they proved is
+worth knowing and the commands are worth re-running. **Start with the debris
+clean-up above, then step 5.**
 
 1. ~~**Run `siriSetup()`.**~~ **Done.** `SPREADSHEET_ID` and `SIRI_API_KEY` are
    both set on the **main** project. The key is in `.env` as `V2_SIRI_API_KEY`
@@ -165,25 +190,20 @@ it.
    ```
    Note there is **no `-X POST`** — see the curl trap below; `-d` already makes
    it a POST.
-4. **Rebuild the three lost Shortcuts.** `Log expense` (`work`), `Log receipt`
-   (`iva`) and `Log income` (`income`). **`v2/SIRI-SHORTCUT-REBUILD.md` is the
-   recipe** — each one written as a diff against the surviving `Log health
-   claim`, so duplicate that and edit the copy. `v2/SIRI-SHORTCUT.md` still holds
-   the protocol and, more importantly, the six Shortcuts behaviours that cost
-   hours the first time; read that section before starting.
+4. ~~**Build the Shortcuts.**~~ **All four working — built once, then three of
+   them rebuilt on 13 Aug after the iCloud loss.** `v2/SIRI-SHORTCUT-REBUILD.md`
+   is the record of that rebuild and the better document to work from: three
+   tap-by-tap walkthroughs, the `SIRI-SHORTCUT.md:322` correction, a `fields`
+   reference per section, and the two decisions listed above.
 
-   **`SIRI-SHORTCUT.md:322` is now wrong and will send you down a dead end.** It
-   says to delete steps 3, 4 and 5 for `Log receipt`. That predates the medium
-   question: IVA *does* ask `Receipt Medium`, and its values come from
-   `catalog`'s `receiptMedium.values` — so **keep step 3**, delete only 4 and 5.
-   The claimed two-second saving no longer exists.
+   Duplicate from the right one — it is the difference between four edits and
+   forty: **work** and **iva** from health, **income** from **work** (it needs
+   work's open-list picker, which health does not have).
 
-   The other trap the diff table left implicit: **Income's `fields` must not
-   contain `Receipt Medium` at all.** The allowlist refuses unknown keys outright
-   rather than dropping them, so leaving it in breaks every income entry. It
-   fails loudly, but the message does not point at the cause.
-
-   Build on the **phone**, and export each one to Files as it starts working.
+   Everything section-specific that has to differ: `section` in **all three**
+   requests; `Expense Reason` *with* a space for work, `Reason` *without* one for
+   income; `Receipt Medium` present for health, work and iva and **absent** for
+   income.
 
    Named to match how the phrase is actually spoken rather than how it is
    spelled — "Log Eva receipt", because that is how IVA is said. Siri matches
