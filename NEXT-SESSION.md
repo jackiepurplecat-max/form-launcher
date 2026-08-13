@@ -12,7 +12,7 @@ after this. This file is disposable: overwrite it at the end of each session.
 | Branch | `step-7-web-ui`, pushed to `origin` |
 | Last code commit | `8e7f27f` — the Siri endpoint. Doc commits follow it |
 | Working tree | clean |
-| Harness | **663 passing, 0 failed** (was 531) |
+| Harness | **679 passing, 0 failed** (was 663) |
 | Main project | matches `v2/` byte for byte, **13 files** — `Siri.js` is new |
 | Siri project | **new** — `v2-siri/`, matches byte for byte, 2 files |
 | Deployed | main at **version 26**. Siri at **@2**, authorised and answering |
@@ -91,15 +91,34 @@ the first iva and income builds, plus everything the 13 Aug rebuild of all three
 added.** A stray blank row is indistinguishable from a real deferred entry —
 which is the whole point of deferred entries and the reason this matters.
 
-Look for, in Work, IVA and Income: blank or part-filled rows, and junk suppliers
-and payers in the registry. A typo entered through `+ New reason` is also
-permanent, because `catalog` reads the column from the sheet — fix those in the
-sheet, not in code.
+**Run `findDebris()` from the editor** — added 13 Aug, in `v2/Smoke.js`, and it is
+the tool for Cutover step 1. It **reports and never deletes**, because a
+part-filled row awaiting a document is indistinguishable from a real deferred
+entry and a tool that guessed would destroy real claims. Two confidence levels:
+
+- **`certain`** — no counterparty, or no usable amount. Both intake paths always
+  set both, so a row missing either came from a run that failed partway.
+- **`suspect`** — complete, but Siri-sourced, awaiting a document, no category.
+  Ordinary for a genuine deferred entry, so it is a prompt to look, not a verdict.
+
+`findDebris('2026-08-13')` narrows to the rebuild day. Rows with an unreadable
+timestamp are always included rather than filtered out — those are the worst-formed
+and likeliest to be debris. Registry entries with `timesUsed <= 1` are reported
+and **over-report by design**: a genuine one-off supplier looks identical, and
+under-reporting means junk survives cutover.
+
+`smokeCleanup()` is no use here — it only matches rows carrying `SMOKE_MARKER` in
+Notes, which it wrote itself. Nothing marks a row abandoned by a half-built
+Shortcut.
+
+Then delete by hand, or via `archiveEntry()`. A typo entered through
+`+ New reason` is permanent too, because `catalog` reads the column from the
+sheet — fix those in the sheet, not in code.
 
 ## First thing: establish the baseline
 
 ```
-npm run v2:test          # expect 663 passing, 0 failed
+npm run v2:test          # expect 679 passing, 0 failed
 npm run v2:verify        # expect "Server matches v2/ — 13 files, byte for byte"
 npm run v2:siri:verify   # expect "Server matches v2-siri/ — 2 files, byte for byte"
 ```

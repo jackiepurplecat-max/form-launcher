@@ -2494,6 +2494,93 @@ if (savedId === undefined) delete mocks._props.SPREADSHEET_ID; else mocks._props
 G.clearSpreadsheetCache();
 check('restored: bound again', G.getSpreadsheet() === mocks._ss);
 
+/* ----------------------------- findDebris() ------------------------------- */
+/*
+ * Cutover step 1 is "delete the test rows", and the rows in question are
+ * indistinguishable from real deferred entries by design. So what is tested here
+ * is mostly the boundary: that the confident signals fire, that the weak one is
+ * labelled weak, and that nothing complete is ever called certain.
+ */
+section('findDebris()');
+
+const wSheet = mocks._ss.getSheetByName('Work');
+const wCols = G.resolveColumns(wSheet);
+
+/*
+ * Dates must be built INSIDE the sandbox. `instanceof Date` compares against the
+ * realm's own constructor, so a Date made out here is not one in there, and the
+ * source's date checks - Entries.js:424, Web.js:420 and findDebris itself - would
+ * all read it as unreadable. In production Apps Script hands the script
+ * same-realm Dates, so testing with a host Date would be testing a situation
+ * that cannot occur.
+ */
+const sandboxDate = iso => vm.runInContext(`new Date(${JSON.stringify(iso)})`, ctx);
+
+function plant(cells) {
+  const row = wSheet.getLastRow() + 1;
+  Object.keys(cells).forEach(h => G.writeCell(wSheet, wCols, row, h, cells[h]));
+  return row;
+}
+
+// A run that died after the row was born and before anything was filled in.
+const blankRow = plant({
+  Timestamp: sandboxDate('2026-08-13T10:00:00Z'), Source: 'siri', Status: 'To Do'
+});
+// Complete but for the amount - what the Number-vs-Text trap leaves.
+const noAmountRow = plant({
+  Timestamp: sandboxDate('2026-08-13T11:00:00Z'), Source: 'siri',
+  Counterparty: 'Half Built Co', Status: 'To Do'
+});
+// No readable timestamp at all. Must never be filtered out.
+const undatedRow = plant({ Source: 'siri', Status: 'To Do' });
+// Old debris, for the since filter to drop.
+const oldRow = plant({
+  Timestamp: sandboxDate('2026-01-05T09:00:00Z'), Source: 'siri', Status: 'To Do'
+});
+
+const debris = G.findDebris();
+const wFound = debris.sections.work;
+const at = r => wFound.find(f => f.row === r);
+
+check('all four sections audited without throwing',
+  Object.keys(debris.sections).length === 4, Object.keys(debris.sections));
+check('blank row is certain', at(blankRow) && at(blankRow).confidence === 'certain', at(blankRow));
+check('blank row names both reasons', at(blankRow) && at(blankRow).reasons.length === 2, at(blankRow));
+check('missing amount alone is certain',
+  at(noAmountRow) && at(noAmountRow).reasons.join() === 'no usable amount', at(noAmountRow));
+check('undated row is reported', !!at(undatedRow));
+check('undated row says the timestamp is unreadable',
+  at(undatedRow) && at(undatedRow).created === '(unreadable)', at(undatedRow));
+
+// The strong claim: the ONLY certain findings are the ones planted above.
+// Anything else means a real, complete entry is being called debris.
+const certain = wFound.filter(f => f.confidence === 'certain').map(f => f.row);
+check('no complete row is ever called certain',
+  certain.every(r => [blankRow, noAmountRow, undatedRow, oldRow].includes(r)), certain);
+
+// A finished siri row still awaiting its document is the ambiguous case, and
+// must come back as a prompt to look rather than a verdict.
+const suspects = wFound.filter(f => f.confidence === 'suspect');
+check('the ambiguous case is labelled suspect, not certain',
+  suspects.length > 0 && suspects.every(f => f.reasons.join() === 'siri, awaiting, no category'),
+  suspects);
+check('totals agree with the findings',
+  debris.totals.certain === certain.length && debris.totals.suspect === suspects.length,
+  debris.totals);
+
+const windowed = G.findDebris('2026-08-13').sections.work.map(f => f.row);
+check('since keeps rows on the day', windowed.includes(blankRow) && windowed.includes(noAmountRow));
+check('since keeps undated rows rather than hiding them', windowed.includes(undatedRow));
+check('since drops older rows', !windowed.includes(oldRow), windowed);
+
+let dateThrew = false;
+try { G.findDebris('not-a-date'); } catch (e) { dateThrew = true; }
+check('an unreadable date is refused rather than ignored', dateThrew);
+
+check('registry entries taught once are reported', debris.registry.length > 0);
+check('registry total agrees', debris.totals.registry === debris.registry.length);
+check('findDebris deletes nothing', wSheet.getLastRow() === oldRow, wSheet.getLastRow());
+
 console.log('\n--- Suppliers sheet ---\n' + dump('Suppliers'));
 console.log('\n--- Work sheet ---\n' + dump('Work'));
 console.log(`\n================  ${pass} passed, ${fail} failed  ================`);

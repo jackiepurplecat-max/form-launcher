@@ -210,3 +210,135 @@ function smokeCleanup() {
   Logger.log(JSON.stringify(removed, null, 2));
   return removed;
 }
+
+/* ============================== Debris audit ============================== */
+
+/**
+ * Report rows and registry entries that look like they were left behind by
+ * testing. Run from the editor before cutover; see REBUILD-PLAN's Cutover step
+ * 1, "delete the test rows".
+ *
+ * WHY THIS REPORTS AND NEVER DELETES
+ *
+ * A part-filled row awaiting a document is exactly what a legitimate deferred
+ * entry looks like. That is not a flaw in the schema, it is the point of
+ * deferred entries - so no test this function could apply separates the two with
+ * certainty, and a cleanup that guessed would destroy real claims. It prints;
+ * you decide; the sheet or archiveEntry() does the removing.
+ *
+ * smokeCleanup() can delete safely because it only matches rows carrying
+ * SMOKE_MARKER in Notes, which it wrote itself. Nothing marks a row abandoned by
+ * a half-built Shortcut, which is why that function is useless here and this one
+ * exists.
+ *
+ * THE SIGNALS, AND HOW MUCH THEY ARE WORTH
+ *
+ * `certain` - no counterparty, or no usable amount. Both intake paths always set
+ * both: Siri asks for them before it will call create, and the form requires
+ * them. A row missing either was written by a run that failed partway, so it is
+ * debris whatever else is true of it.
+ *
+ * `suspect` - complete enough to be real, but Siri-sourced and still awaiting a
+ * document with no category set. Ordinary for a genuine deferred entry, which is
+ * why it is only ever a prompt to look. Narrow it with `sinceIso`.
+ *
+ * @param {string} [sinceIso] Only consider rows created on or after this date,
+ *   e.g. '2026-08-13'. Rows with an unreadable timestamp are always included -
+ *   a filter that silently dropped them would hide the worst-formed rows, which
+ *   are the ones most likely to be debris.
+ * @return {Object} The report, also written to the log.
+ */
+function findDebris(sinceIso) {
+  let since = null;
+  if (sinceIso) {
+    since = new Date(sinceIso);
+    if (isNaN(since.getTime())) throw new Error(`Unreadable date: ${sinceIso}`);
+  }
+
+  const report = {
+    since: sinceIso || '(everything)',
+    sections: {},
+    registry: [],
+    totals: { certain: 0, suspect: 0, registry: 0 }
+  };
+
+  Object.keys(SECTIONS).forEach(key => {
+    const section = SECTIONS[key];
+    const sheet = getSheet(section);
+    const findings = [];
+    report.sections[key] = findings;
+    if (sheet.getLastRow() < 2) return;
+
+    const cols = resolveColumns(sheet);
+    const values = sheet
+      .getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn())
+      .getValues();
+
+    // Required columns go through columnIndex so a missing one is a loud error
+    // rather than an audit that quietly finds nothing. The optional ones are
+    // guarded instead: Income has no documents, so it has no receipt state, and
+    // IVA has no category at all.
+    const iTime = columnIndex(cols, sheet.getName(), COMMON.timestamp) - 1;
+    const iParty = columnIndex(cols, sheet.getName(), COMMON.counterparty) - 1;
+    const iAmount = columnIndex(cols, sheet.getName(), COMMON.amount) - 1;
+    const iSource = columnIndex(cols, sheet.getName(), COMMON.source) - 1;
+    const iState = cols[COMMON.receiptState] ? cols[COMMON.receiptState] - 1 : -1;
+    const iCategory = section.category && cols[section.category.header]
+      ? cols[section.category.header] - 1
+      : -1;
+
+    values.forEach((rowValues, i) => {
+      const created = rowValues[iTime];
+      const readable = created instanceof Date && !isNaN(created.getTime());
+      if (since && readable && created < since) return;
+
+      const party = (rowValues[iParty] || '').toString().trim();
+      const amount = Number(rowValues[iAmount]);
+      const reasons = [];
+
+      if (!party) reasons.push('no counterparty');
+      if (!isFinite(amount) || amount === 0) reasons.push('no usable amount');
+
+      if (!reasons.length) {
+        const awaiting = iState >= 0 &&
+          (rowValues[iState] || '').toString().trim() === RECEIPT_STATE.awaiting;
+        const siri = (rowValues[iSource] || '').toString().trim() === 'siri';
+        const noCategory = iCategory >= 0 &&
+          !(rowValues[iCategory] || '').toString().trim();
+        if (siri && awaiting && noCategory) reasons.push('siri, awaiting, no category');
+        else return;
+      }
+
+      const certain = reasons[0] !== 'siri, awaiting, no category';
+      findings.push({
+        row: i + 2,
+        confidence: certain ? 'certain' : 'suspect',
+        counterparty: party || '(blank)',
+        amount: rowValues[iAmount],
+        created: readable ? created : '(unreadable)',
+        reasons: reasons
+      });
+      report.totals[certain ? 'certain' : 'suspect']++;
+    });
+  });
+
+  // A supplier learned from a test run autocompletes forever, so it is as much
+  // debris as the row that taught it. timesUsed <= 1 over-reports by design: a
+  // genuine one-off supplier looks identical, and under-reporting here means
+  // junk survives cutover.
+  loadRegistry().forEach(entry => {
+    if (entry.timesUsed > 1) return;
+    const last = entry.lastUsed instanceof Date ? entry.lastUsed : null;
+    if (since && last && last < since) return;
+    report.registry.push({
+      row: entry.row,
+      name: entry.name,
+      timesUsed: entry.timesUsed,
+      lastUsed: entry.lastUsed
+    });
+  });
+  report.totals.registry = report.registry.length;
+
+  Logger.log(JSON.stringify(report, null, 2));
+  return report;
+}
