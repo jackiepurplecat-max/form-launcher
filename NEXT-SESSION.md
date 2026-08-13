@@ -24,9 +24,22 @@ the four Shortcuts were destroyed on 13 Aug and rebuilt the same day; **all four
 are confirmed working.** Cutover (step 10) is still not started, and is again the
 main thing standing between this and daily use.
 
-**The debris is cleared and the staging picker works** — both closed 13 Aug, and
-they were the last two loose ends before cutover. **Cutover (step 10) is now the
-next thing**, and it is operational rather than code: see "Pick up here", item 7.
+**Everything code-side is done and checked.** Closed on 13 Aug: the debris audit
+(clean), the staging picker, the phone document link, and **a durable phone
+session — the home screen icon works**, which was the last thing daily use
+needed. **Cutover (step 10) is the next thing and it is operational, not code**:
+four toggles in the old account. See "Pick up here", item 7.
+
+**What is genuinely left, in four handfuls:**
+
+1. **Cutover** — turn the old forms off, work the v1 backlog down, decommission.
+   No code.
+2. **One unseen verification** — the NIF warnings on a supplier merge. Everything
+   else has now been on screen at least once.
+3. **Field validation, step 13** — `VALIDATION-PLAN.md`. **Nothing validates
+   values on any intake path today.** The real hole rather than a polish item.
+4. **OCR intake, step 12**, plus the plan's open questions. New capability; can
+   wait.
 
 ## The Shortcuts were destroyed and rebuilt, 13 Aug
 
@@ -277,8 +290,12 @@ clean-up above, then step 5.**
      `authuser=` parameter `uiFileUrl()` appends is enough; Drive does not need
      the `/u/N/` path form. This was the last thing daily use depended on that
      had never been tried.
-   - **A durable phone session** — try **Add to Home Screen** from the working
-     private tab; iOS gives home-screen web apps their own cookie jar.
+   - ~~**A durable phone session.**~~ **Done — the home screen link works.**
+     Reached by opening it in a **Private Browsing** tab first, getting it to the
+     point where it loaded, and adding to the Home Screen from there. The private
+     tab is what supplies a cookie jar holding only the v2 account; the home
+     screen icon then keeps its own. **This is now the way in on the phone** —
+     before it, the only routes were Siri and a link from a completion mail.
 7. **Cutover — step 10, and it is now the next thing.** The plan lists five
    steps; **step 1 is done** — `findDebris()` was re-run after the denominator
    went in and came back clean, so there is no test debris to clear. The rest is
