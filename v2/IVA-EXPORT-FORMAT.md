@@ -124,6 +124,44 @@ written at once, so the interaction is a UI affordance, not a format rule.
 Both NIFs are already Script Properties — `REF_JALLC_NIF` and `REF_MY_NIF` — and
 **neither belongs in this repo**, which is why every NIF above is `NNNNNNNNN`.
 
+## `CodigoBem` — the per-line Tipo, and why its dropdown appears late
+
+**The Quadro 02 `Tipo` dropdown is empty until `TipoEntidade` is chosen in Quadro
+01**, which is the second interactive dependency in this form and the reason a
+first save had no `CodigoBem`. It is not a quirk: `EntidadeEnum.getBensServicos()`
+returns a *different allowed list per entity type*, so until the entity type is
+known there is nothing to offer.
+
+Read out of the jar rather than the UI, so it is complete rather than whatever
+happened to be on screen. **For `d`, exactly eight codes are legal:**
+
+| Code | Descrição |
+|---|---|
+| 101 | Vestuário e calçado |
+| 102 | Electrodomésticos |
+| 103 | Móveis |
+| 104 | Jóias, bijutarias |
+| 106 | Artigos de escritório |
+| 107 | Outros bens não especificados |
+| 156 | Reparação ou manutenção de veículos automóveis |
+| 157 | Outros serviços não especificados |
+
+**What `d` may NOT claim, though `c` — the embassy itself — may:** `105` bens
+alimentares e bebidas, `151` trabalhos imobiliários, `152` água/gás/electricidade,
+`153` serviços de alimentação e bebidas, `154` alojamento, `155` telefone. Food,
+drink, utilities, accommodation and telephone are all closed to an employee. That
+is a real eligibility rule, not a UI detail, and it is the kind of thing worth
+knowing **before** filing a receipt rather than at submission.
+
+The other entity types, for completeness: `a` Comunidades Religiosas → 301, 302;
+`b` IPSS → 351, 352, 353, 358; `c` Embaixadas e Organismos Internacionais → all
+of 101–107 and 151–157.
+
+**This should drive the IVA category list in `Config.js`.** Those eight are the
+only values the tax app will accept from this claimant, so any other category
+guarantees a rejected line — an argument for the closed list being generated from
+this table rather than typed.
+
 ## The cross-check worth keeping
 
 AT's own types demand exactly what `VALIDATION-PLAN.md` already proposed, arrived
