@@ -410,10 +410,24 @@ clean-up above, then step 5.**
   `script.google.com/u/1/macros/s/<id>/exec` returns **404** for every N. Tested
   0, 1 and 2 on 13 Aug — do not spend the hour again.
 
-  **The fix is to sign in to BOTH accounts in the same Safari.** Google account
-  menu → *Add another account* → the v2 address. `authuser=` then has something to
-  resolve to and the link works. Both are needed anyway while the v1 backlog is
-  being worked down, so signing out of `jackiepurplecat` is the wrong move.
+  **The symptom is Drive's access error, not ours.** *"Precisa de acesso"* /
+  *"You need access"* means Google refused before the script ran — `access` is
+  `MYSELF`, so a browser authenticated as `jackiepurplecat` never reaches
+  `doGet`. Per the rule below: diagnose from `appsscript.json`, not the error
+  text. Nothing in the code can catch this, which is why the version 27 denial
+  page does not help here.
+
+  **So the browser context itself has to be the v2 account.** That is the whole
+  problem, and it is why the Private Browsing tab works — it is a jar with only
+  v2 in it. Two durable ways to get the same thing:
+
+  1. **Add the v2 account to normal Safari** — Google account menu → *Add another
+     account* → the v2 address. `authuser=` then has something to resolve to.
+     Both accounts are needed anyway while the v1 backlog is worked down, so
+     signing `jackiepurplecat` out is the wrong move.
+  2. **Give it a jar that only knows v2** — Add to Home Screen, or an iOS 17
+     Safari Profile. Stronger, because it removes the ambiguity instead of
+     resolving it every time.
 - **Add to Home Screen is the durable phone session**, and the reason it works is
   that iOS gives a home-screen web app **its own cookie jar**, separate from
   Safari's. That is what stops the default account from winning, and it is a
@@ -443,9 +457,16 @@ clean-up above, then step 5.**
   reason `requireUiAccess()` does not.
 
   Before 27 the page was a bare `Not authorized.` with no viewport tag, so on a
-  phone it was both uninformative and rendered at desktop width. Wrong-account is
-  the *likely* denial here rather than an exotic one, and that page sent you
-  hunting a broken deployment instead of a wrong login.
+  phone it was both uninformative and rendered at desktop width.
+
+  **But you will almost never see it, and it does not fix the wrong-account
+  case.** `v2/appsscript.json` sets `"access": "MYSELF"`, so Google refuses any
+  other account **before `doGet` runs** and serves *its* page — Drive's
+  *"Precisa de acesso"* — not ours. The version 27 page is only reachable by an
+  account Google lets execute that then fails the `UI_ALLOWED_EMAILS` check, which
+  under `MYSELF` is essentially nobody. It is correct defensive code and the
+  harness pins it; it is not the answer to a wrong login. Confirmed on the phone
+  13 Aug: the wrong account gets Drive's error, not ours.
 - **The harness still cannot click.** It now covers the Siri endpoint end to end
   — the gate, the whitelist, injection, all four sections — but the phone, the
   deployment and the library resolution are all outside it.
