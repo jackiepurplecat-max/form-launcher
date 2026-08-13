@@ -490,6 +490,32 @@ clean-up above, then step 5.**
 - **A stray `Folha1` tab** may still be in the spreadsheet. Harmless; delete by
   hand if empty.
 
+## Known and accepted: real NIFs are in the public repo
+
+**`index.html` is tracked, not gitignored, and carries both NIFs in plaintext** —
+JALLC's and the personal one, at roughly `index.html:621` and `:623`. `CLAUDE.md`
+describes that file as *"(with actual values, gitignored)"*, which is **wrong**:
+`git check-ignore` returns nothing and `git ls-files` lists it, so every build has
+been published. A real supplier NIF also went into the first version of
+`v2/IVA-EXPORT-FORMAT.md`; the working copy is scrubbed to `NNNNNNNNN`, but commit
+`c349aa7` still holds it.
+
+**Decided 13 Aug: leave it.** These NIFs appear on invoices and correspondence
+anyway, so the exposure was judged low. Recorded rather than fixed so it is a
+decision and not an oversight, and so nobody rediscovers it and panics.
+
+**If that judgement ever changes**, in increasing order of cost:
+
+1. `git rm --cached index.html` and add it to `.gitignore` — matches what
+   `CLAUDE.md` always claimed, stops future commits, leaves history alone.
+2. The above plus `git filter-repo` and a force-push — actually removes them from
+   GitHub after GC, at the cost of rewriting every hash and breaking clones.
+3. Make the repo private — but v1's launcher page is served from **GitHub Pages**
+   and needs it public until the backlog reaches zero.
+
+Note the ordering constraint in 3: this cannot be closed off cleanly until v1 is
+decommissioned, which is cutover step 5.
+
 ## Settled this session, so do not re-litigate
 
 - **The Siri logic lives in the MAIN project, not the shim.** The shim is two
