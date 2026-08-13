@@ -39,6 +39,13 @@ function dump(name) {
   return sh.getRange(1, 1, h, w).getValues().map(r => r.map(v => v instanceof Date ? 'Date' : v).join(' | ')).join('\n');
 }
 
+/*
+ * Health's patient list moved out of Config.js into a Script Property, because
+ * the repository is public and these are family members. Seeded here with
+ * stand-in names so the harness exercises the same closed-list behaviour.
+ */
+mocks._props.HEALTH_PATIENTS = 'Jane, Kit, Ada, Phoenix';
+
 /* ------------------------------ bootstrap -------------------------------- */
 section('bootstrap()');
 const report = G.bootstrap();
@@ -202,7 +209,7 @@ section('Health — two documents');
 const just = mocks.DriveApp._addFile('presc.pdf');
 const paid = mocks.DriveApp._addFile('receipt.jpg');
 const health = G.createEntry('health', {
-  'Date': '2026-01-05', 'Counterparty': 'White Clinic', 'Patient': 'P',
+  'Date': '2026-01-05', 'Counterparty': 'White Clinic', 'Patient': 'Phoenix',
   'Amount': 70, 'Currency': 'EUR', 'Invoice Date': '2026-01-06', 'Type': 'Dentist',
   'Justification URL': just.id, 'Receipt URL': paid.id
 }, 'form');
@@ -216,7 +223,7 @@ check('both moved', just.parent.getName() === 'Claimed' && paid.parent.getName()
 section('Health accents + alias matching');
 const acc = mocks.DriveApp._addFile('x.pdf');
 G.createEntry('health', {
-  'Date': '2026-01-07', 'Counterparty': 'Farmácia Sá', 'Patient': 'P', 'Amount': 12.5,
+  'Date': '2026-01-07', 'Counterparty': 'Farmácia Sá', 'Patient': 'Phoenix', 'Amount': 12.5,
   'Currency': 'EUR', 'Invoice Date': '2026-01-07', 'Receipt URL': acc.id
 }, 'form');
 check('accents flattened in filename', acc.getName() === '260107_FarmaciaSa_12-50_justification.pdf' || acc.getName() === '260107_FarmaciaSa_12-50_receipt.pdf', acc.getName());
@@ -277,7 +284,7 @@ section('"more info needed" mail — separate address, only when incomplete');
 const mailBefore = mocks.MailApp.sent.length;
 
 const partial = G.createEntry('health', {
-  'Date': '2026-06-01', 'Counterparty': 'White Clinic', 'Patient': 'P', 'Amount': 40, 'Currency': 'EUR'
+  'Date': '2026-06-01', 'Counterparty': 'White Clinic', 'Patient': 'Phoenix', 'Amount': 40, 'Currency': 'EUR'
 }, 'siri');
 check('incomplete entry is ok:false', partial.ok === false, partial.error);
 check('more-info mail sent', partial.completionRequest && partial.completionRequest.ok === true, partial.completionRequest);
@@ -313,7 +320,7 @@ check('with no WEB_APP_URL set it falls back to the spreadsheet row',
 mocks._props.WEB_APP_URL = 'https://script.google.test/macros/s/DEPLOYED/exec';
 const linkMailBefore = mocks.MailApp.sent.length;
 const linked = G.createEntry('health', {
-  'Date': '2026-06-03', 'Counterparty': 'White Clinic', 'Patient': 'K', 'Amount': 55, 'Currency': 'EUR'
+  'Date': '2026-06-03', 'Counterparty': 'White Clinic', 'Patient': 'Kit', 'Amount': 55, 'Currency': 'EUR'
 }, 'siri');
 const linkBody = mocks.MailApp.sent[linkMailBefore].body;
 check('it links to the web app', /macros\/s\/DEPLOYED\/exec\?/.test(linkBody), linkBody);
@@ -343,7 +350,7 @@ check('and a plain-text alternative is still sent', /Finish it here: http/.test(
 check('sheet values are escaped on the way into the HTML', (() => {
   const before = mocks.MailApp.sent.length;
   G.createEntry('health', {
-    'Date': '2026-06-05', 'Counterparty': 'Smith & Sons <Lda>', 'Patient': 'J', 'Amount': 3
+    'Date': '2026-06-05', 'Counterparty': 'Smith & Sons <Lda>', 'Patient': 'Jane', 'Amount': 3
   }, 'siri');
   const body = mocks.MailApp.sent[before].opts.htmlBody;
   return body.indexOf('Smith &amp; Sons &lt;Lda&gt;') !== -1 &&
@@ -362,7 +369,7 @@ check('sectionKeyOf takes the object back to its key, and refuses to guess',
 mocks._props.WEB_APP_URL = 'https://script.google.test/macros/s/HEADDEV/dev';
 const devMailBefore = mocks.MailApp.sent.length;
 G.createEntry('health', {
-  'Date': '2026-06-04', 'Counterparty': 'White Clinic', 'Patient': 'A', 'Amount': 12, 'Currency': 'EUR'
+  'Date': '2026-06-04', 'Counterparty': 'White Clinic', 'Patient': 'Ada', 'Amount': 12, 'Currency': 'EUR'
 }, 'siri');
 const devBody = mocks.MailApp.sent[devMailBefore].body;
 check('a /dev URL is refused rather than mailed', !/\/dev/.test(devBody), devBody);
@@ -1111,7 +1118,7 @@ const liveBefore = liveFiles();
 let rolledBack = null;
 try {
   G.uiCreateEntry('health', {
-    values: { 'Date': '2026-09-03', 'Counterparty': 'X', 'Patient': 'K',
+    values: { 'Date': '2026-09-03', 'Counterparty': 'X', 'Patient': 'Kit',
               'Invoice Date': '2026-09-03', 'Amount': 1 },
     files: [
       { header: 'Justification URL', name: 'j.pdf', mimeType: 'application/pdf', data: b64 },
@@ -1202,7 +1209,8 @@ section('a category with a declared list is a closed choice');
 const patientField = G.uiFormFields(G.getSection('health'))
   .filter(f => f.header === 'Patient')[0];
 check('rendered as a choice, not free text', patientField.type === 'choice', patientField);
-check('carrying the family, as initials', (patientField.options || []).join() === 'J,K,A,P',
+check('carrying the family, from the script property',
+  (patientField.options || []).join() === 'Jane,Kit,Ada,Phoenix',
   patientField.options);
 check('and it is still required', patientField.required === true);
 check('no autocomplete role, because there is nothing to guess at',
@@ -1214,13 +1222,13 @@ check('Work\'s Expense Reason stays free text with suggestions',
   reasonField.type === 'text' && reasonField.role === 'category', reasonField);
 
 check('uiCategoryValues returns the declared list for a closed category',
-  G.uiCategoryValues('health').join() === 'J,K,A,P', G.uiCategoryValues('health'));
+  G.uiCategoryValues('health').join() === 'Jane,Kit,Ada,Phoenix', G.uiCategoryValues('health'));
 
 // The page's filter needs the declared values to be stable the way the status
 // filter is - built from config rather than from whatever the rows happen to
 // hold, which is what stopped v1 growing one option per claim date.
 check('the section metadata carries the declared values for the filter',
-  G.uiSectionMeta('health').category.options.join() === 'J,K,A,P',
+  G.uiSectionMeta('health').category.options.join() === 'Jane,Kit,Ada,Phoenix',
   G.uiSectionMeta('health').category);
 check('an open category declares none, so the filter falls back to the data',
   G.uiSectionMeta('work').category.options.length === 0,
@@ -1236,10 +1244,10 @@ try {
   });
 } catch (e) { notAPatient = e.message; }
 check('a patient off the list is refused, and the list is named',
-  /must be one of/.test(notAPatient || '') && /J, K, A, P/.test(notAPatient || ''), notAPatient);
+  /must be one of/.test(notAPatient || '') && /Jane, Kit, Ada, Phoenix/.test(notAPatient || ''), notAPatient);
 
 const realPatient = G.uiCreateEntry('health', {
-  values: { 'Date': '2026-09-10', 'Counterparty': 'White Clinic', 'Patient': 'P',
+  values: { 'Date': '2026-09-10', 'Counterparty': 'White Clinic', 'Patient': 'Phoenix',
             'Invoice Date': '2026-09-10', 'Amount': 40 }
 });
 check('one on the list goes through', realPatient.ok === true, realPatient.error);
@@ -1672,7 +1680,7 @@ check('restoring it brings back the corrected name, not the old one',
 // silently created a THIRD supplier would be the original bug with more steps.
 section('renaming onto an existing supplier MERGES rather than duplicating');
 const mergeSrc = G.uiCreateEntry('health', {
-  values: { 'Date': '2026-03-06', 'Counterparty': 'Whte Clinic', 'Patient': 'J',
+  values: { 'Date': '2026-03-06', 'Counterparty': 'Whte Clinic', 'Patient': 'Jane',
             'Invoice Date': '2026-03-06', 'Amount': 60, 'Type': 'Dentist' }
 });
 const whiteBefore = supplierNamed('White Clinic');
@@ -1700,7 +1708,7 @@ check('the source\'s Type filled the target\'s empty one',
 
 section('a merge target may be matched by one of its ALIASES');
 G.uiCreateEntry('health', {
-  values: { 'Date': '2026-03-07', 'Counterparty': 'Alias Bait', 'Patient': 'K',
+  values: { 'Date': '2026-03-07', 'Counterparty': 'Alias Bait', 'Patient': 'Kit',
             'Invoice Date': '2026-03-07', 'Amount': 20 }
 });
 const byAlias = G.uiUpdateSupplier(supplierRow('Alias Bait'), {
@@ -1713,7 +1721,7 @@ check('rather than becoming a name that collides with an alias',
 
 section('a merge applies the clear-on-conflict rule to Type');
 G.uiCreateEntry('health', {
-  values: { 'Date': '2026-03-08', 'Counterparty': 'Conflicto', 'Patient': 'A',
+  values: { 'Date': '2026-03-08', 'Counterparty': 'Conflicto', 'Patient': 'Ada',
             'Invoice Date': '2026-03-08', 'Amount': 30, 'Type': 'Optician' }
 });
 const conflicted = G.uiUpdateSupplier(supplierRow('Conflicto'), {
@@ -1764,11 +1772,11 @@ check('and it agrees with what the merge then does',
 // number was wrong the core is now wrong, and before this nothing said so.
 section('a merge into a supplier with no NIF reports what it adopted');
 G.uiCreateEntry('health', {
-  values: { 'Date': '2026-03-14', 'Counterparty': 'Adopter Co', 'Patient': 'J',
+  values: { 'Date': '2026-03-14', 'Counterparty': 'Adopter Co', 'Patient': 'Jane',
             'Invoice Date': '2026-03-14', 'Amount': 15 }
 });
 G.uiCreateEntry('health', {
-  values: { 'Date': '2026-03-14', 'Counterparty': 'Adoptor Co', 'Patient': 'J',
+  values: { 'Date': '2026-03-14', 'Counterparty': 'Adoptor Co', 'Patient': 'Jane',
             'Invoice Date': '2026-03-14', 'Amount': 15 }
 });
 const adoptPreview = G.uiSupplierPreview(supplierRow('Adoptor Co'), 'Adopter Co', '222222222');
@@ -1830,7 +1838,7 @@ G.uiCreateEntry('work', {
   values: { 'Date': '2026-03-11', 'Counterparty': 'Countme', 'Expense Reason': 'r', 'Amount': 1 }
 });
 G.uiCreateEntry('health', {
-  values: { 'Date': '2026-03-11', 'Counterparty': 'Countme', 'Patient': 'P',
+  values: { 'Date': '2026-03-11', 'Counterparty': 'Countme', 'Patient': 'Phoenix',
             'Invoice Date': '2026-03-11', 'Amount': 2 }
 });
 const preview = G.uiSupplierPreview(supplierRow('Countme'), 'White Clinic');

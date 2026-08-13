@@ -130,7 +130,7 @@ function siriCatalog(request) {
       // A declared list is closed: Health's patients are the family and a
       // misspelling typed once would become a second patient forever. An open
       // one is a suggestion list and free text stays allowed.
-      closed: !!(section.category.options && section.category.options.length),
+      closed: categoryOptions(section) !== null,
       required: section.category.required !== false,
       values: categoryValues(request.section)
     } : null

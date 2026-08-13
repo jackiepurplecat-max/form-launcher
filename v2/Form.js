@@ -84,13 +84,14 @@ function uiFormFields(section) {
     // A category with a declared option list is a closed choice - Health's
     // Patient. One without is free text with suggestions, because Work's
     // Expense Reason is a new trip most times it is asked for.
-    const closed = !!(section.category.options && section.category.options.length);
+    const declared = categoryOptions(section);
+    const closed = declared !== null;
     fields.push({
       header: section.category.header,
       label: section.category.label,
       type: closed ? 'choice' : 'text',
       required: section.category.required !== false,
-      options: closed ? section.category.options : null,
+      options: closed ? declared : null,
       role: closed ? null : 'category'
     });
   }
@@ -177,9 +178,8 @@ function categoryValues(sectionKey) {
   // happens to be in the column would quietly re-open a list whose whole
   // purpose is being closed - a misspelling already in the sheet would come
   // back as a suggestion and get picked again.
-  if (section.category.options && section.category.options.length) {
-    return section.category.options.slice();
-  }
+  const declared = categoryOptions(section);
+  if (declared !== null) return declared;
 
   const sheet = getSheet(section);
   const cols = resolveColumns(sheet);

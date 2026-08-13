@@ -14,7 +14,7 @@ after this. This file is disposable: overwrite it at the end of each session.
 | Harness | **663 passing, 0 failed** (was 531) |
 | Main project | matches `v2/` byte for byte, **13 files** — `Siri.js` is new |
 | Siri project | **new** — `v2-siri/`, matches byte for byte, 2 files |
-| Deployed | main at **version 25**. Siri at **@2**, authorised and answering |
+| Deployed | main at **version 26**. Siri at **@2**, authorised and answering |
 | Shortcuts | **"Log health claim" and "Log expense" built and working.** `iva` and `income` still to build |
 
 Steps 1–9 and 9c are done and verified by hand. **Step 11's server side is
@@ -56,7 +56,19 @@ Built, deployed and harness-covered; **inert until these are done.**
    existing `Staging` folder under the root by name rather than creating a second
    one beside it, and records the id. Genius Scan is already pointed at that
    folder. An id set by hand always wins, even if it points outside the tree.
-3. **Add the medium question to the three Shortcuts** — Health, Work and IVA, not
+3. **Set `HEALTH_PATIENTS`** in Script Properties — the patient names, comma
+   separated, in the order they should be offered. The list moved out of
+   `Config.js` because the repository is public; the sheet now stores the **full
+   names**, not initials. Unset means the dropdown is empty and nothing can be
+   entered — the list is still closed.
+
+   **Then replace `J`, `K`, `A` and `P` in the Health sheet's Patient column**
+   with the matching names. This is not the history rule being broken: that rule
+   is about NIFs on submitted claims, where the row must match what Finanças
+   received. A patient initial is an internal grouping, submitted nowhere. Left
+   as initials, an old row's value is not in the dropdown, so **editing it would
+   blank the patient or refuse the save**.
+4. **Add the medium question to the three Shortcuts** — Health, Work and IVA, not
    Income. `catalog` now returns `receiptMedium.values`, so use a Choose from List
    fed from it rather than hardcoding, and send it in `fields` as
    `"Receipt Medium"`. It is the fourth allowed field on those sections.

@@ -236,7 +236,7 @@ function uiSectionMeta(sectionKey) {
           label: section.category.label,
           // Declared values, where there are any. The filter offers these plus
           // whatever the rows actually hold - see the note in the page.
-          options: (section.category.options || []).slice()
+          options: categoryOptions(section) || []
         }
       : null,
     columns: uiColumns(section),

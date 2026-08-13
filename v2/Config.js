@@ -229,14 +229,23 @@ const SECTIONS = {
     // to warn you. Adding someone is a line here plus a push - deliberately a
     // change to the configuration rather than something a keystroke can do.
     //
-    // INITIALS, on purpose. This repository is public, and these are family
-    // members attached to health claims. The initials are unambiguous to the
-    // one person who uses this and meaningless to anyone else, which is the
-    // same reasoning that keeps the NIFs in Script Properties - with the
-    // difference that a list this short stays readable in version control.
+    // THE LIST LIVES IN A SCRIPT PROPERTY, not here. These are family members
+    // attached to health claims and this repository is public, so the names
+    // cannot be committed - the same reasoning that keeps the NIFs and the
+    // recipient addresses out of this file.
+    //
+    // It was initials for exactly that reason, and initials are worse: the
+    // sheet is not public, so there is no benefit to storing "P" in it, and a
+    // column of single letters is unreadable in the one place the data is
+    // actually used. Moving the list to a property lets the real names be both
+    // stored and displayed while staying out of version control.
+    //
+    // Still a CLOSED list. Where the values come from changed; what they mean
+    // did not. One misspelling typed once would still become a second patient
+    // for ever and split that person's claims.
     category: {
       header: 'Patient', label: 'Patient', managed: true,
-      options: ['J', 'K', 'A', 'P']
+      optionsProperty: 'HEALTH_PATIENTS'
     },
     // White Clinic is usually Dentist, so remember it
     registryTypeField: 'Type',
@@ -423,6 +432,14 @@ const SCRIPT_PROPERTY_INFO = {
     required: false, secret: true,
     description: 'Key held only in the Shortcut, for the create-only endpoint'
   },
+  HEALTH_PATIENTS: {
+    required: false, secret: false,
+    description: 'Comma-separated patient names for the Health section, in the order ' +
+      'they should be offered. Lives here rather than in Config.js because the ' +
+      'repository is public and these are family members attached to health claims. ' +
+      'Unset means the dropdown is empty - the list is still CLOSED, so nothing can ' +
+      'be entered until it is set'
+  },
   STAGING_FOLDER_ID: {
     required: false, secret: false,
     description: 'Drive folder that Genius Scan and saved email attachments write to. ' +
@@ -442,6 +459,40 @@ const SCRIPT_PROPERTY_INFO = {
 /** The state a newly created entry starts in: the first in the list. */
 function initialState(section) {
   return section.states[0].name;
+}
+
+/**
+ * The declared values of a section's category, or null when it is an open list.
+ *
+ * A category is CLOSED when it declares its values and OPEN when it does not —
+ * open ones populate themselves from the column. The values may be declared
+ * here in `options`, or named by `optionsProperty` for a list that cannot be
+ * committed because the repository is public.
+ *
+ * Both are equally closed. Everything that used to read `category.options`
+ * directly must come through here, or a property-backed list silently reads as
+ * an open one: free text allowed, no dropdown, and the first typo becomes a
+ * permanent second value.
+ */
+function categoryOptions(section) {
+  const category = section.category;
+  if (!category) return null;
+
+  if (category.options && category.options.length) return category.options.slice();
+
+  if (category.optionsProperty) {
+    const raw = PropertiesService.getScriptProperties()
+      .getProperty(category.optionsProperty) || '';
+    const values = raw.split(',')
+      .map(value => value.trim())
+      .filter(value => value !== '');
+
+    // An unset or empty property means "not configured yet", NOT "open list".
+    // Returning null there would quietly re-open a closed list.
+    return values.length ? values : [];
+  }
+
+  return null;
 }
 
 /**
