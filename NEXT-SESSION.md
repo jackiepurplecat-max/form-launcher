@@ -273,10 +273,10 @@ clean-up above, then step 5.**
      on screen. Merge two suppliers whose NIFs **differ**; then merge into one
      with **no** NIF and confirm it says the core has *inherited* one. Matching
      NIFs must say nothing at all.
-   - **The document link on the phone** — never once confirmed. If Drive wants
-     `drive.google.com/u/N/file/d/<id>/view` rather than the `authuser=`
-     parameter `uiFileUrl()` appends, that is a one-line change with the harness
-     already around it.
+   - ~~**The document link on the phone.**~~ **Confirmed working, 13 Aug.** The
+     `authuser=` parameter `uiFileUrl()` appends is enough; Drive does not need
+     the `/u/N/` path form. This was the last thing daily use depended on that
+     had never been tried.
    - **A durable phone session** — try **Add to Home Screen** from the working
      private tab; iOS gives home-screen web apps their own cookie jar.
 7. **Cutover — step 10, and it is now the next thing.** The plan lists five
@@ -294,9 +294,22 @@ clean-up above, then step 5.**
    5. **When that backlog hits zero:** unpublish the old page, delete the old web
       app deployment, keep the old sheet and Drive as archive.
 
-   **Do the phone document link in item 6 first.** It is five minutes, it is the
-   one unverified thing that daily use hits constantly, and it is far cheaper to
-   find broken while the old system is still accepting.
+   **Everything code-side is ready and checked:** harness green, both projects
+   byte for byte, deployment 26 current, the staging picker exercised, the phone
+   document link confirmed, and the debris audit clean. Nothing is left to build.
+
+   **Step 2 cannot be done from a terminal, and this is the whole reason cutover
+   is still open.** `clasp` moves Apps Script code and nothing else — there is no
+   CLI for a Form's *Accepting responses* toggle. Doing it in code would mean
+   pushing a `FormApp.setAcceptingResponses(false)` function into v1, which
+   "**Do not change v1**" forbids, and only one of the four form ids is even
+   recorded (`FORM_ID`, the Work form, and it lives in the old account's Script
+   Properties, not in this repo). So it is four toggles in the browser, signed in
+   as **jackiepurplecat@gmail.com**: `forms.google.com` → each form → **Responses**
+   → switch **Accepting responses** off.
+
+   It is reversible — switch it back on — so the risk is not the toggle, it is
+   the gap. Do all four in one sitting.
 
    **Then stop changing v1** — see "What stays frozen" in the plan. Its known
    bugs are accepted. To stop the iCloud emails without touching its code, delete
@@ -357,10 +370,15 @@ clean-up above, then step 5.**
   ```
   cd v2 && clasp --user v2 deploy -i AKfycbxKHouifK8w8hbpMGZ_W0yklTKCdCgp-YHAk9uS7Omji_RH_fa4Za6DGYk1ZjOL5tuo -d "what changed"
   ```
-  **The main deployment is still version 23** and does not yet include `Siri.js`.
-  That does not matter for Siri — the shim runs the main project's **HEAD**
-  through a development-mode library, not the pinned version — but it does mean
-  the web UI is running older code than the tree.
+  **The main deployment is version 26 and is current** — checked 13 Aug. The only
+  `v2/` source to change since is `Smoke.js`, which is editor-only tooling and
+  reaches no user-facing surface, so `/exec` and the tree agree on everything the
+  web UI runs. Nothing to redeploy before cutover.
+
+  Re-check it the same way rather than trusting this line: `clasp --user v2
+  list-deployments` for the pinned version, then `git diff --stat <the commit
+  that version was cut from>..HEAD -- v2/`. If only `Smoke.js` and docs move, the
+  deployment is still current.
 - **A clean reload fixes a dead file picker on iOS.** iOS suspends the sandboxed
   iframe, killing the user-activation context the picker needs while the page
   still looks fine. Close the tab and reopen. **Do not write defensive code for
@@ -369,7 +387,7 @@ clean-up above, then step 5.**
 - **Diagnose access failures from `appsscript.json`, not from the error text.**
   - *"You need access"* = right file, wrong account.
   - *"Cannot open the file"* = no rights to the script itself.
-- **The web app, version 23**, on the desktop as normal; on the iPhone a Safari
+- **The web app, version 26**, on the desktop as normal; on the iPhone a Safari
   **Private Browsing** tab signed in as the v2 account:
   ```
   https://script.google.com/macros/s/AKfycbxKHouifK8w8hbpMGZ_W0yklTKCdCgp-YHAk9uS7Omji_RH_fa4Za6DGYk1ZjOL5tuo/exec
