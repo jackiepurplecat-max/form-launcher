@@ -30,13 +30,16 @@ The published schema is on this machine at
 <Simplex130 xmlns="http://www.dgci.gov.pt/2013/Simplex130" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.dgci.gov.pt/2013/Simplex130 Simplex130.xsd" versao="1" >
   <Rosto>
     <Quadro01>
+      <NifEntidade >NNNNNNNNN</NifEntidade>
+      <TipoEntidade >d</TipoEntidade>
+      <NifFuncionario >NNNNNNNNN</NifFuncionario>
     </Quadro01>
     <Quadro02>
       <Quadro02T1 >
         <Quadro02T1-Linha numero="1">
           <NumeroFatura >FAC33484</NumeroFatura>
           <DataFatura >2026-08-13</DataFatura>
-          <NifFatura >505324523</NifFatura>
+          <NifFatura >NNNNNNNNN</NifFatura>
           <ValorIVA >32.22</ValorIVA>
           <ValorTotalFatura >280.00</ValorTotalFatura>
           <Ficheiro  attachmentDate="2026-08-13T20:33:31Z" fileName="114" extension="pdf">BASE64</Ficheiro>
@@ -66,6 +69,12 @@ The published schema is on this machine at
    agree with them.
 4. **Lines are numbered from 1** via `numero` on `Quadro02T1-Linha`, and the
    attribute is required.
+
+5. **`TipoEntidade` is a single lowercase letter — `d`** for *Funcionários de
+   Embaixadas e Organismos Internacionais*, which is the case this project needs.
+   The string `Embaixada` appears **nowhere** in the jar or the app bundle, so the
+   dropdown is filled from a catalog that cannot be read statically and the code
+   can only be learned from a saved file. Do not try to derive it.
 
 Also: the app writes a stray space before `>` on most tags (`<NumeroFatura >`,
 `<Quadro02T1 >`, and two spaces on `<Ficheiro  `). That is the writer joining an
@@ -102,11 +111,18 @@ loading a generated file back, so prove it before trusting a real submission.
 | `Ficheiro` | the receipt in Drive | base64 |
 | `CodigoBem` | `Tipo` | optional; absent in the sample |
 | `Importado` | — | optional boolean; nothing maps to it yet |
-| `Quadro01/nifEntidade` | `REF_MY_NIF` | **empty in the sample** — the app did not write it. Confirm whether it is required at submission before relying on leaving it out |
+| `NifEntidade` | **`REF_JALLC_NIF`** | the employing body, not you |
+| `TipoEntidade` | — constant `d` | see trap 5 |
+| `NifFuncionario` | **`REF_MY_NIF`** | you, the claimant |
 
-**`Quadro01` came back empty**, which is worth confirming rather than copying: it
-may be filled at submission time, or it may simply not have been typed in. The
-XSD marks `nifEntidade` and `tipoEntidade` as `minOccurs="1"`.
+**Quadro 01 is three fields, with an ordering dependency in the UI that does not
+apply to a generated file.** On screen: `NifEntidade` first, then `TipoEntidade`
+from the dropdown, and only once that is chosen does the **Funcionário** panel
+appear to accept `NifFuncionario`. In the file they are three sibling elements
+written at once, so the interaction is a UI affordance, not a format rule.
+
+Both NIFs are already Script Properties — `REF_JALLC_NIF` and `REF_MY_NIF` — and
+**neither belongs in this repo**, which is why every NIF above is `NNNNNNNNN`.
 
 ## The cross-check worth keeping
 
