@@ -11,7 +11,7 @@ after this. This file is disposable: overwrite it at the end of each session.
 |---|---|
 | Branch | `step-7-web-ui`, pushed to `origin` |
 | Last code commit | the tip — `resetAllData()`. `3ece923` before it is `findDebris()`. No hash here on purpose: a commit cannot cite its own |
-| Working tree | clean. **Committed but not yet pushed to `origin`** — `git push` when you pick this up |
+| Working tree | clean, and pushed to `origin` |
 | Harness | **699 passing, 0 failed** (was 663) |
 | Main project | matches `v2/` byte for byte, **13 files** — `Siri.js` is new |
 | Siri project | **new** — `v2-siri/`, matches byte for byte, 2 files |
