@@ -44,9 +44,9 @@ npm run v2:siri:verify   # expect "Server matches v2-siri/ — 2 files, byte for
 
 If any of those disagree, find out why before changing anything.
 
-## Do these three first — the Receipt Medium work is pushed but not usable
+## Setup — mostly done, one left
 
-Built, deployed and harness-covered; **inert until these are done.**
+Built, deployed and harness-covered. Only step 4 remains.
 
 1. **Run `bootstrap()`** from the main project's editor. It appends the new
    `Receipt Medium` header to Work, IVA and Health. Idempotent, so it is safe to
@@ -56,18 +56,9 @@ Built, deployed and harness-covered; **inert until these are done.**
    existing `Staging` folder under the root by name rather than creating a second
    one beside it, and records the id. Genius Scan is already pointed at that
    folder. An id set by hand always wins, even if it points outside the tree.
-3. **Set `HEALTH_PATIENTS`** in Script Properties — the patient names, comma
-   separated, in the order they should be offered. The list moved out of
-   `Config.js` because the repository is public; the sheet now stores the **full
-   names**, not initials. Unset means the dropdown is empty and nothing can be
-   entered — the list is still closed.
-
-   **Then replace `J`, `K`, `A` and `P` in the Health sheet's Patient column**
-   with the matching names. This is not the history rule being broken: that rule
-   is about NIFs on submitted claims, where the row must match what Finanças
-   received. A patient initial is an internal grouping, submitted nowhere. Left
-   as initials, an old row's value is not in the dropdown, so **editing it would
-   blank the patient or refuse the save**.
+3. ~~**Set `HEALTH_PATIENTS`.**~~ **Done and verified live** — `catalog` returns
+   `Jackie, Kit, Auryn, Phoenix`, `closed: true`. The sheet now stores full
+   names, and the initials already in the Patient column were replaced.
 4. **Add the medium question to the three Shortcuts** — Health, Work and IVA, not
    Income. `catalog` now returns `receiptMedium.values`, so use a Choose from List
    fed from it rather than hardcoding, and send it in `fields` as
