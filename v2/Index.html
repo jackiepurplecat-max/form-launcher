@@ -92,6 +92,26 @@
       border: 1px solid var(--line); border-radius: 8px;
       background: var(--card); padding: .4rem .6rem;
     }
+
+    /*
+     * iOS gives input[type="date"] an intrinsic width of its own and will not
+     * take width:100% below it. Both date fields therefore sat wider than every
+     * other control on the form and pushed past the edge of the card - the one
+     * thing on the page that did.
+     *
+     * -webkit-appearance:none is what releases that sizing, and it does NOT cost
+     * the native wheel: on iOS the picker is bound to the input TYPE, not to its
+     * appearance, so tapping one still opens the system date picker. An earlier
+     * version of this file avoided the property on the belief that it would, and
+     * that belief was wrong - which is why the first attempt at this fix, font
+     * and padding alone, changed nothing.
+     */
+    input[type="date"] {
+      -webkit-appearance: none; appearance: none;
+      min-width: 0; max-width: 100%; width: 100%;
+    }
+    /* iOS centres the value inside the control; every other field is ranged left. */
+    input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     button { cursor: pointer; }
     button.primary {
       background: var(--accent); color: #fff; border-color: var(--accent);
@@ -424,12 +444,11 @@
       #filters select { flex: 1; }
 
       /*
-       * Native date inputs, made to fit rather than replaced. The wheel iOS
-       * gives a type="date" is the whole reason these are native inputs (see the
-       * note on the dialog markup), so the fix is font and padding, never
-       * -webkit-appearance: none.
+       * The width fix is not here - see input[type="date"] near the top, which
+       * applies at every width because the intrinsic sizing does. This is only
+       * the phone's smaller type and tighter padding.
        */
-      input[type="date"] { font-size: .9rem; padding: .45rem .4rem; max-width: 100%; }
+      input[type="date"] { font-size: .9rem; padding: .45rem .4rem; }
       /* Stacked, so OK gets the full width instead of competing for it. */
       #dialog .pick { flex-direction: column; }
       #dialog .pick button { width: 100%; }
