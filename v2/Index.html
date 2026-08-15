@@ -11,14 +11,23 @@
     SECTIONS on the server. There is no per-section code in here, which is the
     whole reason v1's four near-identical loadX/renderX/toggleX sets are gone.
 
-    Three rules this page keeps:
+    Four rules this page keeps:
       - Loading, empty and error are distinct states. A failure must never look
-        like "no data", which is how v1 hid its load failures.
+        like "no data", which is how v1 hid its load failures. Empty is now said
+        per section - an empty To Do reads as nothing to do - while loading and
+        error stay page-level, so a failure still shows no sections at all.
       - A status change reports what actually happened. setStatus can move the
         status and still fail to rename a file; that shows as a warning, not a
         tick.
       - No confirmation on a status change, because every one is reversible.
         Confirmations on frequent actions only train you to tap through them.
+      - Every row in the sheet appears somewhere. The sections partition by
+        status, so a status the config does not declare gets its own section
+        rather than falling between them.
+
+    The phone is the device this is used on. Under 600px the pills become a
+    select and the tables become cards; above it the table is unchanged. Status
+    is not a dropdown but a place: three sections, plus the archive as a fourth.
   -->
   <style>
     :root {
@@ -44,31 +53,22 @@
     }
 
     /*
-     * The archive is a different place, not a filtered view of the same one, and
-     * the actions there are the two that do not simply undo: Restore re-files
-     * documents, and Delete forever is final. So the whole chrome shifts warm
-     * rather than only the table, and the header and column heads go with it -
-     * a tint you can only see by looking for it is not a distinction.
+     * The archive used to be a place you went to, and the whole chrome shifted
+     * warm to say so. It is now the fourth section of every view, sitting under
+     * the three live ones, so the tint moved with it: the accordion is warm, and
+     * the page around it is not. The reasoning is unchanged — Restore re-files
+     * documents and Delete forever is final, so the two actions that do not
+     * simply undo need to look like they live somewhere else — it just applies
+     * to a section now rather than to the window.
      *
-     * Warm sand rather than the warning or error tints: being in the archive is
-     * not a problem, it is just not where the live rows are.
+     * Warm sand rather than the warning or error tints: an archived row is not a
+     * problem, it is just not a live one.
      */
-    body.archive { --bg: #f2ece1; }
-    body.archive header,
-    body.archive nav#tabs { background: #faf6ee; }
-    body.archive th { background: #f7f2e8; }
-    /*
-     * In here the section buttons select ARCHIVE views: tapping Health does not
-     * take you to Health's live entries. So all four change, not just the selected
-     * one — the unselected ones are the ones making a promise about where they go.
-     *
-     * The tabs are the only accent that changes. Overriding --accent wholesale
-     * would be one line and would also recolour the document links, which have no
-     * underline and would stop reading as links at all.
-     */
-    body.archive nav#tabs button { border-color: #e3d9c6; color: #7b6a4f; }
-    body.archive nav#tabs button[aria-selected="true"] {
-      background: #7a6134; border-color: #7a6134; color: #fff;
+    :root {
+      --arc-line: #e3d9c6;
+      --arc-bg: #faf6ee;
+      --arc-card: #fffdf8;
+      --arc-text: #7a6134;
     }
 
     header {
@@ -79,8 +79,13 @@
       position: sticky; top: 0; z-index: 5;
     }
     header h1 { font-size: 1.05rem; margin: 0; font-weight: 600; }
-    header .who { color: var(--muted); font-size: .8rem; margin-left: auto; }
-    header button { margin-left: .5rem; }
+    /* Shrinks before Refresh does. Which account is answering matters here (see
+       authuser in CLAUDE.md), so it is truncated rather than dropped. */
+    header .who {
+      color: var(--muted); font-size: .8rem; margin-left: auto;
+      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    header button { margin-left: .5rem; flex: none; }
 
     button, select, input {
       font: inherit; color: inherit;
@@ -94,6 +99,15 @@
     }
     button.link { border: 0; background: none; color: var(--accent); padding: .2rem; }
 
+    /*
+     * The view selector. Five destinations - four sections and the registry -
+     * offered two ways, because a row of pills that fits a desktop runs off the
+     * side of a phone and a select that suits a phone throws away the one thing
+     * the pills do well, which is showing you where else you could be.
+     *
+     * The same list builds both, so they cannot disagree; the breakpoint decides
+     * which one is on screen.
+     */
     nav#tabs {
       display: flex; gap: .4rem; overflow-x: auto;
       padding: .6rem 1rem; background: var(--card);
@@ -107,7 +121,20 @@
       background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
     }
 
+    #viewPicker {
+      display: none;
+      padding: .6rem 1rem; background: var(--card); border-bottom: 1px solid var(--line);
+    }
+    #viewPicker select { width: 100%; padding: .6rem; font-weight: 600; }
+
     main { padding: 1rem; max-width: 1100px; margin: 0 auto; }
+
+    /* Under the selector, so what it makes is always what you are looking at. */
+    #newBar { margin-bottom: 1rem; }
+    #newBar button {
+      background: var(--accent); color: #fff; border-color: var(--accent);
+      font-weight: 600; padding: .55rem 1rem;
+    }
 
     .card {
       background: var(--card); border: 1px solid var(--line);
@@ -128,15 +155,75 @@
 
     #filters { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: 1rem; }
     #filters label { font-size: .8rem; color: var(--muted); }
-    #filters .count { margin-left: auto; font-size: .8rem; color: var(--muted); }
+    /*
+     * A select is as wide as its longest option, and IVA's are the eight
+     * codigoBem descriptions - wide enough to push the filter row off a phone.
+     * min-width lets it shrink at all (a flex item will not go below
+     * min-content without it); max-width stops it passing the row.
+     */
+    #filters select { min-width: 0; max-width: 100%; }
+    /* Providers has no category, so the row would otherwise be an empty gap. */
+    #filters:empty { display: none; }
 
     #state { padding: 2rem 1rem; text-align: center; color: var(--muted); }
     #state.error { color: var(--err); background: var(--err-bg); border-radius: 12px; text-align: left; }
     #state.error strong { display: block; margin-bottom: .3rem; }
-    #state.hidden, #tableCard.hidden { display: none; }
+    #state.hidden, #sections.hidden { display: none; }
 
-    #tableCard { background: var(--card); border: 1px solid var(--line);
-      border-radius: 12px; overflow-x: auto; }
+    /*
+     * One accordion per status, plus the archive.
+     *
+     * Status stopped being a value you set from a dropdown and became the place
+     * a row is: the three states are three lists, and moving a row moves it
+     * between them. That is the whole reason the status column and the archive
+     * view are both gone.
+     *
+     * Empty is expressed per section rather than by the page-level state, so an
+     * empty To Do reads as "nothing to do" while the other sections still show
+     * their counts. #state keeps loading and error, which remain distinct - a
+     * load failure shows no accordions at all.
+     */
+    .acc {
+      margin-bottom: .7rem; background: var(--card);
+      border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+    }
+    .acc > .head {
+      display: flex; align-items: center; gap: .5rem; width: 100%;
+      padding: .7rem .85rem; min-height: 46px;
+      background: none; border: 0; border-radius: 0;
+      text-align: left; font-weight: 600;
+    }
+    .acc > .head .caret {
+      color: var(--muted); font-size: 1.1rem; line-height: 1;
+      transition: transform .15s; display: inline-block;
+    }
+    .acc.open > .head .caret { transform: rotate(90deg); }
+    .acc > .head .count {
+      margin-left: auto; color: var(--muted); font-weight: 400; font-size: .85rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .acc > .body { display: none; border-top: 1px solid var(--line); }
+    .acc.open > .body { display: block; }
+    .acc .note { padding: .9rem .85rem; color: var(--muted); font-size: .85rem; }
+
+    /* The archive, warm — see the note at the top. */
+    .acc.archive { border-color: var(--arc-line); background: var(--arc-bg); }
+    .acc.archive > .head { color: var(--arc-text); }
+    .acc.archive > .body { border-top-color: var(--arc-line); }
+    .acc.archive .entry { border-color: var(--arc-line); background: var(--arc-card); }
+    .acc.archive th { background: #f7f2e8; }
+
+    /*
+     * A status the section does not declare - hand-typed in the sheet, or left
+     * by a run that failed partway. It belongs to none of the three lists, and a
+     * row that exists in the sheet but nowhere on the page is the failure the
+     * loading/empty/error rule exists to prevent. So it gets its own section,
+     * which is absent entirely when there is nothing in it.
+     */
+    .acc.odd { border-color: var(--warn); }
+    .acc.odd > .head { color: var(--warn); background: var(--warn-bg); }
+
+    .tableWrap { overflow-x: auto; }
     table { border-collapse: collapse; width: 100%; font-size: .9rem; }
     th, td { text-align: left; padding: .55rem .7rem; border-bottom: 1px solid var(--line);
       white-space: nowrap; vertical-align: middle; }
@@ -145,9 +232,8 @@
     tr:last-child td { border-bottom: 0; }
     td.num { text-align: right; font-variant-numeric: tabular-nums; }
     td.notes { white-space: normal; min-width: 12rem; color: var(--muted); }
-    tr.busy { opacity: .5; }
+    tr.busy, .entry.busy { opacity: .5; }
 
-    select.status { font-size: .85rem; padding: .3rem .4rem; }
     .chip {
       border: 1px solid var(--line); border-radius: 999px;
       padding: .2rem .55rem; font-size: .78rem; background: #fbfcfd;
@@ -159,8 +245,59 @@
     span.chip.unreached { color: var(--muted); border: 0; background: none; opacity: .5; }
     .awaiting { color: var(--warn); }
     .docs a { color: var(--accent); text-decoration: none; font-size: .8rem; }
-    .docs a + a { margin-left: .4rem; }
     .docs .none { color: var(--muted); font-size: .8rem; }
+    /* A document slot that is declared but empty. Health has two, and until now
+       a row with one of them attached looked exactly like a row with both:
+       row.files carries only what exists, so the gap said nothing at all. */
+    .docs .missing { color: var(--warn); font-size: .8rem; }
+    /* Whatever the mix of links and gaps, they do not run into each other -
+       "Prescription / Invoice — noneProof of payment" was what the per-pair
+       rules this replaces actually produced. */
+    .docs > * + * { margin-left: .4rem; }
+
+    /*
+     * A row as a card. Used under 600px, where fourteen columns of table put the
+     * two things you actually do - move the status, edit the row - about a
+     * thousand pixels off the right-hand edge.
+     *
+     * The headline is who and how much, because that is what identifies an entry
+     * at a glance; everything else is a labelled pair underneath. Deliberately
+     * not a linearised table: the column order is the server's, and it puts
+     * Amount seventh.
+     */
+    .cards { padding: .6rem; }
+    .entry {
+      background: var(--card); border: 1px solid var(--line);
+      border-radius: 10px; padding: .7rem .8rem;
+    }
+    .entry + .entry { margin-top: .6rem; }
+    .entry .top { display: flex; align-items: baseline; gap: .5rem; }
+    .entry .name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+    .entry .amount {
+      margin-left: auto; font-weight: 600; white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+    .entry .sub { color: var(--muted); font-size: .8rem; margin-top: .15rem; }
+    .entry dl {
+      margin: .65rem 0 0; display: grid; grid-template-columns: 7.5rem 1fr; gap: .35rem .6rem;
+    }
+    .entry dt { color: var(--muted); font-size: .78rem; }
+    .entry dd { margin: 0; font-size: .85rem; overflow-wrap: anywhere; }
+    .entry dd.notes { color: var(--muted); }
+
+    /*
+     * Advance and regress, labelled with what they do rather than where you are.
+     * Two buttons instead of a select because a three-item dropdown on a phone
+     * is a system wheel and two taps, to choose between at most two answers -
+     * and because "Claimed" and "Not Claimed" say what will happen, which
+     * "Status: Claimed" never did.
+     */
+    .entry .moves { display: flex; gap: .5rem; margin-top: .75rem; }
+    .entry .moves button { flex: 1; min-width: 0; min-height: 42px; font-weight: 600; }
+    .entry .moves button.fwd { color: var(--accent); border-color: var(--accent); }
+    .entry .moves button.back { color: var(--muted); }
+    .entry .acts { display: flex; gap: .5rem; margin-top: .5rem; }
+    .entry .acts button { flex: 1; min-width: 0; min-height: 40px; font-size: .85rem; }
 
     /* Dialog: one tap to accept, but the date is always seen before it is
        written, because Claimed / Settled / Received are usually backdated. */
@@ -174,7 +311,13 @@
     #dialog h2 { margin: 0 0 1rem; font-size: 1.05rem; }
     #dialog .or { color: var(--muted); font-size: .8rem; margin: .9rem 0 .5rem; }
     #dialog .pick { display: flex; gap: .5rem; }
-    #dialog .pick input { flex: 1; }
+    /*
+     * min-width, not just flex. A flex item defaults to min-width:auto, so it
+     * will not shrink below its own min-content - and a native date control's
+     * min-content is the whole "dd/mm/yyyy" plus the calendar button. Without
+     * this the input pushes OK off the side of the dialog on a phone.
+     */
+    #dialog .pick input { flex: 1; min-width: 0; }
     #dialog .extra { margin-top: .75rem; display: flex; justify-content: center; gap: 1rem; }
 
     /* The form. Same overlay treatment as the date dialog, but scrollable and
@@ -238,13 +381,6 @@
       background: var(--err); border-color: var(--err);
     }
 
-    /* Archive view: same table, visibly not the live one. */
-    body.archive #tableCard { border-color: var(--warn); }
-    #archiveBar { display: none; align-items: center; gap: .6rem; margin-bottom: 1rem;
-      padding: .55rem .8rem; border-radius: 10px;
-      background: var(--warn-bg); color: var(--warn); font-size: .85rem; }
-    body.archive #archiveBar { display: flex; }
-    #archiveBar .grow { margin-left: auto; }
     td.rowActions { white-space: nowrap; }
     td.rowActions button { font-size: .78rem; padding: .25rem .5rem; }
     button.danger { color: var(--err); border-color: var(--err); }
@@ -267,6 +403,39 @@
     #toast.show { opacity: 1; }
     #toast.warn { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn); }
     #toast.error { background: var(--err-bg); color: var(--err); border: 1px solid var(--err); }
+
+    /*
+     * The phone. One breakpoint, and it swaps three things: the pills become a
+     * select, the tables become cards, and the date controls get small enough to
+     * fit. Everything else is shared, so there is one layout to reason about
+     * rather than two.
+     *
+     * 600px rather than a device width: this is the point at which fourteen
+     * columns stop fitting, which is a property of the table and not of any
+     * particular handset.
+     */
+    @media (max-width: 599px) {
+      nav#tabs { display: none; }
+      #viewPicker { display: block; }
+      header { flex-wrap: nowrap; }
+      #newBar button { width: 100%; padding: .7rem 1rem; }
+      main { padding: .8rem; }
+      /* The filter takes the rest of its row rather than its natural width. */
+      #filters select { flex: 1; }
+
+      /*
+       * Native date inputs, made to fit rather than replaced. The wheel iOS
+       * gives a type="date" is the whole reason these are native inputs (see the
+       * note on the dialog markup), so the fix is font and padding, never
+       * -webkit-appearance: none.
+       */
+      input[type="date"] { font-size: .9rem; padding: .45rem .4rem; max-width: 100%; }
+      /* Stacked, so OK gets the full width instead of competing for it. */
+      #dialog .pick { flex-direction: column; }
+      #dialog .pick button { width: 100%; }
+      #formCard, #supplierCard, #dialog, #confirmCard { padding: .9rem; }
+      #formCard input, #formCard select, #supplierCard input { padding: .5rem .55rem; }
+    }
   </style>
 </head>
 
@@ -274,30 +443,28 @@
   <header>
     <h1>HelpfulForms</h1>
     <span class="who" id="who"></span>
-    <button id="newEntry" type="button">New</button>
-    <button id="showArchive" type="button">Archive</button>
-    <button id="showSuppliers" type="button">Suppliers</button>
     <button id="refresh" type="button">Refresh</button>
   </header>
 
+  <!-- The same five destinations twice: pills for a desktop, a select for a
+       phone. Both are built by renderSelector() from one list. -->
   <nav id="tabs" role="tablist"></nav>
+  <div id="viewPicker">
+    <select id="viewSelect" aria-label="View"></select>
+  </div>
 
   <main>
+    <div id="newBar"><button id="newEntry" type="button">+ New</button></div>
+
     <section class="card" id="reference">
       <h2>For the claim form</h2>
       <div class="items" id="referenceItems"></div>
     </section>
 
-    <div id="archiveBar">
-      <span id="archiveCount"></span>
-      <span class="grow"></span>
-      <button id="archiveBack" type="button">Back to entries</button>
-    </div>
-
     <div id="filters"></div>
 
     <div id="state">Loading…</div>
-    <div id="tableCard" class="hidden"><table id="table"></table></div>
+    <div id="sections" class="hidden"></div>
   </main>
 
   <div id="overlay">
@@ -390,24 +557,53 @@
   <script>
     /* ------------------------------- state -------------------------------- */
 
+    /*
+     * One view value, not three flags.
+     *
+     * This used to be a section key plus an `archive` boolean plus a `suppliers`
+     * boolean, and every combination of the three had to be excluded by hand -
+     * setArchive turned suppliers off, setSuppliers turned archive off, and each
+     * had to remember which buttons the other hid. There is now one place you
+     * can be, and it is either a section or the registry.
+     */
+    var PROVIDERS = 'providers';
+
     var app = {
       today: '',
       sections: [],       // metadata from the server, in SECTIONS order
-      current: null,      // section key on screen
+      view: null,         // a section key, or PROVIDERS
       meta: null,         // metadata for the current section
-      rows: [],           // rows as the server last reported them
-      filters: { status: '', category: '' },
+      rows: [],           // live rows as the server last reported them
+      expanded: {},       // which sections are open, keyed by bucket
+      archiveRows: [],    // archived rows, once they have been asked for
+      archiveLoaded: false,
+      archiveLoading: false,
+      filters: { category: '' },
       dialog: null,       // what the open dialog will do when accepted
       form: null,         // non-null while the new-entry form is open
-      archive: false,     // showing the archive rather than the live entries
       confirm: null,      // what the open confirmation will do when accepted
-      suppliers: false,   // showing the registry rather than a section
       supplierList: [],   // the registry as the server last reported it
       staging: [],        // scans waiting in the staging folder, refreshed per form
       supplierForm: null  // non-null while the supplier editor is open
     };
 
+    // The two buckets that are not a declared status.
+    var ARCHIVE_BUCKET = '__archive';
+    var ODD_BUCKET = '__odd';
+
     var el = function (id) { return document.getElementById(id); };
+
+    /*
+     * The breakpoint, read once and watched.
+     *
+     * Cards and table are built by different code rather than by CSS alone: a
+     * table linearised with display:block comes out in the server's column
+     * order, which puts Amount seventh and makes the headline impossible. So the
+     * renderer has to know, and has to re-run when the answer changes - dragging
+     * a desktop window narrow is rare, but a phone rotating is not.
+     */
+    var NARROW = window.matchMedia('(max-width: 599px)');
+    function isPhone() { return NARROW.matches; }
 
     /* ----------------------------- utilities ------------------------------ */
 
@@ -439,13 +635,13 @@
     /** Loading / empty / error are distinct, and only one is ever on screen. */
     function showState(kind, message) {
       var state = el('state');
-      var table = el('tableCard');
+      var sections = el('sections');
       if (kind === 'rows') {
         state.className = 'hidden';
-        table.className = '';
+        sections.className = '';
         return;
       }
-      table.className = 'hidden';
+      sections.className = 'hidden';
       state.className = kind === 'error' ? 'error' : '';
       state.innerHTML = kind === 'error'
         ? '<strong>Could not load this section.</strong>' + escapeHtml(message)
@@ -493,7 +689,6 @@
           app.today = data.today;
           app.sections = data.sections;
           el('who').textContent = data.user;
-          renderTabs();
 
           // An unknown section in the link is dropped rather than allowed to
           // fail: a stale or hand-edited URL should still get you the app.
@@ -518,7 +713,7 @@
      * bug that makes a page impossible to leave.
      */
     function openDeepLink() {
-      if (!deepLink || deepLink.section !== app.current) return;
+      if (!deepLink || deepLink.section !== app.view) return;
 
       var target = app.rows.filter(function (row) {
         return row.stamp !== null && String(row.stamp) === deepLink.stamp;
@@ -529,6 +724,9 @@
         return toast('That entry is no longer in ' + app.meta.label +
           ' — it may have been archived, or the link may be out of date.', 'warn');
       }
+      // Its section may be one of the shut ones, and closing the form onto a
+      // page with no sign of the entry you were just sent to reads as a loss.
+      if (target.status && !app.expanded[target.status]) revealBucket(target.status);
       openForm(target.row);
     }
 
@@ -536,10 +734,34 @@
       return (error && error.message) ? error.message : String(error);
     }
 
-    function renderTabs() {
-      el('tabs').innerHTML = app.sections.map(function (section) {
-        return '<button type="button" role="tab" data-key="' + escapeHtml(section.key) + '"' +
-          ' aria-selected="false">' + escapeHtml(section.label) + '</button>';
+    /*
+     * "Providers", not "Suppliers", and only here.
+     *
+     * The sheet is still Suppliers, the server still calls them suppliers, and
+     * every identifier below still says supplier. Renaming a sheet is a data
+     * migration and has no business in a change to what a button says.
+     */
+    var PROVIDERS_LABEL = 'Providers';
+
+    function viewList() {
+      return app.sections.map(function (section) {
+        return { key: section.key, label: section.label };
+      }).concat([{ key: PROVIDERS, label: PROVIDERS_LABEL }]);
+    }
+
+    function renderSelector() {
+      var views = viewList();
+
+      el('tabs').innerHTML = views.map(function (view) {
+        return '<button type="button" role="tab" data-key="' + escapeHtml(view.key) + '"' +
+          ' aria-selected="' + String(view.key === app.view) + '">' +
+          escapeHtml(view.label) + '</button>';
+      }).join('');
+
+      el('viewSelect').innerHTML = views.map(function (view) {
+        return '<option value="' + escapeHtml(view.key) + '"' +
+          (view.key === app.view ? ' selected' : '') + '>' +
+          escapeHtml(view.label) + '</option>';
       }).join('');
     }
 
@@ -548,112 +770,146 @@
       if (app.form) closeForm();
       if (app.supplierForm) closeSupplier();
       if (app.confirm) closeConfirm();
-      // Tapping a section is a request to see that section, so it leaves the
-      // registry view rather than quietly loading behind it.
-      if (app.suppliers) setSuppliersButton(false);
-      app.current = key;
+
+      app.view = key;
       app.meta = null;
       app.rows = [];
-      app.filters = { status: '', category: '' };
+      app.filters = { category: '' };
+      // Arriving anywhere means the first section open and the rest shut. The
+      // archive is never open on arrival, which is what keeps it to one round
+      // trip per view.
+      app.expanded = {};
+      app.archiveRows = [];
+      app.archiveLoaded = false;
+      app.archiveLoading = false;
 
-      Array.prototype.forEach.call(el('tabs').children, function (tab) {
-        tab.setAttribute('aria-selected', String(tab.dataset.key === key));
-      });
-
+      renderSelector();
+      el('newBar').style.display = key === PROVIDERS ? 'none' : '';
       el('reference').style.display = 'none';
       el('filters').innerHTML = '';
       load();
     }
 
     function load() {
-      if (app.suppliers) return loadSuppliers();
+      if (app.view === PROVIDERS) return loadSuppliers();
 
-      var key = app.current;
-      var archive = app.archive;
+      var key = app.view;
       showState('loading', 'Loading…');
-      document.body.className = archive ? 'archive' : '';
 
-      call(archive ? 'uiListArchive' : 'uiListEntries', key).then(function (data) {
-        // A tab or view changed while this was in flight
-        if (app.current !== key || app.archive !== archive) return;
+      call('uiListEntries', key).then(function (data) {
+        if (app.view !== key) return;   // the view changed while this was in flight
         if (data.today) app.today = data.today;
         app.meta = data.meta;
         app.rows = data.rows;
+        if (!Object.keys(app.expanded).length) app.expanded[app.meta.states[0].name] = true;
+        // A section called "Needs attention" that arrives shut is asking you to
+        // find out it exists. Only when nothing has been decided about it, so
+        // collapsing it by hand still sticks across a refresh.
+        if (app.expanded[ODD_BUCKET] === undefined &&
+            app.rows.some(function (row) { return row.statusIndex === -1; })) {
+          app.expanded[ODD_BUCKET] = true;
+        }
         renderReference();
         renderFilters();
-        renderTable();
-        // After the rows exist, and only in the live view: the archive is not
-        // where a completion link is asking you to go.
-        if (!archive) openDeepLink();
-        if (archive) {
-          el('archiveCount').textContent = data.rows.length
-            ? data.rows.length + (data.rows.length === 1 ? ' archived entry' : ' archived entries') +
-              ' — deleted rows land here, and nothing is removed until you say so'
-            : 'Nothing archived in ' + app.meta.label;
-        }
+        renderSections();
+        openDeepLink();
+        // Only if it is already open — see loadArchive.
+        if (app.expanded[ARCHIVE_BUCKET]) loadArchive();
       }).catch(function (error) {
-        if (app.current !== key || app.archive !== archive) return;
+        if (app.view !== key) return;
         showState('error', message(error));
       });
     }
 
-    function setArchive(on) {
-      // The two extra views are alternatives, not layers: the archive is a
-      // section's rows and the registry is not a section at all.
-      if (on && app.suppliers) setSuppliersButton(false);
-      app.archive = on;
-      // The body class is set by load(), which this calls — and which also runs
-      // on a tab switch, so the tint cannot be left behind by one.
-      // "Active" rather than "Entries": the archive holds entries too, so
-      // Entries/Archive read as different kinds of thing when they are two views
-      // of the same thing. Active/Archive is the actual distinction.
-      el('showArchive').textContent = on ? 'Active' : 'Archive';
-      el('newEntry').style.display = on ? 'none' : '';
-      load();
-    }
-
-    /* ------------------------------ suppliers ----------------------------- */
-
     /*
-     * The registry, and the one place a supplier's name can be corrected.
+     * The archive, fetched the first time its section is opened.
      *
-     * It is a view rather than a tab because it is not a section: it has no
-     * status, no documents and no dates, so the generic table machinery does not
-     * fit it. Everything the rename actually does happens on the server — this
-     * only shows the numbers before you commit and reports what came back.
+     * Archived rows live in a different sheet behind a different call, so making
+     * the archive a permanent fourth section meant choosing between two round
+     * trips on every view switch and a count that is not known until you look.
+     * The count lost: this runs on a phone on mobile data, and the archive is
+     * the section you open least.
      */
-    function setSuppliersButton(on) {
-      app.suppliers = on;
-      el('showSuppliers').textContent = on ? 'Entries' : 'Suppliers';
-      // Nothing on this view belongs to a section, so the section controls go.
-      el('newEntry').style.display = on ? 'none' : (app.archive ? 'none' : '');
-      el('showArchive').style.display = on ? 'none' : '';
-      el('reference').style.display = 'none';
-      el('filters').innerHTML = '';
-      Array.prototype.forEach.call(el('tabs').children, function (tab) {
-        tab.setAttribute('aria-selected', String(!on && tab.dataset.key === app.current));
+    function loadArchive(force) {
+      if (app.archiveLoading) return;
+      if (app.archiveLoaded && !force) return;
+
+      var key = app.view;
+      app.archiveLoading = true;
+      renderSections();
+
+      return call('uiListArchive', key).then(function (data) {
+        if (app.view !== key) return;
+        app.archiveLoading = false;
+        app.archiveLoaded = true;
+        // Marked on the row, not held as a mode: live and archived rows are on
+        // screen together now, so each one has to say which it is.
+        app.archiveRows = data.rows.map(function (row) {
+          row.archived = true;
+          return row;
+        });
+        renderSections();
+      }).catch(function (error) {
+        if (app.view !== key) return;
+        app.archiveLoading = false;
+        renderSections();
+        toast(message(error), 'error');
       });
     }
 
-    function setSuppliers(on) {
-      if (on && app.archive) {
-        app.archive = false;
-        el('showArchive').textContent = 'Archive';
-      }
-      setSuppliersButton(on);
-      load();
+    /*
+     * Re-read the section after a row has moved between sheets, keeping the
+     * sections open as they were, and follow the row to wherever it went.
+     *
+     * Not load(): that resets the view, which would shut every section the
+     * moment you archived something and undo the point of following the row.
+     */
+    function reloadEntries(reveal) {
+      var key = app.view;
+
+      return call('uiListEntries', key).then(function (data) {
+        if (app.view !== key) return;
+        if (data.today) app.today = data.today;
+        app.meta = data.meta;
+        app.rows = data.rows;
+        // The archive was written to, so whatever is cached is now wrong.
+        app.archiveLoaded = false;
+        app.archiveRows = [];
+        renderFilters();
+        if (reveal) revealBucket(reveal);
+        else renderSections();
+        // Unconditionally, and after the reveal: restoring a row happens while
+        // you are LOOKING at the archive, and the section it leaves has just had
+        // its cache dropped. Without this it sits on "Loading…" for good, because
+        // revealBucket only refetches when the archive is what it was asked to
+        // reveal - and here it was asked for the live section the row landed in.
+        if (app.expanded[ARCHIVE_BUCKET]) loadArchive(true);
+      }).catch(function (error) {
+        if (app.view !== key) return;
+        showState('error', message(error));
+      });
     }
 
+    /* ------------------------------ providers ----------------------------- */
+
+    /*
+     * The registry, and the one place a provider's name can be corrected.
+     *
+     * A view rather than a section because it is not one: no status, no
+     * documents, no dates, so none of the accordion machinery applies and it
+     * renders as a flat list. It has no New either — it fills itself as entries
+     * are made. Everything a rename actually does happens on the server; this
+     * only shows the numbers before you commit and reports what came back.
+     */
     function loadSuppliers() {
       showState('loading', 'Loading…');
-      document.body.className = '';
 
       call('uiListSuppliers').then(function (data) {
-        if (!app.suppliers) return;   // the view changed while this was in flight
+        if (app.view !== PROVIDERS) return;   // the view changed while this was in flight
         app.supplierList = data.suppliers;
         renderSuppliers();
       }).catch(function (error) {
-        if (!app.suppliers) return;
+        if (app.view !== PROVIDERS) return;
         showState('error', message(error));
       });
     }
@@ -663,24 +919,46 @@
         return showState('empty', 'The registry is empty. It fills itself as you make entries.');
       }
 
-      var head = '<tr><th>Supplier</th><th>Type</th><th>NIF</th><th>Aliases</th>' +
-        '<th class="num">Used</th><th>Last used</th><th></th></tr>';
-
-      var body = app.supplierList.map(function (supplier) {
-        return '<tr>' +
-          '<td>' + escapeHtml(supplier.name) + '</td>' +
-          '<td>' + escapeHtml(supplier.type) + '</td>' +
-          '<td>' + escapeHtml(supplier.nif) + '</td>' +
-          '<td class="notes">' + escapeHtml(supplier.aliases) + '</td>' +
-          '<td class="num">' + escapeHtml(supplier.timesUsed) + '</td>' +
-          '<td>' + escapeHtml(dayLabelOrRaw(supplier.lastUsed)) + '</td>' +
-          '<td><button class="chip" type="button" data-supplier="' +
-            escapeHtml(supplier.row) + '">Edit</button></td>' +
-          '</tr>';
-      }).join('');
-
-      el('table').innerHTML = head + body;
+      el('sections').innerHTML = isPhone()
+        ? '<div class="cards">' + app.supplierList.map(supplierCard).join('') + '</div>'
+        : '<div class="acc open"><div class="body"><div class="tableWrap"><table>' +
+          '<tr><th>Provider</th><th>Type</th><th>NIF</th><th>Aliases</th>' +
+          '<th class="num">Used</th><th>Last used</th><th></th></tr>' +
+          app.supplierList.map(supplierRow).join('') +
+          '</table></div></div></div>';
       showState('rows');
+    }
+
+    function supplierRow(supplier) {
+      return '<tr>' +
+        '<td>' + escapeHtml(supplier.name) + '</td>' +
+        '<td>' + escapeHtml(supplier.type) + '</td>' +
+        '<td>' + escapeHtml(supplier.nif) + '</td>' +
+        '<td class="notes">' + escapeHtml(supplier.aliases) + '</td>' +
+        '<td class="num">' + escapeHtml(supplier.timesUsed) + '</td>' +
+        '<td>' + escapeHtml(dayLabelOrRaw(supplier.lastUsed)) + '</td>' +
+        '<td><button class="chip" type="button" data-supplier="' +
+          escapeHtml(supplier.row) + '">Edit</button></td>' +
+        '</tr>';
+    }
+
+    function supplierCard(supplier) {
+      var pairs = [
+        ['Type', supplier.type],
+        ['NIF', supplier.nif],
+        ['Aliases', supplier.aliases],
+        ['Last used', dayLabelOrRaw(supplier.lastUsed)]
+      ].filter(function (pair) { return pair[1] !== '' && pair[1] !== null && pair[1] !== undefined; });
+
+      return '<div class="entry">' +
+        '<div class="top"><span class="name">' + escapeHtml(supplier.name) + '</span>' +
+        '<span class="amount">' + escapeHtml(supplier.timesUsed) + '&times;</span></div>' +
+        (pairs.length ? '<dl>' + pairs.map(function (pair) {
+          return '<dt>' + escapeHtml(pair[0]) + '</dt><dd>' + escapeHtml(pair[1]) + '</dd>';
+        }).join('') + '</dl>' : '') +
+        '<div class="acts"><button type="button" data-supplier="' +
+          escapeHtml(supplier.row) + '">Edit</button></div>' +
+        '</div>';
     }
 
     function findSupplierByRow(rowNumber) {
@@ -992,74 +1270,251 @@
       return values.concat(Object.keys(extra).sort());
     }
 
+    /*
+     * The category filter, and nothing else.
+     *
+     * There was a Status filter here too. The sections now partition by status,
+     * so it would have been a second control doing the same job by different
+     * means - and the counts it used to justify are on the section headings.
+     */
     function renderFilters() {
-      // Three stable options per section rather than one per claim date, which
-      // is what v1's dropdowns grew into.
-      var html = '<label for="statusFilter">Status</label>' +
-        '<select id="statusFilter"><option value="">All</option>' +
-        app.meta.states.map(function (state) {
-          return '<option value="' + escapeHtml(state.name) + '">' +
-            escapeHtml(state.name) + '</option>';
-        }).join('') + '</select>';
-
-      if (app.meta.category) {
-        var values = categoryValues();
-        html += '<label for="categoryFilter">' + escapeHtml(app.meta.category.label) + '</label>' +
-          '<select id="categoryFilter"><option value="">All</option>' +
-          values.map(function (value) {
-            return '<option value="' + escapeHtml(value) + '">' + escapeHtml(value) + '</option>';
-          }).join('') + '</select>';
+      if (!app.meta.category) {
+        el('filters').innerHTML = '';
+        return;
       }
 
-      html += '<span class="count" id="count"></span>';
-      el('filters').innerHTML = html;
+      el('filters').innerHTML =
+        '<label for="categoryFilter">' + escapeHtml(app.meta.category.label) + '</label>' +
+        '<select id="categoryFilter"><option value="">All</option>' +
+        categoryValues().map(function (value) {
+          return '<option value="' + escapeHtml(value) + '">' + escapeHtml(value) + '</option>';
+        }).join('') + '</select>';
 
-      el('statusFilter').value = app.filters.status;
-      if (el('categoryFilter')) el('categoryFilter').value = app.filters.category;
+      el('categoryFilter').value = app.filters.category;
     }
 
     /* -------------------------------- table ------------------------------- */
 
-    function visibleRows() {
-      return app.rows.filter(function (row) {
-        if (app.filters.status && row.status !== app.filters.status) return false;
+    function visibleRows(rows) {
+      return (rows || app.rows).filter(function (row) {
         if (app.filters.category && app.meta.category &&
             row.cells[app.meta.category.header] !== app.filters.category) return false;
         return true;
       });
     }
 
-    function renderTable() {
-      var rows = visibleRows();
-      var counter = el('count');
+    /*
+     * The sections, in order: one per declared status, then Needs attention if
+     * anything landed outside them, then the archive.
+     *
+     * Needs attention sits above the archive rather than below it because it is
+     * the one asking for something. It is absent, not empty, when there is
+     * nothing in it - a permanently empty section headed "Needs attention" is
+     * noise that trains you to ignore it.
+     */
+    function buckets() {
+      var live = visibleRows();
 
-      if (!app.rows.length) {
-        showState('empty', 'No entries in ' + app.meta.label + ' yet.');
-        if (counter) counter.textContent = '';
-        return;
-      }
-      if (!rows.length) {
-        showState('empty', 'No entries match the current filter.');
-        if (counter) counter.textContent = '0 of ' + app.rows.length;
-        return;
+      var list = app.meta.states.map(function (state) {
+        return {
+          key: state.name,
+          label: state.name,
+          tone: '',
+          rows: live.filter(function (row) { return row.status === state.name; })
+        };
+      });
+
+      var odd = live.filter(function (row) { return row.statusIndex === -1; });
+      if (odd.length) {
+        list.push({ key: ODD_BUCKET, label: 'Needs attention', tone: 'odd', rows: odd });
       }
 
+      list.push({
+        key: ARCHIVE_BUCKET, label: 'Archive', tone: 'archive',
+        rows: visibleRows(app.archiveRows), lazy: true
+      });
+
+      return list;
+    }
+
+    function bucketBody(bucket) {
+      if (bucket.lazy && app.archiveLoading) return '<div class="note">Loading…</div>';
+      if (bucket.lazy && !app.archiveLoaded) return '<div class="note">Loading…</div>';
+      if (bucket.rows.length) return renderRows(bucket.rows);
+
+      if (bucket.key === ARCHIVE_BUCKET) {
+        return '<div class="note">Nothing archived in ' + escapeHtml(app.meta.label) +
+          '. Archiving an entry moves it here, and nothing is removed until you say so.</div>';
+      }
+      if (app.filters.category) {
+        return '<div class="note">Nothing here matches the current filter.</div>';
+      }
+      return '<div class="note">Nothing ' + escapeHtml(bucket.label.toLowerCase()) + '.</div>';
+    }
+
+    function renderSections() {
+      el('sections').innerHTML = buckets().map(function (bucket) {
+        var open = !!app.expanded[bucket.key];
+        // The archive's count is unknown until it has been fetched, and an
+        // unknown count must not read as zero.
+        var count = bucket.lazy && !app.archiveLoaded ? '' : String(bucket.rows.length);
+
+        return '<section class="acc' + (open ? ' open' : '') +
+          (bucket.tone ? ' ' + bucket.tone : '') +
+          '" data-bucket="' + escapeHtml(bucket.key) + '">' +
+          '<button class="head" type="button" data-toggle="' + escapeHtml(bucket.key) + '"' +
+          ' aria-expanded="' + open + '">' +
+          '<span class="caret" aria-hidden="true">›</span>' +
+          '<span>' + escapeHtml(bucket.label) + '</span>' +
+          '<span class="count">' + count + '</span></button>' +
+          '<div class="body">' + (open ? bucketBody(bucket) : '') + '</div>' +
+          '</section>';
+      }).join('');
+      showState('rows');
+    }
+
+    /** Cards on a phone, the table above it. Same rows, same actions. */
+    function renderRows(rows) {
+      if (isPhone()) return '<div class="cards">' + rows.map(rowCard).join('') + '</div>';
+      return '<div class="tableWrap"><table>' +
+        tableHead(rows[0].archived) + rows.map(rowHtml).join('') + '</table></div>';
+    }
+
+    function tableHead(archived) {
       var head = '<tr>' + app.meta.columns.map(function (column) {
         return '<th>' + escapeHtml(column.label) + '</th>';
-      }).join('') + '<th>Status</th>';
+      }).join('');
       app.meta.states.forEach(function (state) {
         if (state.dateColumn) head += '<th>' + escapeHtml(state.dateColumn) + '</th>';
       });
       if (app.meta.files.length) head += '<th>Documents</th>';
-      if (app.archive) head += '<th>Archived</th>';
-      head += '<th></th></tr>';
-
-      el('table').innerHTML = head + rows.map(rowHtml).join('');
-      showState('rows');
-      counter.textContent = rows.length === app.rows.length
-        ? app.rows.length + (app.rows.length === 1 ? ' entry' : ' entries')
-        : rows.length + ' of ' + app.rows.length;
+      if (archived) head += '<th>Archived</th>';
+      return head + '<th></th></tr>';
     }
+
+    function toggleBucket(key) {
+      app.expanded[key] = !app.expanded[key];
+      renderSections();
+      if (key === ARCHIVE_BUCKET && app.expanded[key]) loadArchive();
+    }
+
+    /** Open a section and bring it into view. Whatever else is open stays open. */
+    function revealBucket(key) {
+      app.expanded[key] = true;
+      renderSections();
+      if (key === ARCHIVE_BUCKET) loadArchive(true);
+
+      var node = null;
+      Array.prototype.forEach.call(el('sections').children, function (child) {
+        if (child.dataset.bucket === key) node = child;
+      });
+      if (node && node.scrollIntoView) {
+        node.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+
+    /* ------------------------- transitions and parts ---------------------- */
+
+    /*
+     * Where this row can go. Advance is the next declared state, regress the
+     * previous one; the ends of the list simply have one button instead of two.
+     *
+     * A row whose status the config does not declare is offered the FIRST state
+     * and nothing else. It has no position in the order, so "the next one" has
+     * no meaning - the only safe move is to put it at the start.
+     */
+    function advanceTo(row) {
+      if (row.statusIndex === -1) return app.meta.states[0] || null;
+      return app.meta.states[row.statusIndex + 1] || null;
+    }
+
+    function regressTo(row) {
+      if (row.statusIndex <= 0) return null;
+      return app.meta.states[row.statusIndex - 1] || null;
+    }
+
+    /*
+     * The label going back is "Not Claimed", not "To Do".
+     *
+     * Both name the same move. The negative names the state you are LEAVING,
+     * which is the one on screen and the one you have decided is wrong; "To Do"
+     * would make you work out what the earlier state was called before you could
+     * tell whether the button undoes what you just did.
+     */
+    function moveButtons(row) {
+      var forward = advanceTo(row);
+      var back = regressTo(row);
+      var current = row.statusIndex >= 0 ? app.meta.states[row.statusIndex] : null;
+      var html = '';
+
+      if (forward) {
+        html += '<button type="button" class="fwd" data-advance="' + row.row +
+          '" data-state="' + escapeHtml(forward.name) + '">' +
+          escapeHtml(forward.name) + '</button>';
+      }
+      if (back && current) {
+        html += '<button type="button" class="back" data-regress="' + row.row +
+          '" data-state="' + escapeHtml(back.name) + '">Not ' +
+          escapeHtml(current.name) + '</button>';
+      }
+      return html;
+    }
+
+    /**
+     * The date chips, one per state that has a date column.
+     *
+     * Only a state the row has REACHED gets an editable chip. A date for a later
+     * state is one setStatus clears on the next transition, so the server
+     * refuses it and offering the control would be inviting you to write
+     * something that vanishes. An existing date stays editable whatever the
+     * status, so a hand-edited row can still be repaired.
+     */
+    function dateChip(row, state, index) {
+      var iso = row.dates[state.dateColumn] || '';
+      var editable = !!iso || (row.statusIndex >= 0 && index <= row.statusIndex);
+      if (!editable) {
+        return '<span class="chip unreached" title="Select ' + escapeHtml(state.name) +
+          ' to set this">—</span>';
+      }
+      return '<button type="button" class="chip' + (iso ? '' : ' blank') +
+        '" data-date-row="' + row.row + '" data-date-column="' +
+        escapeHtml(state.dateColumn) + '">' + (iso ? escapeHtml(dayLabel(iso)) : '—') + '</button>';
+    }
+
+    /*
+     * Every document slot the section declares, present or not.
+     *
+     * uiRow drops the file columns that are empty, so a Health row with its
+     * prescription attached and its proof of payment missing arrived looking
+     * exactly like one with both - the row-level receiptState said "awaiting"
+     * but was only ever shown when there were NO documents at all. Diffing what
+     * came back against meta.files is what names the gap.
+     */
+    function docsHtml(row) {
+      if (!app.meta.files.length) return '<span class="none">—</span>';
+
+      var present = {};
+      row.files.forEach(function (file) { present[file.label] = file; });
+
+      var link = function (file) {
+        return '<a href="' + escapeHtml(file.url) + '" target="_blank" rel="noopener">' +
+          escapeHtml(file.label) + '</a>';
+      };
+
+      // An archived row is finished, so a gap in it is not outstanding work.
+      // Naming each slot it never filled says nothing you can act on.
+      if (row.archived) {
+        return row.files.length ? row.files.map(link).join('') : '<span class="none">—</span>';
+      }
+
+      return app.meta.files.map(function (slot) {
+        var file = present[slot.label];
+        return file ? link(file)
+          : '<span class="missing">' + escapeHtml(slot.label) + ' — awaiting</span>';
+      }).join('');
+    }
+
+    /* --------------------------- the table row ---------------------------- */
 
     function rowHtml(row) {
       var cells = app.meta.columns.map(function (column) {
@@ -1070,24 +1525,20 @@
         return '<td' + cls + '>' + escapeHtml(text) + '</td>';
       }).join('');
 
-      // An archived row has no transitions, so its status is a fact rather than
-      // a control. Offering a selector that cannot do anything would be worse
-      // than showing none.
-      if (app.archive) {
-        cells += '<td>' + escapeHtml(row.status || '') + '</td>';
-        app.meta.states.forEach(function (state) {
-          if (!state.dateColumn) return;
-          var iso = row.dates[state.dateColumn] || '';
-          cells += '<td>' + (iso ? escapeHtml(dayLabel(iso)) : '—') + '</td>';
-        });
-        if (app.meta.files.length) {
-          cells += '<td class="docs">' + (row.files.length
-            ? row.files.map(function (file) {
-                return '<a href="' + escapeHtml(file.url) + '" target="_blank" rel="noopener">' +
-                  escapeHtml(file.label) + '</a>';
-              }).join('')
-            : '<span class="none">—</span>') + '</td>';
-        }
+      // No Status column any more: the section a row is in IS its status, so a
+      // column repeating it on every row said nothing the heading had not.
+      app.meta.states.forEach(function (state, index) {
+        if (!state.dateColumn) return;
+        cells += '<td>' + (row.archived
+          ? (row.dates[state.dateColumn] ? escapeHtml(dayLabel(row.dates[state.dateColumn])) : '—')
+          : dateChip(row, state, index)) + '</td>';
+      });
+
+      if (app.meta.files.length) cells += '<td class="docs">' + docsHtml(row) + '</td>';
+
+      // An archived row has no transitions: the two actions it has are the two
+      // that do not simply undo.
+      if (row.archived) {
         cells += '<td>' + escapeHtml(row.archivedAt ? dayLabel(row.archivedAt) : '') +
           (row.reason ? ' <span class="chip">' + escapeHtml(row.reason) + '</span>' : '') + '</td>';
         cells += '<td class="rowActions">' +
@@ -1097,63 +1548,117 @@
         return '<tr data-row="' + row.row + '">' + cells + '</tr>';
       }
 
-      // The status selector, not Done/Undo: three states cannot be a two-way
-      // toggle, and going back is just picking an earlier one.
-      cells += '<td><select class="status" data-row="' + row.row + '">' +
-        app.meta.states.map(function (state) {
-          return '<option value="' + escapeHtml(state.name) + '"' +
-            (state.name === row.status ? ' selected' : '') + '>' +
-            escapeHtml(state.name) + '</option>';
-        }).join('') +
-        (row.statusIndex === -1
-          ? '<option value="" selected>' + escapeHtml(row.status || '(none)') + '</option>'
-          : '') +
-        '</select></td>';
-
-      app.meta.states.forEach(function (state, index) {
-        if (!state.dateColumn) return;
-        var iso = row.dates[state.dateColumn] || '';
-        // Only a state the row has REACHED gets an editable chip. A date for a
-        // later state is one setStatus clears on the next transition, so the
-        // server refuses it and offering the control would be inviting you to
-        // write something that vanishes. An existing date stays editable
-        // whatever the status, so a hand-edited row can still be repaired.
-        var editable = !!iso || (row.statusIndex >= 0 && index <= row.statusIndex);
-        cells += '<td>' + (editable
-          ? '<button type="button" class="chip' + (iso ? '' : ' blank') +
-            '" data-date-row="' + row.row + '" data-date-column="' +
-            escapeHtml(state.dateColumn) + '">' +
-            (iso ? escapeHtml(dayLabel(iso)) : '—') + '</button>'
-          : '<span class="chip unreached" title="Select ' + escapeHtml(state.name) +
-            ' to set this">—</span>') + '</td>';
-      });
-
-      if (app.meta.files.length) {
-        cells += '<td class="docs">' + (row.files.length
-          ? row.files.map(function (file) {
-              return '<a href="' + escapeHtml(file.url) + '" target="_blank" rel="noopener">' +
-                escapeHtml(file.label) + '</a>';
-            }).join('')
-          : '<span class="none' + (row.receiptState === 'awaiting' ? ' awaiting' : '') + '">' +
-            escapeHtml(row.receiptState || 'none') + '</span>') + '</td>';
-      }
-
-      cells += '<td class="rowActions">' +
+      cells += '<td class="rowActions">' + moveButtons(row) + ' ' +
         '<button type="button" data-edit="' + row.row + '">Edit</button> ' +
         // "Archive", not "Delete": it is what the button does, and the archive is
-        // a place you can see, one tap away in the header. A button labelled
-        // Delete that does not delete is the same lie the Save button was telling.
+        // the section below this one. A button labelled Delete that does not
+        // delete is the same lie the Save button was telling.
         '<button type="button" data-delete="' + row.row + '">Archive</button></td>';
 
       return '<tr data-row="' + row.row + '">' + cells + '</tr>';
+    }
+
+    /* ------------------------------ the card ------------------------------ */
+
+    /*
+     * The same row on a phone.
+     *
+     * Counterparty and amount are the headline because that is what identifies
+     * an entry; the date and category go under it as one muted line; everything
+     * else is a labelled pair. Notes come last because they are the only field
+     * that can be long.
+     */
+    function rowCard(row) {
+      var counterparty = row.cells['Counterparty'] || '(no name)';
+      var amount = row.cells['Amount'];
+      var currency = row.cells['Currency'] || '';
+      var money = (amount === '' || amount === null || amount === undefined)
+        ? '' : String(amount) + (currency ? ' ' + currency : '');
+
+      // The muted line: when it happened, and which patient / reason / tipo.
+      var sub = [dayLabelOrRaw(row.cells['Date'])];
+      if (app.meta.category) {
+        var category = row.cells[app.meta.category.header];
+        if (category) sub.push(category);
+      }
+      if (row.archived && row.archivedAt) sub.push('archived ' + dayLabel(row.archivedAt));
+
+      // Everything the headline did not already say.
+      var skip = { 'Counterparty': 1, 'Amount': 1, 'Currency': 1, 'Date': 1, 'Notes': 1 };
+      if (app.meta.category) skip[app.meta.category.header] = 1;
+
+      var pairs = app.meta.columns.filter(function (column) {
+        if (skip[column.header]) return false;
+        var value = row.cells[column.header];
+        return value !== '' && value !== null && value !== undefined;
+      }).map(function (column) {
+        var value = column.type === 'date'
+          ? dayLabelOrRaw(row.cells[column.header]) : row.cells[column.header];
+        return '<dt>' + escapeHtml(column.label) + '</dt><dd>' + escapeHtml(value) + '</dd>';
+      });
+
+      app.meta.states.forEach(function (state, index) {
+        if (!state.dateColumn) return;
+        // A date the row has not reached is left off the card entirely rather
+        // than shown as a dash: on a phone the column does not need to line up
+        // with anything, so an empty row of it is only clutter.
+        if (row.archived) {
+          if (row.dates[state.dateColumn]) {
+            pairs.push('<dt>' + escapeHtml(state.dateColumn) + '</dt><dd>' +
+              escapeHtml(dayLabel(row.dates[state.dateColumn])) + '</dd>');
+          }
+          return;
+        }
+        var reached = row.dates[state.dateColumn] || (row.statusIndex >= 0 && index <= row.statusIndex);
+        if (!reached) return;
+        pairs.push('<dt>' + escapeHtml(state.dateColumn) + '</dt><dd>' +
+          dateChip(row, state, index) + '</dd>');
+      });
+
+      if (app.meta.files.length) {
+        pairs.push('<dt>Documents</dt><dd class="docs">' + docsHtml(row) + '</dd>');
+      }
+      if (row.cells['Notes']) {
+        pairs.push('<dt>Notes</dt><dd class="notes">' + escapeHtml(row.cells['Notes']) + '</dd>');
+      }
+      if (row.archived && row.reason) {
+        pairs.push('<dt>Reason</dt><dd>' + escapeHtml(row.reason) + '</dd>');
+      }
+
+      var actions = row.archived
+        ? '<div class="acts">' +
+          '<button type="button" data-restore="' + row.row + '">Restore</button>' +
+          '<button type="button" class="danger" data-purge="' + row.row + '">Delete forever</button>' +
+          '</div>'
+        : (moveButtons(row) ? '<div class="moves">' + moveButtons(row) + '</div>' : '') +
+          '<div class="acts">' +
+          '<button type="button" data-edit="' + row.row + '">Edit</button>' +
+          '<button type="button" data-delete="' + row.row + '">Archive</button>' +
+          '</div>';
+
+      return '<div class="entry" data-row="' + row.row + '">' +
+        '<div class="top"><span class="name">' + escapeHtml(counterparty) + '</span>' +
+        (money ? '<span class="amount">' + escapeHtml(money) + '</span>' : '') + '</div>' +
+        '<div class="sub">' + escapeHtml(sub.filter(Boolean).join(' · ')) + '</div>' +
+        (pairs.length ? '<dl>' + pairs.join('') + '</dl>' : '') +
+        actions +
+        '</div>';
     }
 
     function dayLabelOrRaw(value) {
       return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '')) ? dayLabel(value) : value;
     }
 
-    function findRow(rowNumber) {
-      return app.rows.filter(function (row) { return row.row === Number(rowNumber); })[0];
+    /*
+     * Live rows and archived rows are on screen together, and their row numbers
+     * come from different sheets — so 4 in Health and 4 in Health Archive are
+     * different entries. Archived rows are searched second and only ever reached
+     * by Restore and Delete forever, which are the only buttons an archived card
+     * has.
+     */
+    function findRow(rowNumber, archived) {
+      var list = archived ? app.archiveRows : app.rows;
+      return list.filter(function (row) { return row.row === Number(rowNumber); })[0];
     }
 
     function replaceRow(entry) {
@@ -1161,9 +1666,12 @@
       app.rows = app.rows.map(function (row) { return row.row === entry.row ? entry : row; });
     }
 
+    /* Matches the table row or the card, whichever is on screen. */
     function setBusy(rowNumber, busy) {
-      var tr = el('table').querySelector('tr[data-row="' + rowNumber + '"]');
-      if (tr) tr.className = busy ? 'busy' : '';
+      var nodes = el('sections').querySelectorAll('[data-row="' + Number(rowNumber) + '"]');
+      Array.prototype.forEach.call(nodes, function (node) {
+        node.classList.toggle('busy', !!busy);
+      });
     }
 
     /* ------------------------------- dialog ------------------------------- */
@@ -1206,6 +1714,14 @@
 
     /* ------------------------------- actions ------------------------------ */
 
+    /*
+     * The date dialog stays on the way forward.
+     *
+     * Claimed, Settled and Received are usually backdated - you are recording
+     * something that already happened - so the button opens the dialog rather
+     * than stamping today and leaving you to notice. One tap accepts today, and
+     * that is the same one tap the dropdown used to cost.
+     */
     function changeStatus(rowNumber, stateName) {
       var row = findRow(rowNumber);
       if (!row) return;
@@ -1223,17 +1739,20 @@
         keepExisting: option.keepExisting,
         allowClear: false,
         apply: function (dateISO) { applyStatus(rowNumber, stateName, dateISO); },
-        onCancel: function () { renderTable(); }
+        onCancel: function () { renderSections(); }
       });
     }
 
     function applyStatus(rowNumber, stateName, dateISO) {
       setBusy(rowNumber, true);
-      call('uiSetStatus', app.current, rowNumber, stateName, dateISO)
+      call('uiSetStatus', app.view, rowNumber, stateName, dateISO)
         .then(function (result) {
           replaceRow(result.entry);
           renderFilters();
-          renderTable();
+          // Follow the row. The section it landed in opens and comes into view;
+          // the one it left stays open, because you are usually working down a
+          // list and the next row you want is still in it.
+          revealBucket(result.entry ? result.entry.status : stateName);
           // Never report success for work that failed: the status moved, and if
           // a rename did not, that is what gets said.
           if (result.fileErrors && result.fileErrors.length) {
@@ -1247,7 +1766,7 @@
         })
         .catch(function (error) {
           setBusy(rowNumber, false);
-          renderTable();  // put the selector back to what the sheet still says
+          renderSections();  // put the row back where the sheet still says it is
           toast(message(error), 'error');
         });
     }
@@ -1268,10 +1787,10 @@
 
     function applyDate(rowNumber, dateColumn, dateISO) {
       setBusy(rowNumber, true);
-      call('uiSetEntryDate', app.current, rowNumber, dateColumn, dateISO)
+      call('uiSetEntryDate', app.view, rowNumber, dateColumn, dateISO)
         .then(function (result) {
           replaceRow(result.entry);
-          renderTable();
+          renderSections();
           toast(dateColumn + (result.date ? ' — ' + dayLabel(result.date) : ' cleared'));
         })
         .catch(function (error) {
@@ -1326,9 +1845,11 @@
         destructive: false,
         apply: function () {
           setBusy(rowNumber, true);
-          call('uiArchiveEntry', app.current, rowNumber)
+          call('uiArchiveEntry', app.view, rowNumber)
             .then(function (result) {
-              load();
+              // The row moved sheets, so both lists are stale. Follow it into
+              // the archive, which forces the fetch it has been avoiding.
+              reloadEntries(ARCHIVE_BUCKET);
               if (result.fileErrors && result.fileErrors.length) {
                 toast('Archived, but a document could not be moved:\n' +
                   result.fileErrors.map(function (f) {
@@ -1347,10 +1868,15 @@
     }
 
     function restoreRow(rowNumber) {
+      var row = findRow(rowNumber, true);
+      // Read before the call: afterwards this row number belongs to the live
+      // sheet, and the archived row it names is gone.
+      var landsIn = row ? row.status : null;
+
       setBusy(rowNumber, true);
-      call('uiRestoreEntry', app.current, rowNumber)
+      call('uiRestoreEntry', app.view, rowNumber)
         .then(function (result) {
-          load();
+          reloadEntries(landsIn);
           if (result.fileErrors && result.fileErrors.length) {
             toast('Restored, but a document could not be re-filed:\n' +
               result.fileErrors.map(function (f) {
@@ -1367,7 +1893,7 @@
     }
 
     function purgeEntry(rowNumber) {
-      var row = findRow(rowNumber);
+      var row = findRow(rowNumber, true);
       var who = row ? (row.cells['Counterparty'] || 'this entry') : 'this entry';
 
       openConfirm({
@@ -1378,9 +1904,9 @@
         destructive: true,
         apply: function () {
           setBusy(rowNumber, true);
-          call('uiHardDeleteEntry', app.current, rowNumber)
+          call('uiHardDeleteEntry', app.view, rowNumber)
             .then(function (result) {
-              load();
+              reloadEntries(ARCHIVE_BUCKET);
               if (result.fileErrors && result.fileErrors.length) {
                 toast('Row deleted, but a document could not be trashed:\n' +
                   result.fileErrors.map(function (f) {
@@ -1464,7 +1990,7 @@
         return f.role === 'category';
       })[0];
       if (app.meta.category && categoryField) {
-        call('uiCategoryValues', app.current).then(function (values) {
+        call('uiCategoryValues', app.view).then(function (values) {
           var list = el('list_' + cssId(app.meta.category.header));
           if (list) {
             list.innerHTML = values.map(function (value) {
@@ -1652,7 +2178,7 @@
       // lookup is a round trip to the server - so without this the save outruns
       // the correction and stores the typo anyway, intermittently, which is the
       // worst kind.
-      var pending = call('uiLookupCounterparty', app.current, text).then(function (match) {
+      var pending = call('uiLookupCounterparty', app.view, text).then(function (match) {
         if (!app.form || !match) { if (hint) hint.textContent = ''; return; }
 
         if (match.autofill) {
@@ -1887,12 +2413,15 @@
         .then(function (files) {
           var payload = { values: collectValues(), files: files, picked: collectPicks() };
           return editingRow
-            ? call('uiUpdateEntry', app.current, editingRow, payload)
-            : call('uiCreateEntry', app.current, payload);
+            ? call('uiUpdateEntry', app.view, editingRow, payload)
+            : call('uiCreateEntry', app.view, payload);
         })
         .then(function (result) {
           closeForm();
-          load();
+          // A new entry starts in the first state, so open that section and go
+          // to it — otherwise saving shows you nothing and reads as a failure.
+          // An edit leaves the row where it was.
+          reloadEntries(editingRow ? null : app.meta.states[0].name);
           if (result.fileErrors && result.fileErrors.length) {
             toast('Saved, but a document could not be filed:\n' +
               result.fileErrors.map(function (f) {
@@ -1922,9 +2451,9 @@
       if (target.parentNode === el('tabs')) return select(target.dataset.key);
       if (target.id === 'refresh') return load();
       if (target.id === 'newEntry') return openForm();
-      if (target.id === 'showArchive') return setArchive(!app.archive);
-      if (target.id === 'archiveBack') return setArchive(false);
-      if (target.id === 'showSuppliers') return setSuppliers(!app.suppliers);
+      if (target.dataset.toggle) return toggleBucket(target.dataset.toggle);
+      if (target.dataset.advance) return changeStatus(target.dataset.advance, target.dataset.state);
+      if (target.dataset.regress) return changeStatus(target.dataset.regress, target.dataset.state);
       if (target.dataset.supplier) return openSupplier(target.dataset.supplier);
       if (target.id === 'supplierSave') return saveSupplier();
       if (target.id === 'supplierRepair') return repairSupplierDocs();
@@ -2046,17 +2575,26 @@
       // Dropdowns and the file inputs fire change rather than input, so a
       // required choice picked from a list has to clear the warning too.
       if (app.form && el('formFields').contains(target)) return refreshMissingNote();
-      if (target.classList.contains('status')) {
-        return changeStatus(target.dataset.row, target.value);
-      }
-      if (target.id === 'statusFilter') {
-        app.filters.status = target.value;
-        return renderTable();
-      }
+      if (target.id === 'viewSelect') return select(target.value);
       if (target.id === 'categoryFilter') {
         app.filters.category = target.value;
-        return renderTable();
+        return renderSections();
       }
+    });
+
+    /*
+     * Rotating the phone, or dragging a desktop window across the breakpoint.
+     *
+     * The cards and the table are built by different code, so the answer has to
+     * be re-asked rather than left to CSS. Only re-renders what is on screen:
+     * the sections that are open, with the rows already in hand.
+     */
+    NARROW.addEventListener('change', function () {
+      if (app.view === PROVIDERS) {
+        if (app.supplierList.length) renderSuppliers();
+        return;
+      }
+      if (app.meta) renderSections();
     });
 
     boot();
