@@ -12,13 +12,13 @@ overwrite it at the end of each session.
 
 | | |
 |---|---|
-| Branch | `step-7-web-ui`. **Ahead of `origin`** — push it. No count here: this note is one of the commits, and it cannot include itself |
-| Last code commit | the tip — the UI rebuild. `42f0a53` before it is the preview tool |
+| Branch | `step-7-web-ui`, **pushed to `origin` and in sync** |
+| Last code commit | the tip — the iOS date-input width fix. The UI rebuild is `33d8622`, the preview tool `42f0a53` |
 | Working tree | clean |
 | Harness | **727 passing, 0 failed** — unchanged by the UI work, and that is the point |
 | Main project | matches `v2/` byte for byte, 13 files |
 | Siri project | `v2-siri/`, 2 files — not touched on 15 Aug |
-| Deployed | main at **version 28**, cut 15 Aug. Siri at **@2** |
+| Deployed | main at **version 29**, cut 15 Aug. Siri at **@2** |
 | Shortcuts | all four working. **The IVA one still has no Tipo picker** |
 
 Steps 1–9, 9c and 11 are done. **The web UI was rebuilt around the phone on 15
@@ -26,33 +26,24 @@ Aug and is deployed** — see below for what changed and what has still never be
 touched by a finger. Cutover (step 10) remains the main thing standing between
 this and daily use.
 
+**`bootstrap()` was run on 15 Aug**, which unblocked IVA: version 29 declares its
+`Tipo` column and the sheet now has it. Before that run the live app threw
+`Column "Tipo" not found in IVA` and the section would not list at all. What has
+*not* been confirmed is that the eight codes render as a closed list rather than
+free text — see step 1.
+
 ---
 
 # The plan
 
-In order. **Step 1 is blocking and new** — the deployment on 15 Aug turned a
-pending item into a broken one.
+In order. Nothing is blocking any more — `bootstrap()` was the last blocker and
+it was run on 15 Aug. Step 1 is a check rather than a build.
 
-## 1. Run `bootstrap()`. IVA is broken until you do — 2 minutes
+## 1. Look at the new UI on the phone
 
-Not optional, and it is more urgent than it was yesterday. `SECTIONS` declares
-IVA's `Tipo` column; the IVA sheet does not have it. `columnIndex` throws
-`Column "Tipo" not found in IVA` (`v2/Core.js:169`) rather than degrading, so
-**`uiListEntries('iva')` fails and the IVA view will not list at all.**
-
-This was harmless while `/exec` served version 27, which predated the change.
-**Version 28 includes it**, so the live app is now in that state. The other three
-sections are unaffected.
-
-Run `bootstrap()` from the main project's editor. It appends `Tipo` to IVA, is
-idempotent, and reports what it added. Then open IVA and confirm the eight codes
-appear as a closed list — a closed list rendering as free text is a failure this
-project has hit before.
-
-## 2. Look at the new UI on the phone
-
-Deployed and unseen on a real device. Open via the **home screen icon**, which
-has its own cookie jar and is why the v2 account wins:
+Deployed at version 29 and **still largely unseen on a real device.** Open via
+the **home screen icon**, which has its own cookie jar and is why the v2 account
+wins. Hard-refresh it — it may be holding an older version:
 
 ```
 https://script.google.com/macros/s/AKfycbxKHouifK8w8hbpMGZ_W0yklTKCdCgp-YHAk9uS7Omji_RH_fa4Za6DGYk1ZjOL5tuo/exec?authuser=purplecat.admin@gmail.com
@@ -62,9 +53,17 @@ Everything below was verified in headless Chrome at 390 and 1100 across all five
 views, with no horizontal overflow anywhere. **What headless Chrome cannot
 speak for**, and therefore what to actually check:
 
-- **Both date controls.** The status dialog now stacks its input above OK; the
-  form's inputs got smaller type and padding. Chrome does not render iOS's
-  native date wheel, so this is the fix with the least evidence behind it.
+- **Both date controls — the one to check first.** They were reported still too
+  wide on the phone at version 28, and the first fix had the cause wrong: font
+  and padding changed nothing, because iOS gives `input[type="date"]` an
+  intrinsic width and will not take `width:100%` below it.
+  `-webkit-appearance:none` is what releases it, and version 29 is the first
+  build with that. **Chrome cannot reproduce the iOS control at all**, so this
+  fix has no local evidence behind it — only the phone can say.
+- **IVA's Tipo.** `bootstrap()` has been run, so the column exists and the
+  section lists. Confirm the eight codes appear as a **closed list rather than
+  free text** — that is a failure this project has hit before, and it has not
+  been looked at since the column was added.
 - **The advance/regress pair.** 42px minimum, but feel is not measurable in a
   screenshot.
 - **Walk a Health row** To Do → Claimed → Settled and back. The destination
@@ -74,7 +73,7 @@ speak for**, and therefore what to actually check:
 - **Momentum scrolling and the accordions** — a long Claimed list on a real
   device.
 
-## 3. Cutover — the four toggles
+## 2. Cutover — the four toggles
 
 Unchanged, and still the thing that has been next for four sessions. There is no
 code between you and it: `findDebris()` came back clean on 13 Aug, so cutover
@@ -91,7 +90,7 @@ Then freeze v1, both in the old account:
 
 Leave the old GitHub Pages page live and untouched to work the backlog down.
 
-## 4. The IVA Shortcut needs its Tipo picker
+## 3. The IVA Shortcut needs its Tipo picker
 
 `catalog` returns a category for IVA where it returned `null`, so the phone can
 offer the closed eight. **The Shortcut has not been updated.**
@@ -99,12 +98,12 @@ offer the closed eight. **The Shortcut has not been updated.**
 same, reading `category.values`.
 
 Until it is done, Siri IVA entries arrive with no Tipo — a deferred field like
-any other rather than a failure. **The export needs it**, though — see step 6.
+any other rather than a failure. **The export needs it**, though — see step 5.
 
 **Export the Shortcut to a file the moment it works.** That rule exists because
 three of them were lost on 13 Aug.
 
-## 5. The last unseen surface — NIF warnings on a merge
+## 4. The last unseen surface — NIF warnings on a merge
 
 9c works and has been used, but the NIF handling was tightened afterwards and its
 two warnings have never been on screen. Merge two suppliers whose NIFs **differ**;
@@ -114,7 +113,7 @@ one. Matching NIFs must say nothing at all.
 Note the registry is now reached as **Providers** in the view selector. The sheet,
 the server and every identifier still say supplier.
 
-## 6. The IVA export — the substantial piece of new work
+## 5. The IVA export — the substantial piece of new work
 
 Goal: **open DRORIVA pre-filled from the IVA section instead of retyping every
 invoice.** The format is fully reverse-engineered in **`v2/IVA-EXPORT-FORMAT.md`** —
@@ -141,7 +140,7 @@ sheet and Drive to hand but holds the whole base64 payload in memory, and one
 invoice was 111 KB of PDF for 231 KB of XML. **Size is the thing most likely to
 break first.**
 
-## 7. Field validation — step 13
+## 6. Field validation — step 13
 
 `VALIDATION-PLAN.md`, five rules, none implemented. **Nothing validates values on
 any intake path today** — a quoted `"Amount":"abc"` from Siri would be written to
@@ -150,11 +149,11 @@ the sheet as text. This is a hole, not a polish item.
 AT's own `Decimal_15` is `fractionDigits=2 minInclusive=0` (rules 1 and 2) and
 `NifFatura` is `xs:long` (rule 3) — two independent routes to the same rules.
 
-Doing it **after** step 6 is deliberate: the export is what turns a bad value from
+Doing it **after** step 5 is deliberate: the export is what turns a bad value from
 an annoyance into a rejected submission, so build the thing that punishes bad data
 before hardening against it.
 
-## 8. Not next
+## 7. Not next
 
 - **OCR intake, step 12** — new capability, can wait.
 - **The plan's open questions** — `3-45` versus `3.45` in filenames, whether
@@ -278,6 +277,23 @@ If any of those disagree, find out why before changing anything.
   **no trailing newline**, for the same one-byte reason as `v2/appsscript.json`.
 - **`v2/appsscript.json` has no trailing newline, on purpose.** `wc -c` should be
   **425**, not 426. Do not tidy it.
+- **A `git push` 403 is the wrong GitHub identity, not a broken remote.** The repo
+  is public, so clone and fetch work anonymously and only the push fails — which
+  reads like a permissions bug on the repo and is not one. Sorted on 15 Aug: `gh`
+  was authenticated as **`pnhknrt7kp`**, which has `pull: true, push: false` on
+  `jackiepurplecat-max/form-launcher`.
+
+  Diagnose it with `gh api repos/jackiepurplecat-max/form-launcher --jq
+  '.permissions'` rather than from the error text. Both accounts are now stored;
+  `jackiepurplecat-max` is active and `gh auth switch` moves between them.
+
+  **`gh auth login` alone was not enough.** Git's helper was `osxkeychain`, which
+  still held the old account's token and answered first, so the push kept failing
+  with `gh` looking correct. `gh auth setup-git` fixed it by writing a
+  github.com-specific helper that takes precedence. The stale token is still in
+  the keychain, bypassed rather than removed — so deleting the
+  `credential.https://github.com.helper` lines from `~/.gitconfig` would bring the
+  403 straight back.
 - **Pushing is not deploying.** A push updates HEAD, which `/dev` serves. `/exec`
   serves a pinned version, so cut a new one — and pass `-i <deploymentId>` or
   clasp creates a *second* deployment on a different URL:
