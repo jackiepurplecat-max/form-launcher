@@ -41,9 +41,10 @@ it was run on 15 Aug. Step 1 is a check rather than a build.
 
 ## 1. Look at the new UI on the phone
 
-Deployed at version 29 and **still largely unseen on a real device.** Open via
-the **home screen icon**, which has its own cookie jar and is why the v2 account
-wins. Hard-refresh it — it may be holding an older version:
+Deployed at version 29. **The date controls have now been seen and are right;
+everything else on this list has not been.** Open via the **home screen icon**,
+which has its own cookie jar and is why the v2 account wins. Hard-refresh it —
+it may be holding an older version:
 
 ```
 https://script.google.com/macros/s/AKfycbxKHouifK8w8hbpMGZ_W0yklTKCdCgp-YHAk9uS7Omji_RH_fa4Za6DGYk1ZjOL5tuo/exec?authuser=purplecat.admin@gmail.com
@@ -53,13 +54,16 @@ Everything below was verified in headless Chrome at 390 and 1100 across all five
 views, with no horizontal overflow anywhere. **What headless Chrome cannot
 speak for**, and therefore what to actually check:
 
-- **Both date controls — the one to check first.** They were reported still too
-  wide on the phone at version 28, and the first fix had the cause wrong: font
-  and padding changed nothing, because iOS gives `input[type="date"]` an
+- ~~**Both date controls.**~~ **Fixed and confirmed on the phone at version 29.**
+  Kept because the diagnosis cost two attempts and the wrong one is plausible:
+  font and padding changed nothing, because iOS gives `input[type="date"]` an
   intrinsic width and will not take `width:100%` below it.
-  `-webkit-appearance:none` is what releases it, and version 29 is the first
-  build with that. **Chrome cannot reproduce the iOS control at all**, so this
-  fix has no local evidence behind it — only the phone can say.
+  **`-webkit-appearance:none` is what releases that sizing**, and it does *not*
+  cost the native wheel — on iOS the picker is bound to the input type, not its
+  appearance. An earlier version of `Index.html` avoided the property in a
+  comment saying it would, and that belief was what made the first fix a no-op.
+  Chrome cannot reproduce the iOS control at all, so nothing local would have
+  caught either the bug or the fix.
 - **IVA's Tipo.** `bootstrap()` has been run, so the column exists and the
   section lists. Confirm the eight codes appear as a **closed list rather than
   free text** — that is a failure this project has hit before, and it has not
