@@ -1,8 +1,15 @@
 # Start here
 
-Handover note, written 15 Aug 2026. **Read *The plan* below and work down it**;
-everything after it is the record of how things got here, and is reference
-rather than instruction.
+Handover note, written 15 Aug 2026, updated 18 Aug. **Read *The plan* below and
+work down it**; everything after it is the record of how things got here, and is
+reference rather than instruction.
+
+**Nothing in `v2/` has changed since version 29.** The 17–18 Aug session went
+entirely on the phone's wrong-account problem and ended in documentation only,
+because the fix turned out to be a browser setting rather than code. So
+everything outstanding on 15 Aug is still outstanding, and the deployed app is
+the same one. What *did* change is that the app now opens reliably on the phone,
+which is what makes the list in step 1 checkable at last.
 
 **Operational state only** — the design and the reasons live in
 `REBUILD-PLAN.md`, which is the source of truth. This file is disposable:
@@ -13,13 +20,14 @@ overwrite it at the end of each session.
 | | |
 |---|---|
 | Branch | `step-7-web-ui`, **pushed to `origin` and in sync** |
-| Last code commit | the tip — the iOS date-input width fix. The UI rebuild is `33d8622`, the preview tool `42f0a53` |
+| Last commit | `7079831`, **documentation only**. The last *code* commit is still `5a29a30`, the iOS date-input width fix. UI rebuild `33d8622`, preview tool `42f0a53` |
 | Working tree | clean |
-| Harness | **727 passing, 0 failed** — unchanged by the UI work, and that is the point |
-| Main project | matches `v2/` byte for byte, 13 files |
-| Siri project | `v2-siri/`, 2 files — not touched on 15 Aug |
-| Deployed | main at **version 29**, cut 15 Aug. Siri at **@2** |
+| Harness | **727 passing, 0 failed** — the 17–18 Aug work added nothing and removed nothing |
+| Main project | matches `v2/` byte for byte, 13 files — **re-verified 18 Aug** after the reverted experiment |
+| Siri project | `v2-siri/`, 2 files — untouched since 15 Aug |
+| Deployed | main at **version 29**, cut 15 Aug. Siri at **@2**. **No deployment was cut on 17–18 Aug** |
 | Shortcuts | all four working. **The IVA one still has no Tipo picker** |
+| Phone access | **Fixed 17 Aug.** The v2 account must be Safari's *default*, i.e. signed in first. Not a URL problem — see the traps |
 
 Steps 1–9, 9c and 11 are done. **The web UI was rebuilt around the phone on 15
 Aug and is deployed** — see below for what changed and what has still never been
@@ -47,8 +55,13 @@ which has its own cookie jar and is why the v2 account wins. Hard-refresh it —
 it may be holding an older version:
 
 ```
-https://script.google.com/macros/s/AKfycbxKHouifK8w8hbpMGZ_W0yklTKCdCgp-YHAk9uS7Omji_RH_fa4Za6DGYk1ZjOL5tuo/exec?authuser=purplecat.admin@gmail.com
+https://script.google.com/macros/s/AKfycbxKHouifK8w8hbpMGZ_W0yklTKCdCgp-YHAk9uS7Omji_RH_fa4Za6DGYk1ZjOL5tuo/exec
 ```
+
+The `?authuser=` that used to be on that URL has been dropped: it does nothing on
+`/exec` and kept the wrong idea alive. Since 17 Aug the v2 account is Safari's
+default, so a plain Safari tab works too — the home screen icon is still the
+sturdier route because it does not depend on that ordering holding.
 
 Everything below was verified in headless Chrome at 390 and 1100 across all five
 views, with no horizontal overflow anywhere. **What headless Chrome cannot
@@ -76,6 +89,26 @@ speak for**, and therefore what to actually check:
   `Proof of payment — awaiting` in amber.
 - **Momentum scrolling and the accordions** — a long Claimed list on a real
   device.
+
+**Newly outstanding, and the reason step 1 is worth doing now.** The 17 Aug fix
+was proved with a *bare* `/exec` link only. The mailed links have never been
+opened successfully on the phone, so the thing the whole session was about is
+still not verified end to end:
+
+- **A real completion email's "Finish it here" link.** It carries
+  `?section=<key>&t=<stamp>`, which the bare test link deliberately did not.
+  Confirm it opens the app **on that entry** rather than on the default view.
+  `smokeTest()` in the editor sends one; `smokeCleanup()` removes the rows after.
+- **Whether the page then works, rather than merely loads.** Everything on it
+  goes through `google.script.run`, and each of those 22 functions runs its own
+  `requireUiAccess()`. Loading proves `doGet` passed; it does not prove the calls
+  do. Save something.
+- **The Step 1 staging-folder link** in the same mail. It is a `drive.google.com`
+  URL carrying `authuser=`, which is a *different* mechanism from `/exec` and is
+  the one place `authuser` genuinely does work — so it can fail independently.
+- **That it survives a cold start.** Force-quit Safari, or leave it overnight,
+  then tap the mailed link again. The default-session fix is only as good as the
+  cookie that carries it.
 
 ## 2. Cutover — the four toggles
 
