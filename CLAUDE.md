@@ -87,13 +87,26 @@ deployment on a different URL and leaves the old one live — which is how you e
 up debugging a page that no longer exists.
 
 **Assume several Google accounts are signed in, on every device including the
-phone, and that the v2 account is not the default.** Any Google URL this project
-emits — document links, completion links, anything for the phone — must carry
-`authuser=<address>`, or the default account answers and **the failure reads as a
-missing file rather than the wrong identity**. Note the limit: `authuser=`
-only *selects* among accounts already signed in to that browser; it cannot switch
-to one that is not. `/u/N/` does not work at all. See `NEXT-SESSION.md` for the
-tested details before spending time here.
+phone.** When the wrong one answers, the failure **reads as a missing file rather
+than the wrong identity** — that mapping is the single most useful fact here, so
+a report of "cannot open the file" means suspect the account before anything
+else.
+
+**The account is a browser-session problem, and no URL can fix it.** Tested and
+dead: `authuser=` (inert on `/exec` — it only *selects* among accounts already
+signed in), `/u/N/` (404 for every N), and Google's account chooser — including
+the case where the correct account was picked by hand from the chooser and
+`/exec` still refused. **Do not spend time on a URL parameter for this**; three
+people's worth of plausible suggestions all land in that dead end.
+
+**The fix is that the v2 account must be the browser's DEFAULT**, i.e. the first
+account signed in — which is why a Private tab always worked. Confirmed on the
+phone 17 Aug. The durable versions are the home-screen icon (its own cookie jar)
+and an iOS 17 Safari Profile. It regresses silently if accounts are ever
+re-added in a different order. See `NEXT-SESSION.md` for the full tested list.
+
+`authuser=<address>` is still worth carrying on **Drive** links, where it does
+select among signed-in accounts. It does nothing on `/exec`.
 
 ### True of v2, deliberately false of v1
 

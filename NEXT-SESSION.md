@@ -330,6 +330,42 @@ If any of those disagree, find out why before changing anything.
   returns **404** for every N. Tested 0, 1 and 2 on 13 Aug — do not spend the
   hour again.
 
+  **The account chooser does not work either. Tested 17 Aug, on the phone.**
+  `accounts.google.com/AccountChooser?Email=<v2>&continue=<encoded /exec>` was
+  built, pushed and opened in Safari: it failed exactly as the bare link does.
+  The un-pinned form (`?continue=` alone) *did* show the picker, listing all
+  three accounts — **choosing the right one still failed the same way.** So the
+  chooser resolves its own selection and `/exec` goes on answering as the
+  browser's default regardless. The code was reverted; nothing is left in the
+  tree. **The conclusion is stronger than "no URL parameter works": no URL
+  works, chooser included, because the session that answers `script.google.com`
+  is not something a link gets to choose.** Do not try Method 1, 2 or 3 of any
+  suggestion that offers them — all three are now tested and dead.
+
+  **WHAT ACTUALLY FIXED IT, confirmed on the phone 17 Aug: make the v2 account
+  Safari's default.** Sign out of every Google account, then sign in as
+  `purplecat.admin@gmail.com` **first**, then add the others back. The default
+  session is the FIRST one signed in — which is the same reason a Private tab
+  always worked, and it is the whole explanation for this bug. The plain
+  `/exec` link then opens the app, with no parameter on it and no code change of
+  any kind. **This is a browser-session problem, not a link problem**, which is
+  why every attempt to solve it in the URL failed.
+
+  **The trap: it comes back.** Nothing pins the ordering. Sign into another
+  Google account first on that device — or reset Safari, or get signed out and
+  restore in a different order — and the default moves and every link fails
+  again, with the same misleading "cannot open the file". If that happens, do
+  not debug the deployment or the links: check the account order first. The
+  sturdier versions of the same fix are the **home-screen icon** (its own cookie
+  jar) and an **iOS 17 Safari Profile** holding only this account.
+
+  **If it ever needs to survive the ordering permanently**, the only real answer
+  is to take the Google session out of the path the way the Siri endpoint does —
+  `ANYONE_ANONYMOUS` plus a shared key. That is a genuine piece of work, not a
+  manifest flip: the 22 `requireUiAccess()` gates read
+  `Session.getActiveUser()`, which is blank under anonymous, so the key has to
+  reach all of them too. Not worth it while the ordering holds.
+
   **The symptom is Drive's access error, not ours.** *"Precisa de acesso"* means
   Google refused before the script ran — `access` is `MYSELF`, so a browser
   authenticated as `jackiepurplecat` never reaches `doGet`.
