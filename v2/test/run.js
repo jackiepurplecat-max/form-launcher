@@ -17,7 +17,7 @@ const path = require('path');
 
 const mocks = require('./mocks.js');
 const DIR = path.join(__dirname, '..');
-const FILES = ['Config.js', 'Core.js', 'Entries.js', 'Registry.js', 'Setup.js', 'Smoke.js', 'Web.js', 'Form.js', 'Manage.js', 'Suppliers.js', 'Siri.js'];
+const FILES = ['Config.js', 'Core.js', 'Entries.js', 'Registry.js', 'Setup.js', 'Smoke.js', 'Web.js', 'Form.js', 'Manage.js', 'Suppliers.js', 'Siri.js', 'IvaExport.js'];
 
 const sandbox = Object.assign({ console }, mocks);
 sandbox.globalThis = sandbox;
@@ -2789,6 +2789,179 @@ check('and says in prose that this is an empty sheet, not a clean bill of health
   /empty sheet/.test(afterReset.summary), afterReset.summary);
 
 console.log('\n--- findDebris on an emptied sheet ---\n' + afterReset.summary);
+
+/* ========================= The IVA / DRORIVA export ======================= */
+/*
+ * Runs last, on the sheet resetAllData() just emptied, so the fixtures below are
+ * the only IVA rows in existence and "which rows go in" can be asserted exactly.
+ *
+ * The FORMAT is not proved here. It is proved by v2/test/iva-roundtrip.js, which
+ * rebuilds a declaration DRORIVA itself saved and compares byte for byte -
+ * something this harness cannot do, because it has no real sample and its
+ * base64 is an identity stand-in. What is proved here is everything around the
+ * format: which rows are chosen, which are refused and why, and that the totals
+ * the file asserts about itself are right.
+ */
+section('IVA export — the declaration');
+
+mocks._props.REF_JALLC_NIF = '111111111';
+mocks._props.REF_MY_NIF = '222222222';
+
+const exFatura1 = mocks.DriveApp._addFile('a.pdf');
+const exFatura2 = mocks.DriveApp._addFile('b.pdf');
+const exFatura3 = mocks.DriveApp._addFile('c.pdf');
+
+const exReady1 = G.createEntry('iva', {
+  'Date': '2026-03-01', 'Counterparty': 'Worten', 'Amount': 280, 'Currency': 'EUR',
+  'Número': 'FAC33484', 'Emitente NIF': '333333333', 'IVA Amount': 32.22,
+  'Tipo': '102 — Electrodomésticos', 'Receipt URL': exFatura1.id
+}, 'form');
+const exReady2 = G.createEntry('iva', {
+  'Date': '2026-03-02', 'Counterparty': 'Staples', 'Amount': 12.30, 'Currency': 'EUR',
+  'Número': 'FT 9/2026', 'Emitente NIF': '500000000', 'IVA Amount': 2.30,
+  'Tipo': '106 — Artigos de escritório', 'Receipt URL': exFatura2.id
+}, 'form');
+check('two exportable rows created', exReady1.ok && exReady2.ok, [exReady1.error, exReady2.error]);
+
+// Complete in every other way, but no Tipo. `Tipo` is required:false at intake
+// on purpose, so this row is normal - and it is exactly the row the tax app
+// would take and then reject.
+const exNoTipo = G.createEntry('iva', {
+  'Date': '2026-03-03', 'Counterparty': 'Leroy Merlin', 'Amount': 50, 'Currency': 'EUR',
+  'Número': 'FT 11', 'Emitente NIF': '501111111', 'IVA Amount': 9.35,
+  'Receipt URL': exFatura3.id
+}, 'form');
+check('the no-Tipo row is a valid entry, not a broken one', exNoTipo.ok === true, exNoTipo.error);
+
+// Awaiting its Fatura.
+const exNoDoc = G.createEntry('iva', {
+  'Date': '2026-03-04', 'Counterparty': 'Continente', 'Amount': 20, 'Currency': 'EUR',
+  'Número': 'FT 12', 'Emitente NIF': '502222222', 'IVA Amount': 3.74,
+  'Tipo': '107 — Outros bens não especificados'
+}, 'form');
+
+const decl = G.buildIvaDeclaration({ now: new Date(Date.UTC(2026, 7, 13, 20, 33, 31)) });
+
+check('ok', decl.ok === true, decl.message);
+check('two lines exported', decl.lines.length === 2, decl.lines);
+check('and they are the two complete ones',
+  decl.lines.map(l => l.numeroFatura).join(',') === 'FAC33484,FT 9/2026', decl.lines);
+
+const reasonFor = row => (decl.skipped.find(s => s.row === row) || {}).reasons || [];
+check('the no-Tipo row is left out', reasonFor(exNoTipo.row).length === 1, decl.skipped);
+check('and the reason names Tipo', /Tipo/.test(reasonFor(exNoTipo.row)[0]), decl.skipped);
+check('the row with no Fatura is left out',
+  reasonFor(exNoDoc.row).some(r => /Fatura/.test(r)), decl.skipped);
+check('nothing is dropped silently — every skip carries a reason',
+  decl.skipped.every(s => s.reasons.length > 0), decl.skipped);
+
+/* The totals are written INTO the file and the app believes them. */
+check('SomaValorFatura totals the lines', decl.somaValorFatura === '292.30', decl.somaValorFatura);
+check('SomaIVA totals the lines', decl.somaIVA === '34.52', decl.somaIVA);
+check('the totals are in the XML',
+  decl.xml.indexOf('<SomaIVA >34.52</SomaIVA>') !== -1 &&
+  decl.xml.indexOf('<SomaValorFatura >292.30</SomaValorFatura>') !== -1, decl.xml.slice(-300));
+
+/* The five traps, asserted rather than trusted. */
+check('trap 1 — element names are PascalCase, not the XSD camelCase',
+  decl.xml.indexOf('<NumeroFatura >') !== -1 && decl.xml.indexOf('<numeroFatura') === -1);
+check('trap 2 — the prolog declares ISO-8859-1 in single quotes',
+  decl.xml.indexOf("<?xml version='1.0' encoding='ISO-8859-1'?>") === 0);
+check('trap 4 — lines are numbered from 1',
+  decl.xml.indexOf('<Quadro02T1-Linha numero="1">') !== -1 &&
+  decl.xml.indexOf('<Quadro02T1-Linha numero="2">') !== -1);
+check('trap 5 — TipoEntidade is the letter d, not REF_IVA_TIPO display text',
+  decl.xml.indexOf('<TipoEntidade >d</TipoEntidade>') !== -1);
+check('the stray space before > is reproduced',
+  decl.xml.indexOf('<NifEntidade >111111111</NifEntidade>') !== -1);
+check('and the two spaces on Ficheiro', decl.xml.indexOf('<Ficheiro  attachmentDate=') !== -1);
+
+check('CodigoBem comes off the option label',
+  decl.xml.indexOf('<CodigoBem >102</CodigoBem>') !== -1 &&
+  decl.xml.indexOf('<CodigoBem >106</CodigoBem>') !== -1, decl.lines);
+check('attachmentDate is the caller\'s clock, in UTC',
+  decl.xml.indexOf('attachmentDate="2026-08-13T20:33:31Z"') !== -1);
+/*
+ * The Drive name, which by now is the one nameAndFileDocuments() built - so the
+ * declaration carries a filename that says what the invoice is, where the app's
+ * own sample carried a bare "114".
+ */
+check('fileName carries no extension and extension is separate',
+  decl.xml.indexOf('fileName="260301_Worten_280-00_fatura" extension="pdf"') !== -1,
+  decl.xml.match(/fileName="[^"]*" extension="[^"]*"/g));
+
+/* Amounts. Integer cents, because a total that disagrees with its own lines is
+ * a file the app takes and Finanças refuses. */
+check('amounts are always 2dp', /<ValorTotalFatura >280\.00</.test(decl.xml), decl.xml.match(/<ValorTotalFatura >[^<]*</g));
+check('cents arithmetic does not drift',
+  G.ivaMoney(G.ivaCents(0.1) + G.ivaCents(0.2)) === '0.30');
+check('a comma decimal is read, not rejected', G.ivaCents('3,45') === 345);
+
+section('IVA export — which rows, and what it refuses');
+
+/*
+ * Advancing to Claimed is what records a submission. This is the assertion that
+ * pins that decision: no `Submitted` column exists, and none is needed.
+ */
+G.setStatus('iva', exReady1.row, 'Claimed', '2026-03-10');
+const declAfter = G.buildIvaDeclaration({ now: new Date(Date.UTC(2026, 7, 13, 20, 33, 31)) });
+check('a row moved to Claimed is not exported again', declAfter.lines.length === 1, declAfter.lines);
+check('and the one left is the other one',
+  declAfter.lines[0].numeroFatura === 'FT 9/2026', declAfter.lines);
+check('the totals follow the surviving line', declAfter.somaValorFatura === '12.30', declAfter.somaValorFatura);
+
+/* Validation, from AT's own types rather than from taste. */
+const problems = line => G.ivaLineProblems(Object.assign({
+  numeroFatura: 'FT 1', dataFatura: '2026-03-01', nifFatura: '500000000',
+  valorIVA: 1, valorTotalFatura: 10, codigoBem: '101', ficheiro: true
+}, line)).join(' | ');
+check('an eight-digit NIF is refused (xs:long, nine digits)',
+  /nine digits/.test(problems({ nifFatura: '50000000' })), problems({ nifFatura: '50000000' }));
+check('a non-numeric NIF is refused', /nine digits/.test(problems({ nifFatura: 'PT50000000' })));
+check('a negative amount is refused (minInclusive=0)',
+  /negative/.test(problems({ valorTotalFatura: -10 })), problems({ valorTotalFatura: -10 }));
+check('IVA above the total is refused', /more than the Amount/.test(problems({ valorIVA: 20 })));
+check('a blank date is refused', /Date/.test(problems({ dataFatura: '' })));
+check('a good line has no problems', problems({}) === '', problems({}));
+check('a Tipo that is not one of the eight yields no code',
+  G.ivaCodigoBem('Electrodomésticos') === null && G.ivaCodigoBem('102 — Electrodomésticos') === '102');
+
+/* Refuses to build rather than building something Finanças will reject. */
+const savedNif = mocks._props.REF_MY_NIF;
+delete mocks._props.REF_MY_NIF;
+let nifRefusal = null;
+try { G.buildIvaDeclaration(); } catch (err) { nifRefusal = err.message; }
+check("an unset claimant NIF refuses the build", nifRefusal !== null && /REF_MY_NIF/.test(nifRefusal), nifRefusal);
+mocks._props.REF_MY_NIF = savedNif;
+
+/* Size. A deferred line is reported, never dropped. */
+const tiny = G.buildIvaDeclaration({ now: new Date(Date.UTC(2026, 7, 13, 20, 33, 31)), maxBytes: 1 });
+check('an over-budget batch still emits its first line', tiny.lines.length === 1, tiny.lines);
+check('nothing is exported twice or lost between the two lists',
+  tiny.lines.length + tiny.skipped.length === 3, [tiny.lines, tiny.skipped]);
+
+section('IVA export — the file that lands in Drive');
+
+const written = G.ivaWriteDeclaration(declAfter);
+check('named for the day it was cut', /^Simplex130 \d{4}-\d{2}-\d{2}\.xml$/.test(written.name), written.name);
+const declFile = mocks.DriveApp.getFileById(written.id);
+check('it went to its own folder, not among the receipts',
+  declFile.parent.getName() === 'Declarations', declFile.parent && declFile.parent.getName());
+check('written as Latin-1, not UTF-8 (trap 2 is about BYTES, not the prolog)',
+  declFile._blobWritten.charset === 'ISO-8859-1', declFile._blobWritten.charset);
+check('and the file holds the declaration itself',
+  declFile._blobWritten.content === declAfter.xml);
+
+/* Nothing moved. Generating a file is not submitting one. */
+const ivaSheetNow = mocks._ss.getSheetByName('IVA');
+const statusCol = G.resolveColumns(ivaSheetNow)['Status'];
+check('the export advanced no rows',
+  ivaSheetNow.getRange(exReady2.row, statusCol).getValue() === 'To Do',
+  ivaSheetNow.getRange(exReady2.row, statusCol).getValue());
+
+const uiExport = G.uiIvaExport();
+check('uiIvaExport says so out loud', /Nothing has moved to Claimed/.test(uiExport.reminder), uiExport.reminder);
+check('and reports what it left out', uiExport.skipped.length > 0, uiExport.skipped);
 
 console.log(`\n================  ${pass} passed, ${fail} failed  ================`);
 process.exit(fail ? 1 : 0);

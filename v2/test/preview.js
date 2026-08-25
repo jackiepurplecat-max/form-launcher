@@ -218,6 +218,26 @@ window.google = { script: {
       uiStagingFiles: function () { reply({ ok: true, files: [] }); },
 
       /*
+       * The IVA export, with a skipped row in it on purpose. The result panel's
+       * risky layout is the "left out" list - reasons are sentences, and a
+       * sentence is the thing most likely to push a 390px card sideways.
+       */
+      uiIvaExport: function () {
+        reply({
+          ok: true,
+          message: '2 invoices, 292.30 total, 34.52 IVA. 1 left out — see below.',
+          file: { id: 'previewfile', name: 'Simplex130 2026-08-25.xml',
+            url: 'https://drive.google.com/file/d/previewfile/view' },
+          lines: [],
+          skipped: [{ row: 4, counterparty: 'Leroy Merlin',
+            reasons: ['no Tipo — set one before exporting'] }],
+          somaIVA: '34.52',
+          somaValorFatura: '292.30',
+          reminder: 'Nothing has moved to Claimed. Advance the rows once Finanças has accepted the declaration.'
+        });
+      },
+
+      /*
        * Enough of setStatus to exercise the page: move the row, stamp the date,
        * hand back the entry. Not the server's logic - it does not rename files
        * or clear later dates - but the shape it returns is the server's, so the

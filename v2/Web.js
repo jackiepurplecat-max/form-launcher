@@ -306,6 +306,10 @@ function uiSectionMeta(sectionKey) {
       label: fileCol.label
     })),
     emailsClaim: !!section.emailOnCreate,
+    // Whether this section can produce a submission file. IVA can; nothing else
+    // is submitted to a tax authority. A flag rather than the config, because
+    // the page needs to know a button exists and nothing more.
+    exportsDeclaration: !!section.declaration,
     reference: uiReference(section),
     // The form's shape rides along with everything else, so opening the form is
     // not another round trip. Its dynamic part - the values already in use in a

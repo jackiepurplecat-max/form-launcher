@@ -46,12 +46,28 @@ const Utilities = {
     if (!map[fmt]) throw new Error('unhandled format ' + fmt);
     return map[fmt];
   },
-  newBlob(content, type, name) { return { content, type, name }; },
+  newBlob(content, type, name) {
+    return {
+      content, type, name,
+      // Real Blobs are chainable and carry a charset. The IVA declaration is
+      // written ISO-8859-1, so the charset is recorded rather than ignored -
+      // a test that could not see it could not catch the file being written
+      // UTF-8, which is the whole point of trap 2 in IVA-EXPORT-FORMAT.md.
+      setDataFromString(data, charset) { this.content = data; this.charset = charset; return this; },
+      getDataAsString() { return this.content; },
+      getName() { return this.name; },
+      getBytes() { return this.content; }
+    };
+  },
   // The harness never needs the real bytes - what it checks is that an upload
   // reaches Drive with the right name, extension and folder - so this is
   // deliberately an identity. Anything asserting on decoded content would be
   // asserting on this stand-in rather than on v2.
-  base64Decode(data) { return String(data); }
+  base64Decode(data) { return String(data); },
+  // Also an identity, for the same reason and with the same caveat: the IVA
+  // export tests assert that a document reached the right line with the right
+  // fileName and extension, not that base64 works.
+  base64Encode(data) { return String(data); }
 };
 
 /* ------------------------------- Sheets ---------------------------------- */
@@ -163,7 +179,12 @@ class DFile {
   getId() { return this.id; }
   setName(n) { this.name = n; return this; }
   moveTo(folder) { this.parent = folder; return this; }
-  getBlob() { return { _blob: this.name }; }
+  getUrl() { return 'https://drive.test/file/' + this.id; }
+  // `_blob` is what the mail tests match on. getBytes/getName are for the IVA
+  // export, which reads a document back out of Drive rather than putting one in;
+  // the bytes stand in as the file's own name so a test can tell which file
+  // landed on which declaration line.
+  getBlob() { const f = this; return { _blob: f.name, getBytes: () => f.name, getName: () => f.name }; }
   getParents() { const p = this.parent ? [this.parent] : []; let i = 0; return { hasNext: () => i < p.length, next: () => p[i++] }; }
   setTrashed(v) { this.trashed = !!v; return this; }
   isTrashed() { return !!this.trashed; }
@@ -178,6 +199,11 @@ class DFolder {
   // Drive's root followed by a move.
   createFile(blob) {
     const f = new DFile(blob && blob.name ? blob.name : 'untitled', this);
+    // Kept so a test can see the charset a file was written with. The IVA
+    // declaration must be Latin-1 bytes and nothing else in the file records
+    // that - the prolog would still say ISO-8859-1 either way, which is exactly
+    // the failure trap 2 describes.
+    f._blobWritten = blob;
     _files[f.id] = f;
     return f;
   }

@@ -52,7 +52,7 @@ The published schema is on this machine at
 </Simplex130>
 ```
 
-## The four traps
+## The five traps
 
 1. **Element names are PascalCase in the file, camelCase in the XSD.** The
    schema says `numeroFatura`, `valorIVA`, `dataFatura`; the app writes
@@ -94,10 +94,15 @@ attributes:
 
 **The app pads the blob with trailing NUL bytes.** In the sample, 172,776 bytes
 decoded of which the PDF is 111,534 and the remaining 61,242 are zeros. A PDF is
-self-terminating at `%%EOF`, so the padding looks like a buffer the handler never
-truncates rather than anything meaningful. **Embed the exact file bytes and no
-padding** — but that is the one assumption here that has not been proven by
-loading a generated file back, so prove it before trusting a real submission.
+self-terminating at `%%EOF`, so the padding is a buffer the handler never
+truncates rather than anything meaningful.
+
+**Embed the exact file bytes and no padding. PROVEN 25 Aug**, and proven the only
+way it could be: `v2/test/iva-roundtrip.js` wrote the sample back out with the
+61,242 NUL bytes dropped — 149,747 bytes rather than 231,403 — and DRORIVA opened
+it with every field intact and the receipt readable. So the padding is the app's
+own and it does not expect it back. This was the last open assumption in the
+format; nothing here is guesswork now.
 
 ## Mapping to the IVA section
 
@@ -109,7 +114,7 @@ loading a generated file back, so prove it before trusting a real submission.
 | `ValorTotalFatura` | `Amount` | 2dp |
 | `ValorIVA` | `IVA Amount` | 2dp |
 | `Ficheiro` | the receipt in Drive | base64 |
-| `CodigoBem` | `Tipo` | optional; absent in the sample |
+| `CodigoBem` | `Tipo` | optional in the schema; **present in the sample** as `101` |
 | `Importado` | — | optional boolean; nothing maps to it yet |
 | `NifEntidade` | **`REF_JALLC_NIF`** | the employing body, not you |
 | `TipoEntidade` | — constant `d` | see trap 5 |

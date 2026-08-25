@@ -248,6 +248,31 @@ const SECTIONS = {
     emailOnCreate: {
       recipientProperty: 'IVA_CLAIM_RECIPIENT',
       attachReceipt: true
+    },
+    // The declaration file DRORIVA opens — see v2/IvaExport.js and
+    // v2/IVA-EXPORT-FORMAT.md. Only IVA has one; nothing else is submitted to a
+    // tax authority.
+    declaration: {
+      // Quadro 01's TipoEntidade: `d`, Funcionários de Embaixadas e Organismos
+      // Internacionais. A constant, and NOT read from REF_IVA_TIPO — that
+      // property holds display text for the screen and would put a sentence
+      // where the app wants one letter. The string `Embaixada` appears nowhere
+      // in the app, so this code can only be learned from a saved file.
+      entityTypeCode: 'd',
+      // Both NIFs are Script Properties because this repo is public.
+      entityNifProperty: 'REF_JALLC_NIF',       // NifEntidade — the employing body
+      claimantNifProperty: 'REF_MY_NIF',        // NifFuncionario — you
+      // Which rows are unsubmitted. Advancing to Claimed is what records a
+      // submission, so the status already answers this and no `Submitted`
+      // column is needed. Change this one string if that ever stops being true.
+      sourceState: 'To Do',
+      // Its own folder, not a state's. A declaration is not a receipt and does
+      // not belong among the things it declares.
+      folder: 'Declarations',
+      // Base64 inflates by a third and these are scans; Apps Script holds the
+      // whole declaration in memory as one string. Lines past the budget are
+      // deferred to the next batch and reported, never dropped.
+      maxBase64Bytes: 20 * 1024 * 1024
     }
   },
 

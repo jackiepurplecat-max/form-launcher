@@ -1,15 +1,18 @@
 # Start here
 
-Handover note, written 15 Aug 2026, updated 18 Aug. **Read *The plan* below and
-work down it**; everything after it is the record of how things got here, and is
-reference rather than instruction.
+Handover note, written 15 Aug 2026, updated 18 and 25 Aug. **Read *The plan*
+below and work down it**; everything after it is the record of how things got
+here, and is reference rather than instruction.
 
-**Nothing in `v2/` has changed since version 29.** The 17–18 Aug session went
-entirely on the phone's wrong-account problem and ended in documentation only,
-because the fix turned out to be a browser setting rather than code. So
-everything outstanding on 15 Aug is still outstanding, and the deployed app is
-the same one. What *did* change is that the app now opens reliably on the phone,
-which is what makes the list in step 1 checkable at last.
+**25 Aug: the IVA export (step 5) is built, proven against the tax app, pushed
+and deployed at version 30.** It has never been run against real rows, so the
+first thing to do is press the button on the phone — step 5 has the detail. The
+work is **not committed to git**, which is the one loose end.
+
+**The 17–18 Aug session changed no code** — it went entirely on the phone's
+wrong-account problem and ended in documentation, because the fix turned out to
+be a browser setting. What it bought is that the app now opens reliably on the
+phone, which is what makes the list in step 1 checkable at last.
 
 **Operational state only** — the design and the reasons live in
 `REBUILD-PLAN.md`, which is the source of truth. This file is disposable:
@@ -21,11 +24,11 @@ overwrite it at the end of each session.
 |---|---|
 | Branch | `step-7-web-ui`, **pushed to `origin` and in sync** |
 | Last commit | `7079831`, **documentation only**. The last *code* commit is still `5a29a30`, the iOS date-input width fix. UI rebuild `33d8622`, preview tool `42f0a53` |
-| Working tree | clean |
-| Harness | **727 passing, 0 failed** — the 17–18 Aug work added nothing and removed nothing |
-| Main project | matches `v2/` byte for byte, 13 files — **re-verified 18 Aug** after the reverted experiment |
+| Working tree | **dirty — the 25 Aug IVA export work is committed to neither git nor `origin`.** It IS on the Apps Script server and deployed |
+| Harness | **771 passing, 0 failed** (was 727; the export added 44) |
+| Main project | matches `v2/` byte for byte, **14 files** — `v2/IvaExport.js` is new. Verified 25 Aug |
 | Siri project | `v2-siri/`, 2 files — untouched since 15 Aug |
-| Deployed | main at **version 29**, cut 15 Aug. Siri at **@2**. **No deployment was cut on 17–18 Aug** |
+| Deployed | main at **version 30**, cut 25 Aug — the IVA export. Siri at **@2**, untouched. Same URL as always; still exactly two deployments |
 | Shortcuts | all four working. **The IVA one still has no Tipo picker** |
 | Phone access | **Fixed 17 Aug.** The v2 account must be Safari's *default*, i.e. signed in first. Not a URL problem — see the traps |
 
@@ -150,32 +153,79 @@ one. Matching NIFs must say nothing at all.
 Note the registry is now reached as **Providers** in the view selector. The sheet,
 the server and every identifier still say supplier.
 
-## 5. The IVA export — the substantial piece of new work
+## 5. The IVA export — **built, proven and deployed 25 Aug. Now use it.**
 
-Goal: **open DRORIVA pre-filled from the IVA section instead of retyping every
-invoice.** The format is fully reverse-engineered in **`v2/IVA-EXPORT-FORMAT.md`** —
-read that first, it has five traps that each produce a file the app silently
-refuses.
+Goal, unchanged: **open DRORIVA pre-filled from the IVA section instead of
+retyping every invoice.** The format is in **`v2/IVA-EXPORT-FORMAT.md`** — five
+traps, each producing a file the app silently refuses.
 
-Two decisions to make before writing code, neither of them mechanical:
+**What now exists**, all of it local and none of it deployed:
 
-- **Round-trip proof first.** Regenerate the existing sample from its own values
-  and confirm DRORIVA opens it identically — in particular whether omitting the
-  61k NUL padding bytes is fine. Cheap, and it de-risks everything after it. Do
-  not wire it to real rows before this passes.
-- **Which rows, and how does the sheet know?** Presumably complete IVA entries not
-  yet submitted, which needs a *submitted* marker the sheet does not have — a new
-  column and probably a new state. That is a design decision, not a detail.
+| | |
+|---|---|
+| `v2/IvaExport.js` | the generator — emitter, validation, row selection, `uiIvaExport()` |
+| `v2/test/iva-roundtrip.js` | the format proof; `npm run v2:iva:roundtrip ~/test_iva` |
+| `v2/Config.js` | new `iva.declaration` block — entity code, NIF properties, source state, folder, size budget |
+| `v2/Index.html` | *Export for Finanças* in the reference card, plus the result panel |
+| `v2/Web.js` | `uiSectionMeta` gained `exportsDeclaration` |
+| harness | +44 checks, 771 passing |
 
-  **Note this now interacts with the UI.** A new state is a fifth accordion, and
-  the advance/regress buttons are generated from `SECTIONS.states`, so it would
-  get its buttons for free — but think about whether "submitted" is a status or a
-  flag before adding one.
+**The round trip passes.** The sample DRORIVA saved is at **`~/test_iva`** — it
+was never lost, just never written down. `iva-roundtrip.js` parses it, rebuilds
+it **through the shipped `ivaDeclarationXml`** and gets back all 231,403 bytes
+identically. It runs the real emitter out of `v2/IvaExport.js` in a bare `vm`
+context rather than a copy, so the proof cannot drift from the thing that ships.
+Keep that true.
 
-Then the generator itself. Where it lives is open: an Apps Script function has the
-sheet and Drive to hand but holds the whole base64 payload in memory, and one
-invoice was 111 KB of PDF for 231 KB of XML. **Size is the thing most likely to
-break first.**
+**The padding question is settled.** `~/test_iva.nopad` — the same declaration
+with the 61,242 NUL bytes dropped, 149,747 bytes rather than 231,403 — **was
+opened in DRORIVA on 25 Aug and loaded fine, every field intact.** So the padding
+is the app's own buffer and it does not expect it back. That was the last
+assumption in the format; nothing in `IVA-EXPORT-FORMAT.md` is guesswork now.
+
+**Decisions taken, with the reasons, so they are not re-litigated:**
+
+- **No `Submitted` column, and no fifth accordion.** Advancing to `Claimed` is
+  what records a submission — the same meaning it has in Health — so the status
+  already answers "which rows are unsubmitted" and a flag beside it would be a
+  second answer to the same question. It is `iva.declaration.sourceState`, one
+  string, if that reading of `Claimed` ever turns out to be wrong. A harness
+  check pins it: a row moved to Claimed is not exported again.
+- **The export advances nothing.** Generating a file is not submitting one — the
+  app can still refuse it — so a status that moved on the strength of a download
+  would be reporting success for work that had not happened. `uiIvaExport()`
+  returns a `reminder` saying so and the page prints it.
+- **`TipoEntidade` is the hardcoded letter `d`, not `REF_IVA_TIPO`.** That
+  property holds display text for the screen and would put a sentence where the
+  app wants one letter.
+- **A row that cannot be exported is named, never dropped.** Missing Tipo,
+  eight-digit NIF, negative amount, IVA above the total, no Fatura — each comes
+  back in `skipped` with its reason and the page lists them. A declaration
+  holding three of your five invoices looks exactly like one holding all five.
+- **Validation runs at export as well as (eventually) at intake.** Step 6 is
+  still worth doing; these rows predate any intake rule, and the export is where
+  a bad value stops being an annoyance.
+- **Size: budget enforced per line, overflow deferred to the next batch and
+  reported.** `maxBase64Bytes` is 20 MB in config. Never silently truncated.
+
+**What is left — all of it use rather than build:**
+
+1. **A real export, on the phone.** Open the IVA view at version 30 and press
+   *Export for Finanças* under the NIFs. It has never been run against real
+   rows, and this is the first thing on the list for the same reason step 1 is:
+   headless Chrome has seen the button, a finger has not.
+2. **`REF_JALLC_NIF` and `REF_MY_NIF` must be set** or the build refuses —
+   deliberately, rather than producing a file Finanças would reject. Check with
+   `checkScriptProperties()`. This is the most likely first failure and it is
+   loud, not silent.
+3. **The `Declarations` folder does not exist yet.** `sectionFolder` creates it
+   on the first export, so nothing to set up — but that is also the first time
+   that path has ever run.
+4. **Then submit one for real** and advance those rows to Claimed by hand. The
+   export deliberately moves nothing.
+
+`bootstrap()` did **not** need re-running and was not run: no column was added,
+which was the point of the no-`Submitted`-column decision.
 
 ## 6. Field validation — step 13
 
@@ -283,9 +333,10 @@ feel. Those still need the phone, which is why step 2 exists.
 ## First thing: establish the baseline
 
 ```
-npm run v2:test          # expect 727 passing, 0 failed
-npm run v2:verify        # expect "Server matches v2/ — 13 files, byte for byte"
-npm run v2:siri:verify   # expect "Server matches v2-siri/ — 2 files, byte for byte"
+npm run v2:test               # expect 771 passing, 0 failed
+npm run v2:iva:roundtrip ~/test_iva   # expect "PASS  rebuild is byte-identical"
+npm run v2:verify             # expect "Server matches v2/ — 14 files, byte for byte"
+npm run v2:siri:verify        # expect "Server matches v2-siri/ — 2 files, byte for byte"
 ```
 
 If any of those disagree, find out why before changing anything.
@@ -306,9 +357,20 @@ If any of those disagree, find out why before changing anything.
   `"spreadsheet": "HelpfulForms"`, so `v2/Siri.js` running as a library sees the
   **main** project's properties. **Nothing needs duplicating onto `v2-siri`, and
   nothing should be.**
+- **`v2/.claspignore` is a DENY-ALL with an allowlist, so a new file is left
+  behind silently — and the push still reports success.** Hit on 25 Aug:
+  `IvaExport.js` was created, pushed, and clasp printed `Pushed 13 files.`
+  with a tidy list that simply did not include it. Nothing failed and nothing
+  warned; the count is the only tell, and only if you know what it should be.
+  **Add `!YourFile.js` to `v2/.claspignore` when you create the file**, not when
+  you notice. `npm run v2:verify` does catch it afterwards — that is twice now
+  that verify has been the thing that told the truth about a push.
 - **`clasp push` reports success while pushing nothing.** Always verify after.
   It printed `Pushed 13 files.` on 15 Aug and `v2:verify` agreed — but the output
   is not the evidence, the verify is. On a mismatch, `npm run v2:push:force`.
+  Note the 25 Aug case above prints exactly the same sentence while being a
+  different fault, which is the argument for reading the count rather than the
+  word.
 - **`v2-siri/appsscript.json` is generated and gitignored.** It holds the main
   project's script id. `npm run v2:siri:push` regenerates it first. Written with
   **no trailing newline**, for the same one-byte reason as `v2/appsscript.json`.
@@ -337,9 +399,10 @@ If any of those disagree, find out why before changing anything.
   ```
   cd v2 && clasp --user v2 deploy -i AKfycbxKHouifK8w8hbpMGZ_W0yklTKCdCgp-YHAk9uS7Omji_RH_fa4Za6DGYk1ZjOL5tuo -d "what changed"
   ```
-  **The main deployment is version 28 and is current** — cut 15 Aug from the UI
-  rebuild. `clasp --user v2 list-deployments` should show exactly two: the
-  permanent `@HEAD` and `@28`.
+  **The main deployment is version 30 and is current** — cut 25 Aug for the IVA
+  export. `clasp --user v2 list-deployments` should show exactly two: the
+  permanent `@HEAD` and `@30`. (This line said 28 for a week while the table
+  above said 29 — the list-deployments output is the authority, not either.)
 - **Never write the Siri `/exec` URL into a tracked file.** This repo is public,
   and unlike every other URL in this note that one is anonymous: the address *is*
   the reachable surface. It cannot be used to write anything — an unset or wrong

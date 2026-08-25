@@ -173,6 +173,25 @@
     #reference .label { font-size: .7rem; color: var(--muted); }
     #reference .value { font-variant-numeric: tabular-nums; font-weight: 600; }
 
+    /*
+     * The export sits under the copy chips but is not one of them, so it opts
+     * out of the two-line chip layout above rather than inheriting it. 44px to
+     * stay a comfortable tap target on a phone, like the advance/regress pair.
+     */
+    #exportBar { margin-top: .75rem; border-top: 1px solid var(--line); padding-top: .75rem; }
+    #exportBar.hidden { display: none; }
+    #reference #exportBar button {
+      display: inline-block; min-height: 44px; padding: .5rem 1rem; text-align: center;
+    }
+    #exportResult { font-size: .85rem; }
+    #exportResult p { margin: .5rem 0 0; }
+    #exportResult ul { margin: .25rem 0 0; padding-left: 1.1rem; }
+    #exportResult li { margin: .15rem 0; }
+    #exportResult .bad { color: var(--err); }
+    #exportResult .warn { color: var(--warn); }
+    /* Long enough to wrap on a phone rather than push the card sideways. */
+    #exportResult a { word-break: break-word; }
+
     #filters { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: 1rem; }
     #filters label { font-size: .8rem; color: var(--muted); }
     /*
@@ -478,6 +497,15 @@
     <section class="card" id="reference">
       <h2>For the claim form</h2>
       <div class="items" id="referenceItems"></div>
+      <!--
+        The export lives with the NIFs because it does the same job by a better
+        route: both exist so a claim reaches Finanças without the receipt being
+        reopened. Hidden unless the section declares one.
+      -->
+      <div id="exportBar" class="hidden">
+        <button id="ivaExport" type="button">Export for Finanças</button>
+        <div id="exportResult"></div>
+      </div>
     </section>
 
     <div id="filters"></div>
@@ -1248,14 +1276,70 @@
     function renderReference() {
       var box = el('reference');
       var items = app.meta.reference || [];
-      if (!items.length) { box.style.display = 'none'; return; }
+      var exports = !!app.meta.exportsDeclaration;
+      if (!items.length && !exports) { box.style.display = 'none'; return; }
 
       el('referenceItems').innerHTML = items.map(function (item) {
         return '<button type="button" data-copy="' + escapeHtml(item.value) + '">' +
           '<span class="label">' + escapeHtml(item.label) + '</span>' +
           '<span class="value">' + escapeHtml(item.value) + '</span></button>';
       }).join('');
+
+      el('exportBar').className = exports ? '' : 'hidden';
+      // Cleared on every render, so a result never outlives the view it came
+      // from: the rows it names are gone the moment you switch section.
+      el('exportResult').innerHTML = '';
       box.style.display = 'block';
+    }
+
+    /* ---------------------------- the IVA export -------------------------- */
+
+    /**
+     * Build the Simplex130 declaration and say what went into it.
+     *
+     * The result is deliberately verbose about what was LEFT OUT. A declaration
+     * that quietly holds three of your five invoices looks exactly like one that
+     * holds all five, and you find out at submission - which is the same
+     * argument the loading/empty/error rule rests on.
+     */
+    function runIvaExport() {
+      var button = el('ivaExport');
+      var out = el('exportResult');
+      button.disabled = true;
+      out.innerHTML = '<p>Building the declaration…</p>';
+
+      google.script.run
+        .withSuccessHandler(function (result) {
+          button.disabled = false;
+          out.innerHTML = renderExportResult(result);
+        })
+        .withFailureHandler(function (error) {
+          button.disabled = false;
+          out.innerHTML = '<p class="bad">' + escapeHtml(message(error)) + '</p>';
+        })
+        .uiIvaExport();
+    }
+
+    function renderExportResult(result) {
+      var html = '';
+
+      if (!result.ok) {
+        html += '<p class="bad">' + escapeHtml(result.message) + '</p>';
+      } else {
+        html += '<p>' + escapeHtml(result.message) + '</p>';
+        html += '<p><a href="' + escapeHtml(result.file.url) + '" target="_blank" rel="noopener">' +
+          escapeHtml(result.file.name) + '</a> — open it in DRORIVA.</p>';
+        html += '<p class="warn">' + escapeHtml(result.reminder) + '</p>';
+      }
+
+      if (result.skipped && result.skipped.length) {
+        html += '<p class="warn">Left out:</p><ul>' + result.skipped.map(function (row) {
+          return '<li>' + escapeHtml(row.counterparty || 'row ' + row.row) + ' — ' +
+            escapeHtml(row.reasons.join('; ')) + '</li>';
+        }).join('') + '</ul>';
+      }
+
+      return html;
     }
 
     /* ------------------------------- filters ------------------------------ */
@@ -2470,6 +2554,7 @@
       if (target.parentNode === el('tabs')) return select(target.dataset.key);
       if (target.id === 'refresh') return load();
       if (target.id === 'newEntry') return openForm();
+      if (target.id === 'ivaExport') return runIvaExport();
       if (target.dataset.toggle) return toggleBucket(target.dataset.toggle);
       if (target.dataset.advance) return changeStatus(target.dataset.advance, target.dataset.state);
       if (target.dataset.regress) return changeStatus(target.dataset.regress, target.dataset.state);
