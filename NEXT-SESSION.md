@@ -6,8 +6,7 @@ here, and is reference rather than instruction.
 
 **25 Aug: the IVA export (step 5) is built, proven against the tax app, pushed
 and deployed at version 30.** It has never been run against real rows, so the
-first thing to do is press the button on the phone — step 5 has the detail. The
-work is **not committed to git**, which is the one loose end.
+first thing to do is press the button on the phone — step 5 has the detail.
 
 **The 17–18 Aug session changed no code** — it went entirely on the phone's
 wrong-account problem and ended in documentation, because the fix turned out to
@@ -23,8 +22,8 @@ overwrite it at the end of each session.
 | | |
 |---|---|
 | Branch | `step-7-web-ui`, **pushed to `origin` and in sync** |
-| Last commit | `7079831`, **documentation only**. The last *code* commit is still `5a29a30`, the iOS date-input width fix. UI rebuild `33d8622`, preview tool `42f0a53` |
-| Working tree | **dirty — the 25 Aug IVA export work is committed to neither git nor `origin`.** It IS on the Apps Script server and deployed |
+| Last commit | `f971c7c`, **the IVA export** — code, tests, docs. Before it `7c88c80` (documentation), the iOS date-input fix `5a29a30`, UI rebuild `33d8622`, preview tool `42f0a53` |
+| Working tree | clean, **pushed to `origin`** |
 | Harness | **771 passing, 0 failed** (was 727; the export added 44) |
 | Main project | matches `v2/` byte for byte, **14 files** — `v2/IvaExport.js` is new. Verified 25 Aug |
 | Siri project | `v2-siri/`, 2 files — untouched since 15 Aug |
