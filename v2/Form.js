@@ -325,7 +325,15 @@ function uiCollectDocuments(section, uploads, picks) {
       if (!section.fileColumns.some(col => col.header === header)) {
         throw new Error(`Not a document column for ${section.sheet}: "${header}"`);
       }
-      collected.push({ header: header, file: uiResolveStagingPick(pick.id), picked: true });
+      const picked = uiResolveStagingPick(pick.id);
+      // A pick skips uiStoreUpload entirely, so the rules have to be applied
+      // again here or half the intake paths would be unguarded. The bytes are
+      // read from Drive because a pick has no declared size.
+      const pickProblem = documentRuleProblem(
+        section, picked.getName(), picked.getBlob().getBytes().length
+      );
+      if (pickProblem) throw new Error(`${header}: ${pickProblem}`);
+      collected.push({ header: header, file: picked, picked: true });
     });
   } catch (error) {
     uiDiscardDocuments(collected);
@@ -341,6 +349,39 @@ function uiDiscardDocuments(collected) {
     if (item.picked) return;
     try { item.file.setTrashed(true); } catch (ignored) { /* best effort */ }
   });
+}
+
+/**
+ * The section's own rules for a document, or null when there is nothing to say.
+ *
+ * `section.documentRules` in Config.js — the ONE declaration, so intake and the
+ * IVA export cannot disagree about what a claimable receipt is. Returns the
+ * reason as a sentence rather than throwing, because the two callers want it in
+ * two different shapes: intake refuses with it, the export reports it.
+ *
+ * `byteCount` may be null when only the name is known; the size rule is then
+ * simply not applied rather than guessed at.
+ */
+function documentRuleProblem(section, filename, byteCount) {
+  const rules = section.documentRules;
+  if (!rules) return null;
+
+  const name = (filename || '').toString();
+
+  if (rules.extensions && rules.extensions.length) {
+    const ext = splitExtension(name).ext.replace(/^\./, '').toLowerCase();
+    if (rules.extensions.indexOf(ext) === -1) {
+      return `${rules.source}. "${name}" is ${ext ? `a .${ext} file` : 'not a PDF'}.`;
+    }
+  }
+
+  if (rules.maxBytes && byteCount !== null && byteCount !== undefined &&
+      byteCount > rules.maxBytes) {
+    return `${rules.source}. "${name}" is ${Math.round(byteCount / 1024)} Kb ` +
+      `(limit ${rules.sizeLabel || rules.maxBytes + ' bytes'}).`;
+  }
+
+  return null;
 }
 
 /**
@@ -370,9 +411,16 @@ function uiStoreUpload(section, upload) {
   }
 
   const mimeType = (upload.mimeType || 'application/octet-stream').toString();
-  const blob = Utilities.newBlob(
-    Utilities.base64Decode(data), mimeType, uploadFilename(upload.name, mimeType)
-  );
+  const name = uploadFilename(upload.name, mimeType);
+
+  // The section's own rules, checked here on the SAME approximation used above
+  // and before the decode, so an oversized scan is refused without being
+  // materialised. Named as the reason it will be refused by Finanças, not as a
+  // byte count — the fix is to rescan, and the message has to say so.
+  const ruleProblem = documentRuleProblem(section, name, approximateBytes);
+  if (ruleProblem) throw new Error(`${fileCol.label}: ${ruleProblem}`);
+
+  const blob = Utilities.newBlob(Utilities.base64Decode(data), mimeType, name);
 
   // Straight into the inbox. initializeEntry renames it from the row's own
   // values and applyFileState files it, so nothing here needs to know the

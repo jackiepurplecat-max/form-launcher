@@ -222,6 +222,28 @@ const SECTIONS = {
     fileColumns: [
       { header: COMMON.receiptUrl, label: 'Fatura', suffix: 'fatura' }
     ],
+    // Finanças' rules for what may be attached to a pedido de restituição, from
+    // DRORIVA's own "Ajuda — Anexação de ficheiros" panel:
+    //
+    //   - Apenas são aceites ficheiros anexos do formato PDF
+    //   - Não são aceites ficheiros com mais do que 200 Kb
+    //
+    // Neither is in the XSD and neither is in the jar, so the app does NOT stop
+    // you: a 3 MB scan attaches fine, saves fine, and is refused at submission.
+    // That makes this an intake rule — the point of catching it is while the
+    // scanner is still on the desk, not in the reply from AT.
+    //
+    // Generic on purpose (`documentRules`, not an IVA branch): any section may
+    // declare it, and Form.js enforces whatever is declared. Only IVA has one
+    // because only IVA hands its documents to a tax authority.
+    documentRules: {
+      extensions: ['pdf'],
+      maxBytes: 200 * 1024,
+      // Named in the message, because "200 Kb" is what the help says and a byte
+      // count would send the user looking for a rule in those words.
+      sizeLabel: '200 Kb',
+      source: 'Finanças only accepts PDF faturas of 200 Kb or less'
+    },
     // All required by Finanças at submission time and retyped from here rather
     // than from the receipt. COMMON.amount holds Valor Total; the VAT figure is
     // its own field.
@@ -272,7 +294,13 @@ const SECTIONS = {
       // Base64 inflates by a third and these are scans; Apps Script holds the
       // whole declaration in memory as one string. Lines past the budget are
       // deferred to the next batch and reported, never dropped.
-      maxBase64Bytes: 20 * 1024 * 1024
+      maxBase64Bytes: 20 * 1024 * 1024,
+      // "Não podem ser anexadas mais do que 50 faturas por pedido" — same help
+      // panel as `documentRules` above. AT's own remedy for going over is to
+      // split rather than to trim: "admite-se a submissão de tantos pedidos
+      // quanto os necessários para completar o mesmo". So this is a BATCH SIZE,
+      // handled by the same deferral as the byte budget, and never a refusal.
+      maxLinesPerDeclaration: 50
     }
   },
 

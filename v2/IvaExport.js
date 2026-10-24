@@ -279,20 +279,30 @@ function ivaCollectLines(section, sheet, cols, options) {
  * trip in v2/test/iva-roundtrip.js, and the `.nopad` file it produces, which is
  * how that was confirmed against the app rather than assumed.
  */
-function ivaAttachDocuments(lines, budgetBytes, stamp) {
+function ivaAttachDocuments(lines, limits, stamp) {
+  const section = getSection('iva');
+  const budgetBytes = limits.maxBase64Bytes;
+  const maxLines = limits.maxLines || 0;
+
   const attached = [];
   const deferred = [];
+  const rejected = [];
   let used = 0;
+  // Full means the BATCH is full — over the byte budget or at AT's 50 faturas.
+  // A row that breaks a rule is not that: it is a fault in one row, it will
+  // still be broken next time, and letting it stop the batch would strand every
+  // good row behind it. Tracked separately for exactly that reason.
+  let full = false;
 
   lines.forEach(line => {
-    if (deferred.length) {                      // keep the batch contiguous
+    if (full) {                                 // keep the batch contiguous
       deferred.push({ row: line.row, counterparty: line.counterparty, reasons: ['batch full'] });
       return;
     }
 
     const fileId = extractFileId(line.fileRef);
     if (!fileId) {
-      deferred.push({ row: line.row, counterparty: line.counterparty, reasons: ['Fatura link is not a Drive file'] });
+      rejected.push({ row: line.row, counterparty: line.counterparty, reasons: ['Fatura link is not a Drive file'] });
       return;
     }
 
@@ -300,12 +310,36 @@ function ivaAttachDocuments(lines, budgetBytes, stamp) {
     try {
       file = DriveApp.getFileById(fileId);
     } catch (err) {
-      deferred.push({ row: line.row, counterparty: line.counterparty, reasons: [`Fatura not readable: ${err.message}`] });
+      rejected.push({ row: line.row, counterparty: line.counterparty, reasons: [`Fatura not readable: ${err.message}`] });
       return;
     }
 
-    const base64 = Utilities.base64Encode(file.getBlob().getBytes());
+    // PDF only, 200 Kb or less — the same `documentRules` intake applies, so a
+    // row that predates the rule or arrived by a path that skipped it is caught
+    // here rather than by Finanças. Reported against the ROW, since the fix is
+    // to rescan and re-attach.
+    const bytes = file.getBlob().getBytes();
+    const ruleProblem = documentRuleProblem(section, file.getName(), bytes.length);
+    if (ruleProblem) {
+      rejected.push({ row: line.row, counterparty: line.counterparty, reasons: [ruleProblem] });
+      return;
+    }
+
+    // No more than 50 faturas per pedido. Checked before the byte budget because
+    // it is the harder limit: AT refuses the 51st line outright, where the byte
+    // budget is only this script's own memory.
+    if (maxLines && attached.length >= maxLines) {
+      full = true;
+      deferred.push({
+        row: line.row, counterparty: line.counterparty,
+        reasons: [`batch full — ${maxLines} faturas is the limit per pedido`]
+      });
+      return;
+    }
+
+    const base64 = Utilities.base64Encode(bytes);
     if (used + base64.length > budgetBytes && attached.length) {
+      full = true;
       deferred.push({ row: line.row, counterparty: line.counterparty, reasons: ['batch full'] });
       return;
     }
@@ -331,7 +365,7 @@ function ivaAttachDocuments(lines, budgetBytes, stamp) {
     });
   });
 
-  return { attached: attached, deferred: deferred, bytes: used };
+  return { attached: attached, deferred: deferred, rejected: rejected, bytes: used };
 }
 
 /* ============================== The export =============================== */
@@ -371,8 +405,10 @@ function buildIvaDeclaration(options) {
 
   const collected = ivaCollectLines(section, sheet, cols, opts);
   const stamp = ivaAttachmentStamp(opts.now);
-  const budget = opts.maxBytes || decl.maxBase64Bytes;
-  const withDocs = ivaAttachDocuments(collected.lines, budget, stamp);
+  const withDocs = ivaAttachDocuments(collected.lines, {
+    maxBase64Bytes: opts.maxBytes || decl.maxBase64Bytes,
+    maxLines: opts.maxLines || decl.maxLinesPerDeclaration
+  }, stamp);
 
   const summary = {
     ok: withDocs.attached.length > 0,
@@ -385,7 +421,9 @@ function buildIvaDeclaration(options) {
       valorTotalFatura: ivaMoney(ivaCents(l.valorTotalFatura)),
       codigoBem: l.codigoBem
     })),
-    skipped: collected.skipped.concat(withDocs.deferred),
+    // Faults first, deferrals last: the first list is work to do, the second is
+    // the next batch and needs nothing done to it.
+    skipped: collected.skipped.concat(withDocs.rejected, withDocs.deferred),
     base64Bytes: withDocs.bytes,
     sourceState: decl.sourceState
   };
@@ -395,9 +433,9 @@ function buildIvaDeclaration(options) {
 
   if (!withDocs.attached.length) {
     summary.xml = null;
-    summary.message = collected.skipped.length
-      ? `Nothing to export: ${collected.skipped.length} ${decl.sourceState} ` +
-        `${collected.skipped.length === 1 ? 'row is' : 'rows are'} not ready.`
+    summary.message = summary.skipped.length
+      ? `Nothing to export: ${summary.skipped.length} ${decl.sourceState} ` +
+        `${summary.skipped.length === 1 ? 'row is' : 'rows are'} not ready.`
       : `Nothing to export: no ${decl.sourceState} rows.`;
     return summary;
   }

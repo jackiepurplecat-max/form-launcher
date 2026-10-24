@@ -2963,5 +2963,124 @@ const uiExport = G.uiIvaExport();
 check('uiIvaExport says so out loud', /Nothing has moved to Claimed/.test(uiExport.reminder), uiExport.reminder);
 check('and reports what it left out', uiExport.skipped.length > 0, uiExport.skipped);
 
+/* =================== Finanças' rules for attachments ======================
+ *
+ * From DRORIVA's "Ajuda — Anexação de ficheiros": PDF only, 200 Kb per file,
+ * 50 faturas per pedido. None of the three is in the XSD and none is in the
+ * jar, so the APP DOES NOT ENFORCE THEM — it attaches a 3 MB JPEG happily and
+ * the submission is refused. Which is why they are checked twice: at intake,
+ * where the fix is to rescan, and again at export, for rows that predate the
+ * rule or came in through the picker.
+ */
+section('IVA attachments — PDF only, and 200 Kb');
+
+check('the rule is declared once, in Config',
+  G.getSection('iva').documentRules.maxBytes === 200 * 1024 &&
+  G.getSection('iva').documentRules.extensions.join() === 'pdf',
+  G.getSection('iva').documentRules);
+
+const ruleValues = n => ({
+  'Date': '2026-09-0' + n, 'Counterparty': 'Worten', 'Número': 'R' + n,
+  'Emitente NIF': '50000010' + n, 'IVA Amount': 2, 'Amount': 10
+});
+
+let jpgRefusal = null;
+try {
+  G.uiCreateEntry('iva', {
+    values: ruleValues(1),
+    files: [{ header: 'Receipt URL', name: 'scan.jpg', mimeType: 'image/jpeg', data: b64 }]
+  });
+} catch (e) { jpgRefusal = e.message; }
+check('a JPEG fatura is refused at intake', /PDF/.test(jpgRefusal || ''), jpgRefusal);
+check('and the message says why, not just that it failed',
+  /Finanças/.test(jpgRefusal || ''), jpgRefusal);
+
+// 400 Kb of base64 is ~300 Kb of file, and the check runs on that estimate
+// BEFORE the decode - an oversized upload is refused without being held.
+let bigRefusal = null;
+try {
+  G.uiCreateEntry('iva', {
+    values: ruleValues(2),
+    files: [{ header: 'Receipt URL', name: 'scan.pdf', mimeType: 'application/pdf',
+      data: 'A'.repeat(400 * 1024) }]
+  });
+} catch (e) { bigRefusal = e.message; }
+check('an oversized PDF is refused at intake', /200 Kb/.test(bigRefusal || ''), bigRefusal);
+check('and it says how big the file actually was', /29[0-9] Kb|300 Kb/.test(bigRefusal || ''), bigRefusal);
+
+// The rule belongs to the section, not to uploading. Nothing else is submitted
+// to a tax authority and nothing else should acquire this limit by accident.
+const workJpg = G.uiCreateEntry('work', {
+  values: { 'Date': '2026-09-05', 'Counterparty': 'Bolt', 'Amount': 9,
+    'Expense Reason': 'Site visit' },
+  files: [{ header: 'Receipt URL', name: 'scan.jpg', mimeType: 'image/jpeg', data: b64 }]
+});
+check('a JPEG receipt is still fine for Work', workJpg.ok === true, workJpg.error);
+
+section('IVA attachments — the export checks again');
+
+// Straight into Drive and onto a row, the way a pre-rule row already sits in
+// the sheet. Neither of these went through intake.
+const exFaturaBig = mocks.DriveApp._addFile('big.pdf');
+exFaturaBig._bytes = 'x'.repeat(300 * 1024);
+const exBig = G.createEntry('iva', {
+  'Date': '2026-03-05', 'Counterparty': 'Fnac', 'Amount': 90, 'Currency': 'EUR',
+  'Número': 'FT 20', 'Emitente NIF': '503333333', 'IVA Amount': 16.83,
+  'Tipo': '102 — Electrodomésticos', 'Receipt URL': exFaturaBig.id
+}, 'form');
+
+const exFaturaJpg = mocks.DriveApp._addFile('shot.jpg');
+const exJpg = G.createEntry('iva', {
+  'Date': '2026-03-06', 'Counterparty': 'Ikea', 'Amount': 40, 'Currency': 'EUR',
+  'Número': 'FT 21', 'Emitente NIF': '504444444', 'IVA Amount': 7.48,
+  'Tipo': '103 — Móveis', 'Receipt URL': exFaturaJpg.id
+}, 'form');
+
+// Created AFTER both bad ones on purpose - see the contiguity check below.
+const exFaturaGood = mocks.DriveApp._addFile('good.pdf');
+const exGood = G.createEntry('iva', {
+  'Date': '2026-03-07', 'Counterparty': 'Radio Popular', 'Amount': 60, 'Currency': 'EUR',
+  'Número': 'FT 22', 'Emitente NIF': '505555555', 'IVA Amount': 11.22,
+  'Tipo': '102 — Electrodomésticos', 'Receipt URL': exFaturaGood.id
+}, 'form');
+
+const declRules = G.buildIvaDeclaration({ now: new Date(Date.UTC(2026, 7, 13, 20, 33, 31)) });
+const ruleReason = row => ((declRules.skipped.find(s => s.row === row) || {}).reasons || []).join(' | ');
+
+check('a 300 Kb fatura is left out of the declaration',
+  /200 Kb/.test(ruleReason(exBig.row)), ruleReason(exBig.row));
+check('a JPEG fatura is left out of the declaration',
+  /PDF/.test(ruleReason(exJpg.row)), ruleReason(exJpg.row));
+
+/* The one that matters most. A broken row is a fault in THAT row - it must not
+ * stop the batch, or one bad scan quietly holds back every invoice behind it
+ * and the declaration still reads as complete. */
+check('a good row after a rejected one still exports',
+  declRules.lines.some(l => l.numeroFatura === 'FT 22'), declRules.lines);
+check('neither rejected row is called "batch full"',
+  !/batch full/.test(ruleReason(exBig.row) + ruleReason(exJpg.row)),
+  [ruleReason(exBig.row), ruleReason(exJpg.row)]);
+
+section('IVA attachments — 50 faturas per pedido');
+
+check('the limit is declared, and it is 50',
+  G.getSection('iva').declaration.maxLinesPerDeclaration === 50,
+  G.getSection('iva').declaration.maxLinesPerDeclaration);
+
+// AT's own remedy for going over is to split into more pedidos, so this is the
+// existing deferral rather than a refusal: capped at one, the rest come back
+// named and are still To Do for the next run.
+const cappedDecl = G.buildIvaDeclaration({
+  now: new Date(Date.UTC(2026, 7, 13, 20, 33, 31)), maxLines: 1
+});
+check('the batch stops at the cap', cappedDecl.lines.length === 1, cappedDecl.lines);
+check('and the reason names the limit rather than just "full"',
+  cappedDecl.skipped.some(s => /1 faturas is the limit per pedido/.test(s.reasons.join(' '))),
+  cappedDecl.skipped);
+check('a deferred line is still To Do, not lost',
+  cappedDecl.lines.length + cappedDecl.skipped.length ===
+    declRules.lines.length + declRules.skipped.length,
+  [cappedDecl.lines.length, cappedDecl.skipped.length]);
+
 console.log(`\n================  ${pass} passed, ${fail} failed  ================`);
 process.exit(fail ? 1 : 0);

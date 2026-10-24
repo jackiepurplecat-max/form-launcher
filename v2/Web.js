@@ -305,6 +305,11 @@ function uiSectionMeta(sectionKey) {
       header: fileCol.header,
       label: fileCol.label
     })),
+    // What this section will accept as a document — IVA's PDF-only, 200 Kb, and
+    // null everywhere else. Sent rather than repeated in the page so the two
+    // cannot drift: the server check in uiStoreUpload is the real one, this is
+    // the courtesy of saying so before the file is read.
+    documentRules: section.documentRules || null,
     emailsClaim: !!section.emailOnCreate,
     // Whether this section can produce a submission file. IVA can; nothing else
     // is submitted to a tax authority. A flag rather than the config, because

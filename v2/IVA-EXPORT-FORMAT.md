@@ -104,6 +104,46 @@ it with every field intact and the receipt readable. So the padding is the app's
 own and it does not expect it back. This was the last open assumption in the
 format; nothing here is guesswork now.
 
+## What may be attached — three rules the app does not enforce
+
+From DRORIVA's own **Ajuda → Anexação de ficheiros**:
+
+> - Não podem ser anexadas mais do que **50 faturas por pedido**;
+> - Não são aceites ficheiros com mais do que **200 Kb**;
+> - Apenas são aceites ficheiros anexos do formato **Portable Document Format**
+>   (ficheiros com extensão pdf).
+>
+> Caso o pedido de restituição exceda as 50 faturas ou a dimensão do ficheiro
+> exceda 200 Kb, admite-se a submissão de tantos pedidos quanto os necessários
+> para completar o mesmo.
+
+**None of the three is in the XSD and none is in the jar** — grep it, the help
+text is not there either. So the app does not stop you: a 3 MB JPEG attaches,
+saves, and reloads fine, and the refusal arrives from AT at submission. That
+makes these intake rules rather than format rules, and it is why they are
+enforced in this project rather than trusted to the app.
+
+Where they live now:
+
+| Rule | Config | Enforced |
+|---|---|---|
+| PDF only | `iva.documentRules.extensions` | `documentRuleProblem()` — upload, pick, page, and again at export |
+| 200 Kb per file | `iva.documentRules.maxBytes` | same |
+| 50 faturas per pedido | `iva.declaration.maxLinesPerDeclaration` | `ivaAttachDocuments()` — deferred to the next batch |
+
+**A broken file and a full batch are different things**, and the export keeps
+them apart. Over 50 lines is AT's own "submit as many pedidos as needed", so the
+51st is *deferred*: still `To Do`, reported, exported next run. A non-PDF or an
+oversized scan is a fault in that row — it will be just as broken next time — so
+it is *rejected*, named, and **does not stop the rows behind it**.
+
+**200 Kb is read as per attached file, not per declaration.** The bullet sits in
+a list about `ficheiros anexos`, alongside the PDF rule, which is the strongest
+reading — but the closing sentence says "a dimensão do ficheiro" in the singular
+and could just be loose wording for the whole submission. If a real submission
+is ever refused on size while every attachment is under 200 Kb, that is the
+answer, and the fix is a total-bytes cap beside `maxBase64Bytes`.
+
 ## Mapping to the IVA section
 
 | Simplex130 | HelpfulForms | Notes |
@@ -177,6 +217,68 @@ at independently from using the thing:
 
 That is decent evidence those rules are right, and an argument for enforcing them
 at intake rather than discovering them at submission.
+
+## The Submit button — what it actually does
+
+Read out of the jar on 25 Aug, because "can the export press Submit too?" is the
+obvious next question. **Nothing is built and nothing should be until the
+caveats at the end are answered.** This is what the button is, not a plan.
+
+`Simplex130SubmitAction` → `PortalTaxClientRevampedSubmitAction` →
+`SubmitTaxHTTPConnectionRevamped`. It is **one form POST**, not SOAP:
+
+```
+POST https://www.portaldasfinancas.gov.pt/pt/externalws/drorivaws/entregaDeclORIVAOffline.action
+```
+
+| Parameter | Value |
+|---|---|
+| `systemName` | `taxUser` — constant |
+| `systemPass` | `Password.encryptWithPaddingLength("y5jeC$maQe")` — a shared secret compiled into the app |
+| `decl` | `URLEncoder.encode(Base64(Deflater(xml)), "UTF-8")` — **the same XML this repo already generates** |
+| `SPA`, `nifA`, `passwordA` | your Portal das Finanças NIF and password |
+| `SPB`/`nifB`/`passwordB`, `TOC`/`toc`/`passwordToc` | second taxpayer and accountant — not used here |
+| `app_version` | `Simplex130Parameters.getAppVersion()` |
+| `checkwarnings` | boolean |
+| `ws_version` | `1.0` |
+
+The reply is XML: `<erros>` with `<error>` children carrying `code`, `field`,
+`severity` and a **base64** `msg`, or a `receipt` — the comprovativo, also
+base64. So a real submission returns a receipt worth filing beside the rows.
+
+**The declaration is the only hard part already solved.** `decl` is
+`ivaDeclarationXml()` output, deflated and base64'd, so the format work carries
+straight over.
+
+**Two things stand between here and a working `uiIvaSubmit()`:**
+
+1. **`ZipUtil.deflate` is `java.util.zip.DeflaterOutputStream`** — a raw zlib
+   stream, not a ZIP archive. Apps Script has `Utilities.zip`, which produces an
+   archive, and `Utilities.gzip`, which adds a gzip header — **neither is what
+   the endpoint expects**. It needs a deflate implementation in the script, or a
+   stored-block encoder, which is legal deflate and about thirty lines.
+2. **`Password.encryptWithPaddingLength`** pads the secret to 16 characters with
+   a random prefix, then encrypts it with itself as the key via `pt.opensoft.crypt.Crypt`.
+   Reimplementable, but it has to be exact and it is the one part with no
+   round-trip test available offline.
+
+**And three reasons to think twice before doing it:**
+
+- **There is no test endpoint.** `url.submit.test` points at
+  `portalfin.stinternetdev.ritta.local`, an internal host. Every attempt is a
+  live filing against a tax authority — no dry run exists.
+- **It puts a Portal das Finanças password in Script Properties.** The NIFs are
+  already there; a password that files tax declarations is a different class of
+  secret, on an Apps Script project reached through a web app.
+- **The app is doing something for you that is not in this list** — retries,
+  session handling, the warnings round trip (`checkwarnings` implies a
+  submit-twice flow: once to collect warnings, once to confirm). Matching the
+  parameters is not the same as matching the behaviour.
+
+**The honest middle option** is what already exists plus one step: generate the
+declaration, open DRORIVA, `File → Abrir`, press Submit. The retyping — which is
+what the export was for — is gone either way. Automating the last click buys
+one click and takes on all of the above.
 
 ## Before building the generator
 

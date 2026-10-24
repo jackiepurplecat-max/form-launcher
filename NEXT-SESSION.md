@@ -8,6 +8,17 @@ here, and is reference rather than instruction.
 and deployed at version 30.** It has never been run against real rows, so the
 first thing to do is press the button on the phone — step 5 has the detail.
 
+**25 Aug, later: Finanças' attachment rules are enforced, deployed at version
+31.** PDF only, 200 Kb per file, 50 faturas per pedido — from DRORIVA's *Ajuda →
+Anexação de ficheiros*, and **none of the three is in the XSD or the jar**, so
+the app takes a file that breaks them and AT refuses it at submission. Declared
+once in `iva.documentRules` / `declaration.maxLinesPerDeclaration`, enforced on
+upload, on pick, in the page, and again at export. Also fixed on the way: a row
+rejected at export no longer marks every row behind it "batch full". Written up
+in `v2/IVA-EXPORT-FORMAT.md`, which also now records **what DRORIVA's Submit
+button actually does** — one form POST, parameters listed, and the three reasons
+not to reimplement it.
+
 **The 17–18 Aug session changed no code** — it went entirely on the phone's
 wrong-account problem and ended in documentation, because the fix turned out to
 be a browser setting. What it bought is that the app now opens reliably on the
@@ -23,11 +34,11 @@ overwrite it at the end of each session.
 |---|---|
 | Branch | `step-7-web-ui`, **pushed to `origin` and in sync** |
 | Last commit | `f971c7c`, **the IVA export** — code, tests, docs. Before it `7c88c80` (documentation), the iOS date-input fix `5a29a30`, UI rebuild `33d8622`, preview tool `42f0a53` |
-| Working tree | clean, **pushed to `origin`** |
-| Harness | **771 passing, 0 failed** (was 727; the export added 44) |
-| Main project | matches `v2/` byte for byte, **14 files** — `v2/IvaExport.js` is new. Verified 25 Aug |
+| Working tree | **the attachment rules are uncommitted** — `Config.js`, `Form.js`, `IvaExport.js`, `Web.js`, `Index.html`, `IVA-EXPORT-FORMAT.md`, `test/run.js`, `test/mocks.js`, this file |
+| Harness | **785 passing, 0 failed** (was 771; the attachment rules added 14) |
+| Main project | matches `v2/` byte for byte, **14 files**. Verified 25 Aug, after the attachment rules |
 | Siri project | `v2-siri/`, 2 files — untouched since 15 Aug |
-| Deployed | main at **version 30**, cut 25 Aug — the IVA export. Siri at **@2**, untouched. Same URL as always; still exactly two deployments |
+| Deployed | main at **version 31**, cut 25 Aug — the attachment rules. Siri at **@2**, untouched. Same URL as always; still exactly two deployments |
 | Shortcuts | all four working. **The IVA one still has no Tipo picker** |
 | Phone access | **Fixed 17 Aug.** The v2 account must be Safari's *default*, i.e. signed in first. Not a URL problem — see the traps |
 

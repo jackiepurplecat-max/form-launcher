@@ -184,7 +184,9 @@ class DFile {
   // export, which reads a document back out of Drive rather than putting one in;
   // the bytes stand in as the file's own name so a test can tell which file
   // landed on which declaration line.
-  getBlob() { const f = this; return { _blob: f.name, getBytes: () => f.name, getName: () => f.name }; }
+  // `_bytes` overrides that stand-in, so a test can give a file a real size
+  // without a real file — the 200 Kb attachment rule needs one that is too big.
+  getBlob() { const f = this; return { _blob: f.name, getBytes: () => (f._bytes === undefined ? f.name : f._bytes), getName: () => f.name }; }
   getParents() { const p = this.parent ? [this.parent] : []; let i = 0; return { hasNext: () => i < p.length, next: () => p[i++] }; }
   setTrashed(v) { this.trashed = !!v; return this; }
   isTrashed() { return !!this.trashed; }

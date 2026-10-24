@@ -2175,8 +2175,17 @@
       var input;
       var hint = '';
       if (field.type === 'file') {
+        // `accept` narrows the picker where the section says what it takes —
+        // IVA's PDF-only. It is a hint and nothing more: it can be overridden in
+        // the file dialog, which is why collectFiles checks again and the server
+        // checks after that.
+        var docRules = app.meta && app.meta.documentRules;
+        var accept = (docRules && docRules.extensions && docRules.extensions.length)
+          ? ' accept="' + docRules.extensions.map(function (e) { return '.' + e; }).join(',') + '"'
+          : '';
         input = '<input type="file" id="' + id + '" data-header="' +
-          escapeHtml(field.header) + '">';
+          escapeHtml(field.header) + '"' + accept + '>';
+        if (docRules && docRules.source) hint = docRules.source + '.';
 
         // Anything already scanned or saved to the staging folder can be chosen
         // rather than uploaded again. Picking MOVES the file into the tree, so
@@ -2197,9 +2206,11 @@
           var attached = (row.files || []).filter(function (f) {
             return f.label === field.label;
           })[0];
-          hint = attached
+          // Appended, not replaced: the section's rule still applies to the
+          // replacement, and editing is where a bad scan gets swapped in.
+          hint = (attached
             ? 'Attached already. Choosing a file replaces it, and the old one goes to Drive\'s trash.'
-            : 'Not attached yet.';
+            : 'Not attached yet.') + (hint ? ' ' + hint : '');
         }
 
       } else if (field.type === 'choice') {
@@ -2411,6 +2422,27 @@
             field.label + ': ' + Math.round(file.size / 1024 / 1024) + ' MB is too large (limit ' +
             Math.round(MAX_UPLOAD_BYTES / 1024 / 1024) + ' MB)')));
           return;
+        }
+
+        // The section's own rules, from uiSectionMeta rather than repeated here.
+        // Checked before the read so a 3 MB scan is refused instantly instead of
+        // being base64'd and sent for the server to refuse — same rule, said
+        // sooner. uiStoreUpload is still the one that decides.
+        var rules = app.meta && app.meta.documentRules;
+        if (rules) {
+          var ext = (file.name.split('.').pop() || '').toLowerCase();
+          if (rules.extensions && rules.extensions.indexOf(ext) === -1) {
+            reads.push(Promise.reject(new Error(
+              field.label + ': ' + rules.source + '. "' + file.name + '" is not a PDF.')));
+            return;
+          }
+          if (rules.maxBytes && file.size > rules.maxBytes) {
+            reads.push(Promise.reject(new Error(
+              field.label + ': ' + rules.source + '. "' + file.name + '" is ' +
+              Math.round(file.size / 1024) + ' Kb (limit ' +
+              (rules.sizeLabel || rules.maxBytes + ' bytes') + ').')));
+            return;
+          }
         }
 
         reads.push(new Promise(function (resolve, reject) {
