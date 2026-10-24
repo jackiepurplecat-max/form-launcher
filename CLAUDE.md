@@ -185,3 +185,21 @@ Siri keys documented in `REBUILD-PLAN.md`.
 Apps Script secrets live in Script Properties, set once via
 `setupScriptProperties()` — then clear `SCRIPT_PROPERTY_VALUES` so the secrets are
 not left in the script body. Check with `checkScriptProperties()`.
+
+---
+
+## Agent skills
+
+### Issue tracker
+
+Local markdown under `.scratch/` (gitignored — the repo is public). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default labels, recorded as a `Status:` line in each ticket. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root, created as terms and decisions
+are settled. Decisions made before 24 Oct 2026 live in `REBUILD-PLAN.md`, which stays as the
+historical record — new decisions go in `docs/adr/`. See `docs/agents/domain.md`.

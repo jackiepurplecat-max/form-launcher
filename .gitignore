@@ -32,3 +32,6 @@ v2-siri/appsscript.json
 # Logs
 *.log
 npm-debug.log*
+
+# Local issue tracker - kept private because this repo is public
+.scratch/
