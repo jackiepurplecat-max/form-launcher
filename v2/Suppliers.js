@@ -378,6 +378,15 @@ function mergeSupplierNif(submitted, target, targetName) {
   return { value: theirs || mine, kept: null, adopted: null };
 }
 
+/**
+ * Which Country a merge keeps: the NIF rule, not the Type rule. A clinic is in
+ * one country as it has one NIF, so a conflict keeps the core's and reports the
+ * one it displaced, and a blank core takes the other's. Decided 30 Oct 2026.
+ */
+function mergeSupplierCountry(submitted, target, targetName) {
+  return mergeSupplierNif(submitted, target, targetName);
+}
+
 /** The later of two Last Used values, either of which may be blank or junk. */
 function laterDate(a, b) {
   const left = a ? new Date(a).getTime() : NaN;
@@ -404,12 +413,14 @@ function laterDate(a, b) {
  * Document failures do not block the registry: the sheet values are right, and
  * uiRepairSupplierDocuments() re-runs the naming over the surviving name.
  *
- * Type, NIF and Aliases are taken from the payload as given, so a blank CLEARS
- * the field — the same rule uiUpdateEntry follows, and the only way to empty one.
- * The form therefore sends all four fields, never a subset.
+ * Type, NIF, Country and Aliases are taken from the payload as given, so a blank
+ * CLEARS the field — the same rule uiUpdateEntry follows, and the only way to
+ * empty one. The form therefore sends every field, never a subset. Country alone
+ * may be omitted, which keeps the stored one: it was added later, and a caller
+ * that predates it must not wipe it.
  *
  * @param {number} sheetRow row in the Suppliers sheet
- * @param {Object} payload  { name, type, nif, aliases, was }
+ * @param {Object} payload  { name, type, nif, country, aliases, was }
  * @param {number} [limit]  rows to repair in this run. Defaults to
  *   SUPPLIER_REPAIR_ROW_LIMIT; uiUpdateSupplier never passes it, so the page
  *   cannot choose its own batch size. Exists so the incomplete path is testable
@@ -439,6 +450,9 @@ function updateSupplier(sheetRow, payload, limit) {
 
   const type = (submitted.type || '').toString().trim();
   const nif = (submitted.nif || '').toString().trim();
+  const country = submitted.country === undefined || submitted.country === null
+    ? source.country
+    : submitted.country.toString().trim();
   const aliases = parseAliasList(submitted.aliases);
 
   // An alias that equals the supplier's own name is noise: findSupplier already
@@ -484,12 +498,14 @@ function updateSupplier(sheetRow, payload, limit) {
       writeCell(sheet, cols, source.row, REGISTRY.name, newName);
       writeCell(sheet, cols, source.row, REGISTRY.type, type);
       writeCell(sheet, cols, source.row, REGISTRY.nif, nif);
+      writeCell(sheet, cols, source.row, REGISTRY.country, country);
       writeCell(sheet, cols, source.row, REGISTRY.aliases,
         aliases.filter(alias => normalizeName(alias) !== ownName).join(', '));
       SpreadsheetApp.flush();
       return {
         merged: null, row: source.row, name: newName,
-        typeCleared: false, nifKept: null, nifAdopted: null
+        typeCleared: false, nifKept: null, nifAdopted: null,
+        countryKept: null, countryAdopted: null
       };
     }
 
@@ -510,9 +526,11 @@ function updateSupplier(sheetRow, payload, limit) {
     });
 
     const mergedNif = mergeSupplierNif(nif, target.nif, target.name);
+    const mergedCountry = mergeSupplierCountry(country, target.country, target.name);
 
     writeCell(sheet, cols, target.row, REGISTRY.type, mergedType.value);
     writeCell(sheet, cols, target.row, REGISTRY.nif, mergedNif.value);
+    writeCell(sheet, cols, target.row, REGISTRY.country, mergedCountry.value);
     writeCell(sheet, cols, target.row, REGISTRY.aliases, mergedAliases.join(', '));
     writeCell(sheet, cols, target.row, REGISTRY.timesUsed, target.timesUsed + source.timesUsed);
     writeCell(sheet, cols, target.row, REGISTRY.lastUsed,
@@ -529,7 +547,9 @@ function updateSupplier(sheetRow, payload, limit) {
       name: target.name,
       typeCleared: mergedType.cleared,
       nifKept: mergedNif.kept,
-      nifAdopted: mergedNif.adopted
+      nifAdopted: mergedNif.adopted,
+      countryKept: mergedCountry.kept,
+      countryAdopted: mergedCountry.adopted
     };
   });
 
@@ -545,6 +565,8 @@ function updateSupplier(sheetRow, payload, limit) {
     typeCleared: registryResult.typeCleared,
     nifKept: registryResult.nifKept,
     nifAdopted: registryResult.nifAdopted,
+    countryKept: registryResult.countryKept,
+    countryAdopted: registryResult.countryAdopted,
     repair: repair,
     // Offered, never applied: only you know whether the old spelling was a
     // recurring mishearing worth teaching or a one-off typo worth forgetting.
@@ -568,13 +590,15 @@ function uiListSuppliers() {
       name: entry.name,
       type: entry.type,
       nif: entry.nif,
+      country: entry.country,
       aliases: entry.aliases.join(', '),
       timesUsed: entry.timesUsed,
       lastUsed: uiDateISO(entry.lastUsed)
     }))
     .sort((a, b) => b.timesUsed - a.timesUsed || a.name.localeCompare(b.name));
 
-  return { ok: true, suppliers: suppliers };
+  // The choices for Country, so the page offers the same list the Health form does.
+  return { ok: true, suppliers: suppliers, countries: COUNTRIES };
 }
 
 /**
@@ -586,9 +610,9 @@ function uiListSuppliers() {
  *
  * submittedNif is what the form currently holds, so the NIF verdict is computed
  * from the same values the save would use — through mergeSupplierNif, the same
- * function the merge itself calls.
+ * function the merge itself calls. submittedCountry likewise, for Country.
  */
-function uiSupplierPreview(sheetRow, newName, submittedNif) {
+function uiSupplierPreview(sheetRow, newName, submittedNif, submittedCountry) {
   requireUiAccess();
 
   const sheet = getOrCreateRegistrySheet();
@@ -614,6 +638,11 @@ function uiSupplierPreview(sheetRow, newName, submittedNif) {
     ? source.nif
     : submittedNif;
   const nifOutcome = target ? mergeSupplierNif(nif, target.nif, target.name) : null;
+  const country = submittedCountry === undefined || submittedCountry === null
+    ? source.country
+    : submittedCountry;
+  const countryOutcome = target
+    ? mergeSupplierCountry(country, target.country, target.name) : null;
 
   return {
     ok: true,
@@ -624,6 +653,8 @@ function uiSupplierPreview(sheetRow, newName, submittedNif) {
       : null,
     nifKept: nifOutcome ? nifOutcome.kept : null,
     nifAdopted: nifOutcome ? nifOutcome.adopted : null,
+    countryKept: countryOutcome ? countryOutcome.kept : null,
+    countryAdopted: countryOutcome ? countryOutcome.adopted : null,
     total: found.total,
     bySection: found.bySection,
     // A truthful warning rather than a refusal: the work will stop at the limit

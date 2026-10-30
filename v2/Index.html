@@ -323,6 +323,12 @@
     .entry dt { color: var(--muted); font-size: .78rem; }
     .entry dd { margin: 0; font-size: .85rem; overflow-wrap: anywhere; }
     .entry dd.notes { color: var(--muted); }
+    /* Health's two Allianz screens. The fields after them get a gap, not a heading. */
+    .entry dl .group {
+      grid-column: 1 / -1; color: var(--fg); font-weight: 600; font-size: .78rem;
+      text-transform: uppercase; letter-spacing: .03em;
+    }
+    .entry dl .group:not(:first-child), .entry dl .after-group { margin-top: .45rem; }
 
     /*
      * Advance and regress, labelled with what they do rather than where you are.
@@ -375,13 +381,19 @@
     }
     #formCard h2, #supplierCard h2 { margin: 0 0 .9rem; font-size: 1.05rem; }
     #formCard .field, #supplierCard .field { margin-bottom: .8rem; }
+    #formCard .form-group {
+      margin: 1.1rem 0 .6rem; font-size: .8rem; text-transform: uppercase;
+      letter-spacing: .03em;
+    }
+    #formCard .form-group:first-child { margin-top: 0; }
+    #formCard .form-group-end { height: .6rem; }
     #formCard label, #supplierCard label {
       display: block; font-size: .78rem; color: var(--muted);
       margin-bottom: .25rem; font-weight: 600;
     }
     #formCard label .req { color: var(--err); margin-left: .15rem; }
     #formCard input, #formCard select,
-    #supplierCard input { width: 100%; padding: .55rem .6rem; }
+    #supplierCard input, #supplierCard select { width: 100%; padding: .55rem .6rem; }
     /* One height for every control. With appearance released (see the date rule
        at the top), an EMPTY date on iOS has no text to give it height and
        collapses to its padding - so Invoice date sat shorter than the fields
@@ -477,7 +489,7 @@
       #dialog .pick { flex-direction: column; }
       #dialog .pick button { width: 100%; }
       #formCard, #supplierCard, #dialog, #confirmCard { padding: .9rem; }
-      #formCard input, #formCard select, #supplierCard input { padding: .5rem .55rem; }
+      #formCard input, #formCard select, #supplierCard input, #supplierCard select { padding: .5rem .55rem; }
     }
   </style>
 </head>
@@ -576,6 +588,11 @@
       <div class="field">
         <label for="supplierNif">NIF</label>
         <input type="text" id="supplierNif" autocomplete="off" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="supplierCountry">Country</label>
+        <select id="supplierCountry"></select>
+        <div class="hint">Fills in Country of treatment on a new Health claim.</div>
       </div>
       <div class="field">
         <label for="supplierAliases">Aliases</label>
@@ -959,6 +976,7 @@
       call('uiListSuppliers').then(function (data) {
         if (app.view !== PROVIDERS) return;   // the view changed while this was in flight
         app.supplierList = data.suppliers;
+        app.supplierCountries = data.countries || [];
         renderSuppliers();
       }).catch(function (error) {
         if (app.view !== PROVIDERS) return;
@@ -974,7 +992,7 @@
       el('sections').innerHTML = isPhone()
         ? '<div class="cards">' + app.supplierList.map(supplierCard).join('') + '</div>'
         : '<div class="acc open"><div class="body"><div class="tableWrap"><table>' +
-          '<tr><th>Provider</th><th>Type</th><th>NIF</th><th>Aliases</th>' +
+          '<tr><th>Provider</th><th>Type</th><th>NIF</th><th>Country</th><th>Aliases</th>' +
           '<th class="num">Used</th><th>Last used</th><th></th></tr>' +
           app.supplierList.map(supplierRow).join('') +
           '</table></div></div></div>';
@@ -986,6 +1004,7 @@
         '<td>' + escapeHtml(supplier.name) + '</td>' +
         '<td>' + escapeHtml(supplier.type) + '</td>' +
         '<td>' + escapeHtml(supplier.nif) + '</td>' +
+        '<td>' + escapeHtml(supplier.country) + '</td>' +
         '<td class="notes">' + escapeHtml(supplier.aliases) + '</td>' +
         '<td class="num">' + escapeHtml(supplier.timesUsed) + '</td>' +
         '<td>' + escapeHtml(dayLabelOrRaw(supplier.lastUsed)) + '</td>' +
@@ -998,6 +1017,7 @@
       var pairs = [
         ['Type', supplier.type],
         ['NIF', supplier.nif],
+        ['Country', supplier.country],
         ['Aliases', supplier.aliases],
         ['Last used', dayLabelOrRaw(supplier.lastUsed)]
       ].filter(function (pair) { return pair[1] !== '' && pair[1] !== null && pair[1] !== undefined; });
@@ -1038,6 +1058,14 @@
       el('supplierName').value = supplier.name;
       el('supplierType').value = supplier.type;
       el('supplierNif').value = supplier.nif;
+      // Blank first, meaning none; a stored value off the list is kept as it is
+      // rather than silently becoming the first option.
+      var countries = [''].concat(app.supplierCountries || []);
+      if (supplier.country && countries.indexOf(supplier.country) === -1) countries.push(supplier.country);
+      el('supplierCountry').innerHTML = countries.map(function (country) {
+        return '<option value="' + escapeHtml(country) + '">' + escapeHtml(country || '—') + '</option>';
+      }).join('');
+      el('supplierCountry').value = supplier.country || '';
       el('supplierAliases').value = supplier.aliases;
       supplierNote('');
       el('supplierOverlay').className = 'open';
@@ -1061,6 +1089,7 @@
         name: el('supplierName').value.trim(),
         type: el('supplierType').value.trim(),
         nif: el('supplierNif').value.trim(),
+        country: el('supplierCountry').value,
         aliases: el('supplierAliases').value.trim(),
         was: app.supplierForm.was
       };
@@ -1072,7 +1101,7 @@
      * A name change is not an edit to one cell — it rewrites entry rows across
      * every section and renames their documents — so it gets the confirmation
      * that archiving and purging get, with the real numbers in it. Editing only
-     * Type, NIF or Aliases touches nothing else and saves straight away.
+     * Type, NIF, Country or Aliases touches nothing else and saves straight away.
      */
     function saveSupplier() {
       if (!app.supplierForm || app.supplierForm.busy) return;
@@ -1084,7 +1113,7 @@
       supplierBusy(true);
       supplierNote('Checking what this would change…');
 
-      call('uiSupplierPreview', app.supplierForm.row, values.name, values.nif)
+      call('uiSupplierPreview', app.supplierForm.row, values.name, values.nif, values.country)
         .then(function (preview) {
           supplierBusy(false);
           supplierNote('');
@@ -1126,6 +1155,15 @@
         body += ' ' + preview.merge.name + ' has no NIF, so it will take ' +
           preview.nifAdopted.value + ' from this entry. Check that number is right — ' +
           'it becomes the one every future claim prefills.';
+      }
+
+      if (preview.countryKept) {
+        body += ' Countries differ: ' + preview.merge.name + ' keeps ' + preview.countryKept.kept +
+          ' and ' + preview.countryKept.discarded + ' is discarded.';
+      }
+      if (preview.countryAdopted) {
+        body += ' ' + preview.merge.name + ' has no country, so it will take ' +
+          preview.countryAdopted.value + ' from this entry.';
       }
 
       if (preview.willStopAt) {
@@ -1213,6 +1251,15 @@
         lines.push(result.nifAdopted.into + ' had no NIF and has taken ' +
           result.nifAdopted.value + ' from the entry you merged in.');
         lines.push('Check that number is right — future claims prefill from it.');
+      }
+      if (result.countryKept) {
+        kind = 'warn';
+        lines.push('Countries differed. ' + result.countryKept.into + ' kept ' +
+          result.countryKept.kept + '; ' + result.countryKept.discarded + ' was discarded.');
+      }
+      if (result.countryAdopted) {
+        lines.push(result.countryAdopted.into + ' had no country and has taken ' +
+          result.countryAdopted.value + ' from the entry you merged in.');
       }
       if (result.documentErrors && result.documentErrors.length) {
         kind = 'error';
@@ -1707,7 +1754,12 @@
      * that can be long.
      */
     function rowCard(row) {
-      var counterparty = row.cells['Counterparty'] || '(no name)';
+      // Health titles a card Patient · Provider; everything else by its name.
+      var counterparty = (app.meta.title
+        ? app.meta.title.map(function (header) { return row.cells[header]; })
+            .filter(function (value) { return value !== '' && value !== null && value !== undefined; })
+            .join(' · ')
+        : row.cells['Counterparty']) || '(no name)';
       var amount = row.cells['Amount'];
       var currency = row.cells['Currency'] || '';
       var money = (amount === '' || amount === null || amount === undefined)
@@ -1724,22 +1776,41 @@
       if (row.archived && row.archivedAt) sub.push('archived ' + dayLabel(row.archivedAt));
 
       // Everything the headline did not already say - or, in column order,
-      // everything but the name and the notes, so the list can be read straight
-      // down while keying a claim in.
+      // everything but the notes, so each Allianz screen can be read straight
+      // down while keying a claim in, even what the headline repeats.
       var skip = app.meta.ordered
-        ? { 'Counterparty': 1, 'Notes': 1 }
+        ? { 'Notes': 1 }
         : { 'Counterparty': 1, 'Amount': 1, 'Currency': 1, 'Date': 1, 'Notes': 1 };
       if (app.meta.category && !app.meta.ordered) skip[app.meta.category.header] = 1;
 
-      var pairs = app.meta.columns.filter(function (column) {
+      // A heading wherever the group changes; leaving the headed groups marks
+      // the next pair, wherever it comes from, with a gap instead.
+      var pairs = [];
+      var group = null;
+      var afterGroup = false;
+      var pair = function (dt, dd, ddClass) {
+        var dtClass = afterGroup ? 'after-group' : '';
+        ddClass = [dtClass, ddClass || ''].filter(Boolean).join(' ');
+        afterGroup = false;
+        pairs.push('<dt' + (dtClass ? ' class="' + dtClass + '"' : '') + '>' + escapeHtml(dt) +
+          '</dt><dd' + (ddClass ? ' class="' + ddClass + '"' : '') + '>' + dd + '</dd>');
+      };
+      app.meta.columns.filter(function (column) {
         if (skip[column.header]) return false;
         var value = row.cells[column.header];
         return value !== '' && value !== null && value !== undefined;
-      }).map(function (column) {
+      }).forEach(function (column) {
+        var heading = column.group || null;
+        if (heading !== group) {
+          if (heading) pairs.push('<dt class="group">' + escapeHtml(heading) + '</dt>');
+          else afterGroup = true;
+          group = heading;
+        }
         var value = column.type === 'date'
           ? dayLabelOrRaw(row.cells[column.header]) : row.cells[column.header];
-        return '<dt>' + escapeHtml(column.label) + '</dt><dd>' + escapeHtml(value) + '</dd>';
+        pair(column.label, escapeHtml(value));
       });
+      if (group) afterGroup = true;
 
       app.meta.states.forEach(function (state, index) {
         if (!state.dateColumn) return;
@@ -1748,25 +1819,23 @@
         // with anything, so an empty row of it is only clutter.
         if (row.archived) {
           if (row.dates[state.dateColumn]) {
-            pairs.push('<dt>' + escapeHtml(state.dateColumn) + '</dt><dd>' +
-              escapeHtml(dayLabel(row.dates[state.dateColumn])) + '</dd>');
+            pair(state.dateColumn, escapeHtml(dayLabel(row.dates[state.dateColumn])));
           }
           return;
         }
         var reached = row.dates[state.dateColumn] || (row.statusIndex >= 0 && index <= row.statusIndex);
         if (!reached) return;
-        pairs.push('<dt>' + escapeHtml(state.dateColumn) + '</dt><dd>' +
-          dateChip(row, state, index) + '</dd>');
+        pair(state.dateColumn, dateChip(row, state, index));
       });
 
       if (app.meta.files.length) {
-        pairs.push('<dt>Documents</dt><dd class="docs">' + docsHtml(row) + '</dd>');
+        pair('Documents', docsHtml(row), 'docs');
       }
       if (row.cells['Notes']) {
-        pairs.push('<dt>Notes</dt><dd class="notes">' + escapeHtml(row.cells['Notes']) + '</dd>');
+        pair('Notes', escapeHtml(row.cells['Notes']), 'notes');
       }
       if (row.archived && row.reason) {
-        pairs.push('<dt>Reason</dt><dd>' + escapeHtml(row.reason) + '</dd>');
+        pair('Reason', escapeHtml(row.reason));
       }
 
       var actions = row.archived
@@ -2122,8 +2191,19 @@
       // every exit path - and the one it was missing from was the successful
       // one, which left the next form opening with the button reading "Saving…".
       el('formSave').textContent = 'Save';
+      // Headings between groups (Health's two Allianz screens); leaving them
+      // leaves a gap rather than a heading.
+      var group = null;
       el('formFields').innerHTML = fields.map(function (field) {
-        return fieldHtml(field, row);
+        var heading = field.group || null;
+        var before = '';
+        if (heading !== group) {
+          before = heading
+            ? '<h3 class="form-group">' + escapeHtml(heading) + '</h3>'
+            : '<div class="form-group-end"></div>';
+          group = heading;
+        }
+        return before + fieldHtml(field, row);
       }).join('');
       // Which fields have been changed by hand, so a follow rule stops
       // overwriting them. Editing starts with every field "touched": a blank on
@@ -2543,7 +2623,7 @@
 
     /** Mark exactly the missing fields, clearing whatever was marked before. */
     function highlightMissing(missing) {
-      Array.prototype.forEach.call(el('formFields').children, function (node) {
+      Array.prototype.forEach.call(el('formFields').querySelectorAll('.field'), function (node) {
         node.className = 'field';
       });
       missing.forEach(function (field) {

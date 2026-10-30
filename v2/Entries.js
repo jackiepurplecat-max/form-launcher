@@ -69,7 +69,7 @@ function missingFields(section, sheet, cols, row) {
 
   const core = [
     { header: COMMON.date, label: dateLabel(section) },
-    { header: COMMON.amount, label: 'Amount' },
+    { header: COMMON.amount, label: amountLabel(section) },
     { header: COMMON.counterparty, label: counterpartyLabel(section) }
   ];
   // Required unless the config says otherwise. Work's Expense Reason and

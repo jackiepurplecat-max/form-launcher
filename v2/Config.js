@@ -107,7 +107,7 @@ const COUNTRIES = [
  * The point of these forms is that a claim can be keyed in without reopening
  * the receipt. So a section collects exactly what its claim form asks for:
  * IVA mirrors what Finanças asks, Health mirrors what the Allianz MyHealth app
- * asks, in Allianz's own wording and order (fieldOrder). Not more - every field
+ * asks, in Allianz's own wording and order (fieldGroups). Not more - every field
  * is retyped by hand - and not less, or it becomes a receipt you have to go and
  * find. Decided 30 Oct 2026; it replaced an older "collect everything" rule.
  */
@@ -154,7 +154,11 @@ const COUNTRIES = [
  *
  * Optional, where a section needs them:
  *   dateLabel            what COMMON.date is called in the UI (default 'Date')
- *   fieldOrder           headers in the order the form and the card show them
+ *   fieldGroups          [{ heading?, headers }] - the order the form and the
+ *                        card show fields in, and the headings between them
+ *   amountLabel          what COMMON.amount is called in the UI (default 'Amount')
+ *   cardTitle            headers whose values, joined, title a card in place of
+ *                        the counterparty alone
  *   filenameInitialFrom  header whose first letter starts every filename
  *   awaitingDocumentField  Yes/No column deciding completeness when only some
  *                        fileColumns are filled. Without one, all must be.
@@ -362,14 +366,30 @@ const SECTIONS = {
     // COMMON.date holds the treatment date - the event itself, consistent with
     // the other sections - so here it is labelled as such.
     dateLabel: 'Treatment date',
-    // The order the Allianz app asks for things, so the form and the card can be
-    // read top to bottom while keying a claim in. Anything not listed follows.
-    fieldOrder: [
-      'Patient', 'Country of Treatment', COMMON.counterparty, COMMON.currency,
-      'Invoice Date', COMMON.date, 'Treatment Type', COMMON.amount,
-      'Justification URL', COMMON.receiptUrl, 'Awaiting Document',
-      RECEIPT_MEDIUM_FIELD.header, COMMON.notes
+    // The Allianz app asks in two screens, so the form and the card show the
+    // same two blocks, in its order and under its headings, to be read top to
+    // bottom while keying a claim in. The last group has no heading: Allianz
+    // asks for none of it. Anything not listed follows.
+    fieldGroups: [
+      {
+        heading: 'Invoice information',
+        headers: ['Patient', 'Country of Treatment', COMMON.counterparty, COMMON.currency, 'Invoice Date']
+      },
+      {
+        heading: 'Treatment information',
+        headers: [COMMON.date, 'Treatment Type', COMMON.amount]
+      },
+      {
+        headers: [
+          'Justification URL', COMMON.receiptUrl, 'Awaiting Document',
+          RECEIPT_MEDIUM_FIELD.header, COMMON.notes
+        ]
+      }
     ],
+    amountLabel: 'Treatment amount',
+    // Who and where, so a claim is found by the patient first. The amount
+    // stays on the right as everywhere else.
+    cardTitle: ['Patient', COMMON.counterparty],
     // Filenames start with the patient's initial, so the Inbox groups by person
     // when picking a file in the Allianz app. The family's initials are distinct.
     filenameInitialFrom: 'Patient',
@@ -674,14 +694,27 @@ function dateLabel(section) {
   return section.dateLabel || 'Date';
 }
 
+/** What the shared Amount column is called in this section's UI. */
+function amountLabel(section) {
+  return section.amountLabel || 'Amount';
+}
+
 /**
- * Sort a list of { header } objects into the section's fieldOrder. Headers not
- * in fieldOrder keep their relative order and follow the listed ones. A
- * section without fieldOrder gets its list back unchanged.
+ * Sort a list of { header } objects into the order of the section's
+ * fieldGroups, and stamp each with `group`: the heading of the group it is in,
+ * or null. Headers not in any group keep their relative order and follow the
+ * listed ones. A section without fieldGroups gets its list back unchanged.
  */
 function orderFields(section, list) {
-  const order = section.fieldOrder;
-  if (!order) return list;
+  if (!section.fieldGroups) return list;
+  const order = [];
+  const headingOf = {};
+  section.fieldGroups.forEach(group => {
+    group.headers.forEach(header => {
+      order.push(header);
+      headingOf[header] = group.heading || null;
+    });
+  });
   const rank = item => {
     const at = order.indexOf(item.header);
     return at === -1 ? order.length : at;
@@ -689,7 +722,7 @@ function orderFields(section, list) {
   return list
     .map((item, index) => ({ item: item, index: index }))
     .sort((a, b) => rank(a.item) - rank(b.item) || a.index - b.index)
-    .map(pair => pair.item);
+    .map(pair => Object.assign({}, pair.item, { group: headingOf[pair.item.header] || null }));
 }
 
 /**

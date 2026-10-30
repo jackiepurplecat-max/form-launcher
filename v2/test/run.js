@@ -3162,6 +3162,41 @@ G.recordSupplier('Clinica Madrid', { country: 'Portugal' });
 check('the latest country wins, since the first may only have been the default',
   G.findSupplier('Clinica Madrid').country === 'Portugal');
 
+section('Providers — Country is shown, edited, and carried through a merge');
+check('the list shows each provider\'s country and offers the choices',
+  G.uiListSuppliers().suppliers.find(s => s.name === 'Clinica Madrid').country === 'Portugal' &&
+  G.uiListSuppliers().countries.indexOf('Spain') !== -1);
+G.uiUpdateSupplier(supplierRow('Clinica Madrid'), {
+  name: 'Clinica Madrid', type: 'Doctor Visit', nif: '', country: 'Spain', aliases: '', was: 'Clinica Madrid'
+});
+check('editing it saves it', supplierNamed('Clinica Madrid').country === 'Spain');
+G.uiUpdateSupplier(supplierRow('Clinica Madrid'), {
+  name: 'Clinica Madrid', type: 'Doctor Visit', nif: '', aliases: '', was: 'Clinica Madrid'
+});
+check('a caller that does not send it leaves it alone', supplierNamed('Clinica Madrid').country === 'Spain');
+
+G.recordSupplier('Kept Clinic', { type: 'Doctor Visit' });
+G.recordSupplier('Kept Clinicc', { type: 'Doctor Visit', country: 'France' });
+const countryAdopt = G.uiSupplierPreview(supplierRow('Kept Clinicc'), 'Kept Clinic', '', 'France');
+check('a blank core will take the other\'s country, and the preview says so',
+  countryAdopt.countryAdopted && countryAdopt.countryAdopted.value === 'France', countryAdopt);
+G.uiUpdateSupplier(supplierRow('Kept Clinicc'), {
+  name: 'Kept Clinic', type: 'Doctor Visit', nif: '', country: 'France', aliases: '', was: 'Kept Clinicc'
+});
+check('and the merge does it', supplierNamed('Kept Clinic').country === 'France');
+
+G.recordSupplier('Kept Clinik', { type: 'Doctor Visit', country: 'Spain' });
+const countryConflict = G.uiSupplierPreview(supplierRow('Kept Clinik'), 'Kept Clinic', '', 'Spain');
+check('when they disagree the preview warns before anything is merged',
+  countryConflict.countryKept && countryConflict.countryKept.kept === 'France' &&
+  countryConflict.countryKept.discarded === 'Spain', countryConflict);
+const conflictMerge = G.uiUpdateSupplier(supplierRow('Kept Clinik'), {
+  name: 'Kept Clinic', type: 'Doctor Visit', nif: '', country: 'Spain', aliases: '', was: 'Kept Clinik'
+});
+check('the kept provider\'s country wins, and the result says what was discarded',
+  supplierNamed('Kept Clinic').country === 'France' && conflictMerge.countryKept &&
+  conflictMerge.countryKept.discarded === 'Spain', conflictMerge.countryKept);
+
 section('Health — the form follows the Allianz app');
 const healthForm = G.uiFormFields(G.getSection('health'));
 check('fields are asked in Allianz\'s order', JSON.stringify(healthForm.slice(0, 8).map(f => f.header)) ===
@@ -3177,6 +3212,26 @@ check('Work keeps its own order and its plain "Date"', G.uiFormFields(G.getSecti
   G.uiSectionMeta('work').ordered === false);
 check('Treatment Type uses Allianz\'s wording', healthForm.find(f => f.header === 'Treatment Type').options
   .indexOf('Dental Expenses') !== -1);
+const groupOf = (list, header) => list.find(f => f.header === header).group;
+check('the form is split into Allianz\'s two screens',
+  groupOf(healthForm, 'Patient') === 'Invoice information' &&
+  groupOf(healthForm, 'Invoice Date') === 'Invoice information' &&
+  groupOf(healthForm, 'Date') === 'Treatment information' &&
+  groupOf(healthForm, 'Amount') === 'Treatment information', healthForm.map(f => f.header + ':' + f.group));
+check('what Allianz does not ask for has no heading', groupOf(healthForm, 'Awaiting Document') === null &&
+  groupOf(healthForm, 'Notes') === null);
+check('the edit form keeps the headings', groupOf(G.uiEditFields(G.getSection('health')), 'Patient') ===
+  'Invoice information');
+check('the card gets the same groups', groupOf(G.uiSectionMeta('health').columns, 'Counterparty') ===
+  'Invoice information');
+check('Amount is called the treatment amount, on the form, the card and in what is missing',
+  healthForm.find(f => f.header === 'Amount').label === 'Treatment amount' &&
+  G.uiSectionMeta('health').columns.find(c => c.header === 'Amount').label === 'Treatment amount');
+check('a Health card is titled by patient then provider',
+  JSON.stringify(G.uiSectionMeta('health').title) === JSON.stringify(['Patient', 'Counterparty']));
+check('other sections keep their plain name, Amount and no groups', G.uiSectionMeta('work').title === null &&
+  G.uiFormFields(G.getSection('work')).find(f => f.header === 'Amount').label === 'Amount' &&
+  G.uiFormFields(G.getSection('work')).every(f => !f.group));
 
 section('upgradeSection() — existing Health rows, files and registry');
 // Put one row back the way the old config left it: the column called Type with

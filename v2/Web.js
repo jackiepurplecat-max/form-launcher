@@ -260,7 +260,7 @@ function uiColumns(section) {
     columns.push({ header: field.header, label: field.label, type: field.type });
   });
 
-  columns.push({ header: COMMON.amount, label: 'Amount', type: 'number' });
+  columns.push({ header: COMMON.amount, label: amountLabel(section), type: 'number' });
   columns.push({ header: COMMON.currency, label: 'Currency', type: 'text' });
   columns.push({ header: COMMON.notes, label: 'Notes', type: 'text' });
 
@@ -300,7 +300,9 @@ function uiSectionMeta(sectionKey) {
     // Set where the card should read in column order, top to bottom, rather
     // than with the date and category lifted into its subtitle - Health, so it
     // can be followed while keying a claim into the Allianz app.
-    ordered: !!section.fieldOrder,
+    ordered: !!section.fieldGroups,
+    // Headers whose values title a card, in order; null for the counterparty.
+    title: section.cardTitle || null,
     states: section.states.map(state => ({
       name: state.name,
       dateColumn: state.dateColumn || null

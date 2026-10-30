@@ -33,6 +33,10 @@ _Avoid_: Receipt date, billing date
 Allianz's top-level category for the treatment, in Allianz's own wording.
 _Avoid_: Type (unqualified), category
 
+**Treatment Amount**:
+What the treatment cost, in the invoice's currency, as Allianz's claim asks for it.
+_Avoid_: Amount (unqualified), total, price
+
 **Country of Treatment**:
 The country the treatment took place in.
 _Avoid_: Location

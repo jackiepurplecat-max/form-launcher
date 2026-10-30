@@ -109,7 +109,9 @@ function uiFormFields(section) {
     });
   });
 
-  fields.push({ header: COMMON.amount, label: 'Amount', type: 'number', required: true, role: null });
+  fields.push({
+    header: COMMON.amount, label: amountLabel(section), type: 'number', required: true, role: null
+  });
   fields.push({
     header: COMMON.currency, label: 'Currency', type: 'text',
     required: false, role: null, defaultValue: DEFAULT_CURRENCY
