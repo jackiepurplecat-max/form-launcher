@@ -458,6 +458,9 @@ const SECTIONS = {
     label: 'Log Income',
     sheet: 'Income',
     counterpartyLabel: 'Paid by',
+    // Not required: enforcing it would turn existing blank-Reason rows into
+    // INCOMPLETE entries and nag about finished work. And no "(none)" option on
+    // purpose — there is no occasion to log income without knowing what earned it.
     category: { header: 'Reason', label: 'Reason', managed: false, required: false },
     // The reason is currently fixed per payer, so let the registry remember it
     // rather than asking every time

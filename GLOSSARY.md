@@ -6,6 +6,14 @@ to the paperwork.
 
 ## Language
 
+### Across all sections
+
+**Counterparty**:
+The business or person on the other side of an entry. Each section has its own
+word for it: Supplier (work expenses), Retailer (IVA), Provider (health), Paid by
+(income). The Providers screen lists every Counterparty, not only health ones.
+_Avoid_: Provider or supplier (when meaning any section)
+
 ### Health
 
 **Health Claim**:
@@ -18,7 +26,8 @@ The family member who received the treatment. A closed list.
 _Avoid_: Claimant, member
 
 **Provider**:
-The clinic, doctor, pharmacy or lab that issued the invoice.
+The clinic, doctor, pharmacy or lab that issued the invoice: Health's word for
+its Counterparty. Not the same as the Providers screen, which covers all sections.
 _Avoid_: Supplier, doctor (when meaning the business)
 
 **Treatment Date**:

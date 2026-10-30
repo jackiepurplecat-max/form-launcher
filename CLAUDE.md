@@ -21,8 +21,12 @@ accepted, not fixed.
 
 ### Start Here
 
-1. **Read `NEXT-SESSION.md`** — what is deployed, what is verified, what to pick
-   up, and the traps. It is disposable; overwrite it at the end of each session.
+1. **Read `NEXT-SESSION.md`** — what is live, what is next, current traps. At the
+   end of each session **rewrite it from scratch** (never append) in exactly three
+   parts — *What's live*, *What's next*, *Traps* — at **40 lines or fewer**.
+   Anything worth keeping longer goes to `CLAUDE.md` (permanent traps),
+   `REBUILD-PLAN.md` / `docs/adr/` (decisions), a code comment (code-specific
+   traps) or a `.scratch/` ticket (detailed to-dos). History is in git.
 2. **Read `REBUILD-PLAN.md`** — the source of truth: architecture, decisions and
    the reasons behind them, build order, and a state-of-play section saying
    exactly what is done.
@@ -103,10 +107,51 @@ people's worth of plausible suggestions all land in that dead end.
 account signed in — which is why a Private tab always worked. Confirmed on the
 phone 17 Aug. The durable versions are the home-screen icon (its own cookie jar)
 and an iOS 17 Safari Profile. It regresses silently if accounts are ever
-re-added in a different order. See `NEXT-SESSION.md` for the full tested list.
+re-added in a different order — if links start failing, check the account order
+before debugging anything. To reset it: sign out of every Google account, sign in
+as the v2 account **first**, then add the others back. Private Browsing is the
+fallback. Under `"access": "MYSELF"` Google refuses the wrong account before
+`doGet` runs, so you see Google's *"Precisa de acesso"* page, never the app's own.
 
 `authuser=<address>` is still worth carrying on **Drive** links, where it does
 select among signed-in accounts. It does nothing on `/exec`.
+
+### Standing traps
+
+- **`v2/.claspignore` is deny-all with an allowlist.** A new file is silently left
+  out and the push still prints success. Add `!NewFile.js` when you create the
+  file; `v2:verify` catches it afterwards.
+- **`v2-siri/appsscript.json` is generated and gitignored**, also with no trailing
+  newline. `npm run v2:siri:push` regenerates it; check with `npm run v2:siri:verify`.
+- **Siri runs as a library and reads the MAIN project's Script Properties**
+  (confirmed live). Never duplicate properties onto `v2-siri`.
+- **Never write the Siri `/exec` URL into a tracked file.** The repo is public and
+  that endpoint is anonymous. Get it from `clasp --user v2 list-deployments`; keep
+  it in the Shortcuts and `.env`. (It leaked once and was redeployed.)
+- **`list-deployments` is the authority on what is deployed**, not any note. It
+  should show exactly two for main: `@HEAD` and the pinned version.
+- **Testing `/exec` with curl: never `-X POST`.** Use `curl -L -d …`; `-X POST`
+  sticks across Google's redirect and returns a 405 "Página não encontrada" that
+  looks like a dead deployment. A redirect `location` with `&lib=…` means
+  `doPost` already ran.
+- **A `git push` 403 is the wrong GitHub identity**, not a broken remote. Check
+  with `gh api repos/jackiepurplecat-max/form-launcher --jq '.permissions'`;
+  `jackiepurplecat-max` must be active (`gh auth switch`). `gh auth setup-git`
+  wrote the helper that bypasses a stale keychain token — removing the
+  `credential.https://github.com.helper` lines in `~/.gitconfig` brings the 403 back.
+- **Export every Shortcut to a file the moment it works** (Share → Save to Files).
+  Three were lost on 13 Aug because iCloud Drive was off on the phone, which both
+  breaks export and lets sync overwrite the Mac's library. The files hold
+  `SIRI_API_KEY`: iCloud Drive yes, this repo never. Template backup:
+  `iCloud Drive/Downloads/Log health claim.shortcut`; double-click to import.
+  `v2/SIRI-SHORTCUT-REBUILD.md` is the record to work from.
+- **Shortcut work leaves debris rows.** Audit afterwards with `findDebris()`
+  (`v2/Smoke.js`); it reports, never deletes.
+- **After a deploy, fully close the home-screen app** (swipe it away). Refresh
+  reloads only data, so it shows new fields in the old layout and looks like the
+  deploy failed.
+- **A dead file picker on iOS** is a suspended iframe — close the tab and reopen.
+  Don't write defensive code for it without a reproduction.
 
 ### True of v2, deliberately false of v1
 

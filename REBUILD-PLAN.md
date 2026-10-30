@@ -1496,3 +1496,77 @@ stop.
 - **IVA email recipient** — unchanged address, now a Script Property rather
   than hardcoded. Value in `.env` as `V2_IVA_CLAIM_RECIPIENT`.
 - **Drive folder names** — `section.sheet`, so `Work/ IVA/ Health/ Income/`.
+
+## Decisions moved from the handover, 30 Oct 2026
+
+Recorded in `NEXT-SESSION.md` between 13 and 25 Aug and moved here when that file
+was cut to one screen. Each was argued at the time; do not re-litigate.
+
+### The UI rebuild (15 Aug)
+
+- **Status is a place, not a value you set.** The sections partition by status,
+  so moving a row moves it between them. The Status column and Status filter are
+  gone — each said what the heading already said.
+- **Advance is named for where it goes, regress for the state it leaves** —
+  "Claimed" and "Not Claimed". The negative names the thing on screen you have
+  decided is wrong.
+- **The date dialog stays on the way forward.** Claimed, Settled and Received are
+  usually backdated, and one tap to accept today costs the same as the dropdown did.
+- **The archive is fetched on first open, not with the section.** One round trip
+  per view on mobile data beat a count that is always right, so the header reads
+  `Archive` rather than `Archive (4)` until opened once.
+- **"Providers" is a UI relabel only.** The sheet is still Suppliers and so is
+  every identifier on the server. Renaming those is a data migration.
+- **A status the config does not declare gets its own section**, present only
+  when it has rows — otherwise those rows would exist in the sheet and nowhere on
+  the page.
+- **Cards and table are built by different code**, not one linearised by CSS: the
+  server's column order puts Amount seventh, which makes a card headline impossible.
+- **Empty is said per section; loading and error stay page-level**, so a load
+  failure still shows no sections at all.
+
+### The IVA export (25 Aug)
+
+- **No `Submitted` column, no fifth accordion.** Advancing to `Claimed` records a
+  submission — the same meaning as in Health. If that reading is ever wrong, it is
+  one string: `iva.declaration.sourceState`. The harness pins that a Claimed row is
+  not exported again.
+- **The export advances nothing.** Generating a file is not submitting it — AT can
+  still refuse it — so `uiIvaExport()` returns a `reminder` instead of moving rows.
+- **`TipoEntidade` is the hardcoded letter `d`, not `REF_IVA_TIPO`**, which holds
+  display text and would put a sentence where the app wants one letter.
+- **A row that cannot be exported is named, never dropped** — each comes back in
+  `skipped` with its reason. A declaration holding three of five invoices looks
+  exactly like one holding all five.
+- **Validation runs at export as well as (eventually) at intake.** Existing rows
+  predate any intake rule, and the export is where a bad value stops being an
+  annoyance.
+- **Size budget enforced per line; overflow deferred to the next batch and
+  reported.** Never silently truncated.
+- **The round trip is the proof.** `npm run v2:iva:roundtrip ~/test_iva` rebuilds
+  DRORIVA's own sample byte for byte through the shipped emitter, run in a bare
+  `vm` context rather than a copy, so the proof cannot drift from what ships. Keep
+  that true. The NUL padding in DRORIVA's files is its own buffer: a file without
+  it loads fine (tested 25 Aug).
+- **Field validation (step 13) comes after the export, deliberately** — build the
+  thing that punishes bad data before hardening against it.
+
+### Known and accepted: real NIFs are in the public repo (13 Aug)
+
+v1's tracked `index.html` carries JALLC's and the personal NIF in plaintext, and
+commit `c349aa7` holds a real supplier NIF in an early `v2/IVA-EXPORT-FORMAT.md`.
+**Decided: leave it** — these NIFs appear on invoices and correspondence anyway.
+Recorded so it is a decision, not an oversight. If that changes, in rising cost:
+
+1. `git rm --cached index.html` and gitignore it — stops future exposure.
+2. The above plus `git filter-repo` and a force-push — rewrites every hash.
+3. Make the repo private — only possible once v1's GitHub Pages page is retired
+   (cutover step 5).
+
+### If the phone's account ordering ever needs to stop mattering
+
+The only real answer is to take the Google session out of the path the way the
+Siri endpoint does — `ANYONE_ANONYMOUS` plus a shared key. That is real work, not
+a manifest flip: the `requireUiAccess()` gates read `Session.getActiveUser()`,
+which is blank under anonymous, so the key has to reach all of them. Not worth it
+while the ordering holds.
