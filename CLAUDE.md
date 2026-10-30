@@ -124,6 +124,14 @@ as the v2 account **first**, then add the others back. Private Browsing is the
 fallback. Under `"access": "MYSELF"` Google refuses the wrong account before
 `doGet` runs, so you see Google's *"Precisa de acesso"* page, never the app's own.
 
+**On the Mac, open HelpfulForms links in the "HelpfulForms" Chrome profile** (or
+its `/exec` Dock app), which is signed in to Chrome as the v2 account and holds
+bookmarks for `/exec`, `/dev`, the editor, the Sheet and the Drive folder. Safari
+never opens the app. **Never add a second Google account to that profile** — it
+breaks silently, as re-adding accounts in the wrong order breaks the phone. Links
+clicked in Mail or the terminal open in Safari: copy them into the profile. When
+giving the owner a link, say which profile to open it in.
+
 `authuser=<address>` is still worth carrying on **Drive** links, where it does
 select among signed-in accounts. It does nothing on `/exec`.
 
