@@ -244,7 +244,7 @@ function uiDeniedPageHtml(verdict) {
  */
 function uiColumns(section) {
   const columns = [
-    { header: COMMON.date, label: 'Date', type: 'date' },
+    { header: COMMON.date, label: dateLabel(section), type: 'date' },
     { header: COMMON.counterparty, label: counterpartyLabel(section), type: 'text' }
   ];
 
@@ -264,7 +264,7 @@ function uiColumns(section) {
   columns.push({ header: COMMON.currency, label: 'Currency', type: 'text' });
   columns.push({ header: COMMON.notes, label: 'Notes', type: 'text' });
 
-  return columns;
+  return orderFields(section, columns);
 }
 
 /**
@@ -297,6 +297,10 @@ function uiSectionMeta(sectionKey) {
         }
       : null,
     columns: uiColumns(section),
+    // Set where the card should read in column order, top to bottom, rather
+    // than with the date and category lifted into its subtitle - Health, so it
+    // can be followed while keying a claim into the Allianz app.
+    ordered: !!section.fieldOrder,
     states: section.states.map(state => ({
       name: state.name,
       dateColumn: state.dateColumn || null

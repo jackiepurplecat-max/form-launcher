@@ -120,6 +120,40 @@ function applyHeaders(sheet, headers) {
   return { created: 0, added: added, extra: extra };
 }
 
+/**
+ * Rename, in place, any header a field declares as `formerly` its old name.
+ *
+ * In place so the column keeps its data. Without this, bootstrap() would append
+ * the new header as a second, empty column and leave the old one stranded
+ * beside it. Values are NOT converted here - that is upgradeSection()'s job -
+ * so running bootstrap() first and the upgrade second gives the same result as
+ * the other way round. If both headers already exist, nothing is touched and
+ * the clash is returned for the caller to report.
+ */
+function renameFormerHeaders(section, sheet) {
+  const result = { renamed: [], clashes: [] };
+  const width = sheet.getLastColumn();
+  if (!width) return result;
+  const existing = sheet.getRange(1, 1, 1, width).getValues()[0]
+    .map(header => (header || '').toString().trim());
+
+  section.extraFields.forEach(field => {
+    if (!field.formerly) return;
+    const oldAt = existing.indexOf(field.formerly.header);
+    if (oldAt === -1) return;
+    if (existing.indexOf(field.header) !== -1) {
+      result.clashes.push(`${sheet.getName()}: both "${field.formerly.header}" and "${field.header}"`);
+      return;
+    }
+    sheet.getRange(1, oldAt + 1).setValue(field.header);
+    existing[oldAt] = field.header;
+    result.renamed.push(`${sheet.getName()}: ${field.formerly.header} -> ${field.header}`);
+  });
+
+  if (result.renamed.length) clearColumnCache();
+  return result;
+}
+
 /* ============================== Drive layout ============================== */
 
 /**
@@ -234,6 +268,7 @@ function bootstrap() {
     const isNew = !sheet;
     if (isNew) sheet = ss.insertSheet(section.sheet);
 
+    renameFormerHeaders(section, sheet);
     const headers = applyHeaders(sheet, sectionHeaders(section));
     if (headers.extra.length) {
       report.warnings.push(
@@ -248,6 +283,7 @@ function bootstrap() {
     let archive = ss.getSheetByName(archiveName);
     const archiveIsNew = !archive;
     if (archiveIsNew) archive = ss.insertSheet(archiveName);
+    renameFormerHeaders(section, archive);
     const archiveHeaderResult = applyHeaders(archive, archiveHeaders(section));
 
     report.sections[key] = {
@@ -515,4 +551,166 @@ function checkScriptProperties() {
 
   Logger.log(JSON.stringify(report, null, 2));
   return report;
+}
+
+/* ============================ Section upgrade ============================= */
+
+/**
+ * Bring a section's existing rows, documents and registry entries into line
+ * with its current config. Run it after a config change that renames a column,
+ * retires values, adds a default, or changes the filename rule.
+ *
+ * With apply false (the default) it changes NOTHING and returns what it would
+ * do, file by file, so you can read the list first. With apply true it does it.
+ * Safe to re-run: a second run finds nothing left to convert, and rebuilding a
+ * name that is already right leaves it as it is.
+ *
+ * Covers the live sheet AND the archive. Archived documents are renamed but
+ * stay in Archived, exactly as the supplier repair does.
+ *
+ * What it does, per row:
+ *   - a `formerly` column is renamed and its old values converted
+ *   - a blank field with a defaultValue gets it (Country of Treatment: Portugal)
+ *   - Receipt State is recomputed, since the rule for it may have changed
+ *   - every document is renamed from the row's current values
+ * and in the registry, the Type values a `formerly` rule retires.
+ */
+function upgradeSection(sectionKey, apply) {
+  const section = getSection(sectionKey);
+  const doIt = apply === true;
+  const ss = getSpreadsheet();
+  const report = {
+    section: sectionKey, applied: doIt,
+    headers: [], clashes: [], valuesConverted: 0, defaultsFilled: 0,
+    receiptStates: 0, files: [], registry: [], errors: []
+  };
+
+  const targets = [{ sheet: getSheet(section), archived: false }];
+  const archive = ss.getSheetByName(archiveSheetName(section));
+  if (archive) targets.push({ sheet: archive, archived: true });
+
+  const formerFields = section.extraFields.filter(field => field.formerly);
+  const isBlank = value => value === '' || value === null || value === undefined;
+
+  targets.forEach(target => {
+    const sheet = target.sheet;
+
+    // Headers first, so everything after reads the columns by their new names.
+    // A preview cannot rename, so it reads the old name where the new is absent.
+    if (doIt) {
+      const renamed = renameFormerHeaders(section, sheet);
+      report.headers = report.headers.concat(renamed.renamed);
+      report.clashes = report.clashes.concat(renamed.clashes);
+      const added = applyHeaders(sheet, target.archived ? archiveHeaders(section) : sectionHeaders(section));
+      added.added.forEach(header => report.headers.push(`${sheet.getName()}: added ${header}`));
+    }
+    const cols = resolveColumns(sheet);
+    const columnFor = field => cols[field.header] ? field.header
+      : (cols[field.formerly.header] ? field.formerly.header : null);
+    if (!doIt) {
+      formerFields.forEach(field => {
+        if (!cols[field.header] && cols[field.formerly.header]) {
+          report.headers.push(`${sheet.getName()}: ${field.formerly.header} -> ${field.header}`);
+        }
+      });
+    }
+
+    const lastRow = sheet.getLastRow();
+    for (let row = 2; row <= lastRow; row++) {
+      try {
+        formerFields.forEach(field => {
+          const header = columnFor(field);
+          if (!header) return;
+          const value = (readCell(sheet, cols, row, header) || '').toString().trim();
+          if (!Object.prototype.hasOwnProperty.call(field.formerly.values, value)) return;
+          report.valuesConverted++;
+          if (doIt) writeCell(sheet, cols, row, header, field.formerly.values[value]);
+        });
+
+        section.extraFields.forEach(field => {
+          if (!field.defaultValue || !cols[field.header]) return;
+          if (!isBlank(readCell(sheet, cols, row, field.header))) return;
+          report.defaultsFilled++;
+          if (doIt) writeCell(sheet, cols, row, field.header, field.defaultValue);
+        });
+
+        if (doIt && cols[COMMON.receiptState] && !target.archived) {
+          const state = receiptStateFor(section, sheet, cols, row);
+          if (readCell(sheet, cols, row, COMMON.receiptState) !== state) {
+            writeCell(sheet, cols, row, COMMON.receiptState, state);
+            report.receiptStates++;
+          }
+        }
+
+        const status = (readCell(sheet, cols, row, COMMON.status) || '').toString().trim();
+        const stateAt = Math.max(0, stateIndex(section, status));
+        upgradeRowDocuments(section, sheet, cols, row, stateAt, target.archived, doIt, report);
+
+      } catch (error) {
+        report.errors.push(`${sheet.getName()} row ${row}: ${error}`);
+      }
+    }
+  });
+
+  // The registry is shared between sections, so only the exact retired values
+  // of a field this section teaches it are converted - Work's Taxi is untouched.
+  formerFields
+    .filter(field => field.header === section.registryTypeField)
+    .forEach(field => {
+      loadRegistry().forEach(entry => {
+        if (!Object.prototype.hasOwnProperty.call(field.formerly.values, entry.type)) return;
+        const to = field.formerly.values[entry.type];
+        report.registry.push(`${entry.name}: ${entry.type} -> ${to}`);
+        if (doIt) {
+          const sheet = getOrCreateRegistrySheet();
+          writeCell(sheet, resolveColumns(sheet), entry.row, REGISTRY.type, to);
+        }
+      });
+    });
+
+  if (doIt) SpreadsheetApp.flush();
+  report.ok = report.errors.length === 0 && report.clashes.length === 0 &&
+    report.files.every(file => file.ok !== false);
+  Logger.log(JSON.stringify(report, null, 2));
+  return report;
+}
+
+/**
+ * One row's documents, for upgradeSection(). Applying goes through
+ * nameAndFileDocuments(), the path every other rename uses; previewing builds
+ * the same name without touching Drive's copy.
+ */
+function upgradeRowDocuments(section, sheet, cols, row, stateAt, archived, doIt, report) {
+  section.fileColumns.forEach(fileCol => {
+    const fileId = extractFileId(readCell(sheet, cols, row, fileCol.header));
+    if (!fileId) return;
+    try {
+      const file = DriveApp.getFileById(fileId);
+      const from = file.getName();
+      const ext = splitExtension(from).ext;
+      const to = buildBaseFilename(section, sheet, cols, row, fileCol) +
+        buildSuffixChain(section, sheet, cols, row, stateAt) + ext;
+      if (from !== to) report.files.push({ sheet: sheet.getName(), row: row, from: from, to: to });
+    } catch (error) {
+      report.files.push({ sheet: sheet.getName(), row: row, ok: false, error: error.toString() });
+    }
+  });
+
+  if (!doIt) return;
+  const documents = nameAndFileDocuments(section, sheet, cols, row, stateAt, archived ? ARCHIVE_FOLDER : null);
+  documents.renames.concat(documents.files).filter(result => !result.ok).forEach(result => {
+    report.files.push({ sheet: sheet.getName(), row: row, ok: false, error: result.error });
+  });
+}
+
+/**
+ * Run from the Apps Script editor. Preview first: it changes nothing, and the
+ * log lists every file it would rename. Then applyHealthUpgrade() does it.
+ */
+function previewHealthUpgrade() {
+  return upgradeSection('health', false);
+}
+
+function applyHealthUpgrade() {
+  return upgradeSection('health', true);
 }

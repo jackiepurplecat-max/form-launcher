@@ -1,5 +1,32 @@
 # Start here
 
+ attachment-rules work is now committed and pushed
+
+**30 Oct: Health now mirrors the Allianz MyHealth app. Built and tested locally
+(830 passing), NOT yet committed, pushed or deployed.** Agreed in a grilling
+session; the terms are in `GLOSSARY.md`, the rule in the comment above
+`SECTIONS` in `v2/Config.js`.
+
+- Fields in Allianz's order on the form and the card; Date labelled *Treatment
+  date*; new **Country of Treatment** (defaults to Portugal, remembered per
+  provider in a new `Country` registry column); **Type → Treatment Type** with
+  Allianz's six level-1 values; Invoice date copies Treatment date.
+- Completeness: a new **Awaiting Document** Yes/No replaces "both slots filled".
+  Starts at No for Doctor Visit / Alternative, Yes otherwise; both files in
+  always means complete.
+- Filenames lead with the patient's initial: `P_261005_WhiteClinic_80-00_…`.
+- Status headings show count and a total per currency.
+- Invoice date's short box on iOS: every form control now shares a min-height.
+
+**To finish, in order:** commit → `npm run v2:push` → `npm run v2:verify` →
+in the editor run `bootstrap()` then `previewHealthUpgrade()`, read the log,
+then `applyHealthUpgrade()` (renames the column, converts old values, fills
+Country, renames every Health file incl. Archived; safe to re-run) → check
+`…/dev` on the phone → deploy with `-i`.
+
+Not done: the Providers screen neither shows nor edits Country, and a supplier
+merge does not carry it across.
+
 Handover note, written 15 Aug 2026, updated 18 and 25 Aug. **Read *The plan*
 below and work down it**; everything after it is the record of how things got
 here, and is reference rather than instruction.

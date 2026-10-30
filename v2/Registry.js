@@ -21,6 +21,7 @@ const REGISTRY = {
   name: 'Name',
   type: 'Type',
   nif: 'NIF',
+  country: 'Country',
   aliases: 'Aliases',
   timesUsed: 'Times Used',
   lastUsed: 'Last Used'
@@ -28,7 +29,7 @@ const REGISTRY = {
 
 /** Header spine of the registry sheet, in reading order. */
 const REGISTRY_HEADERS = [
-  REGISTRY.name, REGISTRY.type, REGISTRY.nif,
+  REGISTRY.name, REGISTRY.type, REGISTRY.nif, REGISTRY.country,
   REGISTRY.aliases, REGISTRY.timesUsed, REGISTRY.lastUsed
 ];
 
@@ -105,6 +106,7 @@ function loadRegistry() {
       name: (cell(REGISTRY.name) || '').toString(),
       type: (cell(REGISTRY.type) || '').toString(),
       nif: (cell(REGISTRY.nif) || '').toString(),
+      country: (cell(REGISTRY.country) || '').toString(),
       aliases: aliases,
       timesUsed: Number(cell(REGISTRY.timesUsed)) || 0,
       // Raw, not parsed: a merge has to keep the later of two, and the
@@ -192,6 +194,7 @@ function findSupplier(spokenName) {
     name: best.entry.name,
     type: best.entry.type,
     nif: best.entry.nif,
+    country: best.entry.country,
     confidence: best.confidence,
     reason: best.reason,
     // The caller must not prefill identifiers on a guess
@@ -277,6 +280,9 @@ function lookupCounterparty(sectionKey, spokenName) {
     if (section.registryNifField && match.nif) {
       prefill[section.registryNifField] = match.nif;
     }
+    if (section.registryCountryField && match.country) {
+      prefill[section.registryCountryField] = match.country;
+    }
   }
 
   return {
@@ -299,6 +305,8 @@ function lookupCounterparty(sectionKey, spokenName) {
  * prefills the wrong value is worse than one that prefills nothing.
  *
  * NIF is never cleared: it is a fact about the supplier, not about the visit.
+ * Country is a fact too, but the latest one seen wins: it starts from a default
+ * (Portugal), so the first value stored may be the default rather than a choice.
  */
 function recordSupplier(name, details) {
   const clean = (name || '').toString().trim();
@@ -306,6 +314,7 @@ function recordSupplier(name, details) {
 
   const type = ((details || {}).type || '').toString().trim();
   const nif = ((details || {}).nif || '').toString().trim();
+  const country = ((details || {}).country || '').toString().trim();
 
   // Locked for the same reason createEntry is: a new supplier is appended at
   // getLastRow() + 1, and every write here goes through writeCell, so a name
@@ -325,6 +334,7 @@ function recordSupplier(name, details) {
       writeCell(sheet, cols, row, REGISTRY.name, clean);
       if (type) writeCell(sheet, cols, row, REGISTRY.type, type);
       if (nif) writeCell(sheet, cols, row, REGISTRY.nif, nif);
+      if (country) writeCell(sheet, cols, row, REGISTRY.country, country);
       writeCell(sheet, cols, row, REGISTRY.timesUsed, 1);
       writeCell(sheet, cols, row, REGISTRY.lastUsed, new Date());
       SpreadsheetApp.flush();
@@ -337,6 +347,9 @@ function recordSupplier(name, details) {
 
     if (nif && !existing.nif) {
       writeCell(sheet, cols, existing.row, REGISTRY.nif, nif);
+    }
+    if (country && existing.country !== country) {
+      writeCell(sheet, cols, existing.row, REGISTRY.country, country);
     }
     if (type) {
       if (!existing.type) {

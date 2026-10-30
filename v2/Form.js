@@ -73,7 +73,7 @@ const UPLOAD_EXTENSIONS = {
  */
 function uiFormFields(section) {
   const fields = [
-    { header: COMMON.date, label: 'Date', type: 'date', required: true, role: null },
+    { header: COMMON.date, label: dateLabel(section), type: 'date', required: true, role: null },
     {
       header: COMMON.counterparty, label: counterpartyLabel(section),
       type: 'text', required: true, role: 'counterparty'
@@ -103,7 +103,9 @@ function uiFormFields(section) {
       type: field.type,
       required: !!field.required,
       options: field.options || null,
-      role: null
+      role: null,
+      defaultValue: field.defaultValue || '',
+      follows: field.follows || null
     });
   });
 
@@ -138,7 +140,7 @@ function uiFormFields(section) {
     });
   });
 
-  return fields;
+  return orderFields(section, fields);
 }
 
 /** Headers the form may write. Files are excluded: they arrive as uploads. */

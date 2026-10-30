@@ -38,10 +38,15 @@ function slugForFilename(text) {
 }
 
 /**
- * Base filename for a document: YYMMDD_Counterparty_Amount_<document>
+ * Base filename for a document: YYMMDD_Counterparty_Amount_<document>, led by
+ * an initial where the section names one (Health: P_YYMMDD_...).
  * The state suffix chain is appended later by applyFileState().
  */
-function buildBaseFilename(sheet, cols, row, fileCol) {
+function buildBaseFilename(section, sheet, cols, row, fileCol) {
+  const initial = section.filenameInitialFrom
+    ? slugForFilename(readCell(sheet, cols, row, section.filenameInitialFrom)).charAt(0).toUpperCase()
+    : '';
+
   const dateValue = readCell(sheet, cols, row, COMMON.date);
   const stamp = dateValue
     ? Utilities.formatDate(new Date(dateValue), Session.getScriptTimeZone(), 'yyMMdd')
@@ -50,7 +55,7 @@ function buildBaseFilename(sheet, cols, row, fileCol) {
   const who = slugForFilename(readCell(sheet, cols, row, COMMON.counterparty)) || 'unknown';
   const amount = formatAmountForFilename(readCell(sheet, cols, row, COMMON.amount));
 
-  return [stamp, who, amount, fileCol.suffix].filter(part => part !== '').join('_');
+  return [initial, stamp, who, amount, fileCol.suffix].filter(part => part !== '').join('_');
 }
 
 /* ============================== Validation ================================ */
@@ -63,7 +68,7 @@ function missingFields(section, sheet, cols, row) {
   const missing = [];
 
   const core = [
-    { header: COMMON.date, label: 'Date' },
+    { header: COMMON.date, label: dateLabel(section) },
     { header: COMMON.amount, label: 'Amount' },
     { header: COMMON.counterparty, label: counterpartyLabel(section) }
   ];
@@ -88,7 +93,14 @@ function missingFields(section, sheet, cols, row) {
   return missing;
 }
 
-/** attached / awaiting / none required, from what actually arrived. */
+/**
+ * attached / awaiting / none required, from what actually arrived.
+ *
+ * Nothing attached is always awaiting and everything attached is always
+ * attached. In between, a section with an awaitingDocumentField asks it - a
+ * Health claim may be whole with one document - and a blank answer falls back
+ * to what the field's `follows` rule would have filled in.
+ */
 function receiptStateFor(section, sheet, cols, row) {
   if (!section.fileColumns.length) return RECEIPT_STATE.notRequired;
 
@@ -98,9 +110,39 @@ function receiptStateFor(section, sheet, cols, row) {
   });
 
   if (!present.length) return RECEIPT_STATE.awaiting;
-  return present.length === section.fileColumns.length
-    ? RECEIPT_STATE.attached
-    : RECEIPT_STATE.awaiting;
+  if (present.length === section.fileColumns.length) return RECEIPT_STATE.attached;
+
+  const header = section.awaitingDocumentField;
+  if (!header) return RECEIPT_STATE.awaiting;
+
+  let answer = (readCell(sheet, cols, row, header) || '').toString().trim();
+  if (!answer) answer = followedFieldValue(section, sheet, cols, row, header);
+  return answer === 'No' ? RECEIPT_STATE.attached : RECEIPT_STATE.awaiting;
+}
+
+/** What a field's `follows` rule gives it on this row, or '' if it has none. */
+function followedFieldValue(section, sheet, cols, row, header) {
+  const field = section.extraFields.find(f => f.header === header);
+  if (!field || !field.follows) return '';
+  return followedValue(field.follows, readCell(sheet, cols, row, field.follows.header));
+}
+
+/**
+ * Fill a new row's blank fields from their defaultValue or `follows` rule.
+ *
+ * Only at creation: on an edit a blank is something you chose. Runs before
+ * anything reads the row, so the receipt state, the filenames and the registry
+ * all see the filled values. Written through writeCell, like every other value.
+ */
+function applyCreationDefaults(section, sheet, cols, row) {
+  const isBlank = value => value === '' || value === null || value === undefined;
+  section.extraFields.forEach(field => {
+    if (!cols[field.header] || !isBlank(readCell(sheet, cols, row, field.header))) return;
+    const value = field.follows
+      ? followedFieldValue(section, sheet, cols, row, field.header)
+      : (field.defaultValue || '');
+    if (!isBlank(value)) writeCell(sheet, cols, row, field.header, value);
+  });
 }
 
 /* =============================== Registry ================================= */
@@ -137,6 +179,9 @@ function learnCounterparty(section, sheet, cols, row) {
     }
     if (section.registryNifField) {
       details.nif = readCell(sheet, cols, row, section.registryNifField);
+    }
+    if (section.registryCountryField) {
+      details.country = readCell(sheet, cols, row, section.registryCountryField);
     }
 
     return recordSupplier(name, details);
@@ -577,6 +622,7 @@ function initializeEntry(section, sheet, row, source) {
     writeCell(sheet, cols, row, COMMON.timestamp, new Date());
   }
   writeCell(sheet, cols, row, COMMON.source, source || 'manual');
+  applyCreationDefaults(section, sheet, cols, row);
 
   // Initial state. Its date is taken from the entry when supplied, because a
   // state like Invoiced is normally backdated; today is only a fallback.
@@ -638,7 +684,7 @@ function nameAndFileDocuments(section, sheet, cols, row, targetIndex, folderName
     try {
       const file = DriveApp.getFileById(fileId);
       const ext = splitExtension(file.getName()).ext;
-      file.setName(`${buildBaseFilename(sheet, cols, row, fileCol)}${ext}`);
+      file.setName(`${buildBaseFilename(section, sheet, cols, row, fileCol)}${ext}`);
       renames.push({ column: fileCol.header, ok: true, name: file.getName() });
     } catch (error) {
       renames.push({ column: fileCol.header, ok: false, error: error.toString() });

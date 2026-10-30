@@ -382,6 +382,11 @@
     #formCard label .req { color: var(--err); margin-left: .15rem; }
     #formCard input, #formCard select,
     #supplierCard input { width: 100%; padding: .55rem .6rem; }
+    /* One height for every control. With appearance released (see the date rule
+       at the top), an EMPTY date on iOS has no text to give it height and
+       collapses to its padding - so Invoice date sat shorter than the fields
+       around it until a date was picked. A shared floor makes them all match. */
+    #formCard input:not([type="file"]), #formCard select { min-height: 2.75rem; }
     #formCard input[type="file"] { padding: .45rem; background: #fbfcfd; }
     /* Sits directly under its file input, as the alternative to it. */
     #formCard select.pickFile { margin-top: .35rem; }
@@ -1455,12 +1460,42 @@
       return '<div class="note">Nothing ' + escapeHtml(bucket.label.toLowerCase()) + '.</div>';
     }
 
+    /*
+     * What a heading's rows add up to, one figure per currency: euros and
+     * pounds are never added together, because the sum would be no amount of
+     * either. A blank or unreadable amount is left out rather than read as 0.
+     */
+    function bucketTotal(rows) {
+      var sums = {};
+      var order = [];
+      rows.forEach(function (row) {
+        var raw = row.cells['Amount'];
+        if (raw === '' || raw === null || raw === undefined) return;
+        var amount = Number(String(raw).replace(',', '.'));
+        if (isNaN(amount)) return;
+        var currency = String(row.cells['Currency'] || '').trim().toUpperCase() || 'EUR';
+        if (!(currency in sums)) { sums[currency] = 0; order.push(currency); }
+        sums[currency] += amount;
+      });
+      return order.map(function (currency) {
+        try {
+          return new Intl.NumberFormat('en-GB', { style: 'currency', currency: currency })
+            .format(sums[currency]);
+        } catch (e) {
+          // Not an ISO code - something typed by hand. Shown as typed.
+          return sums[currency].toFixed(2) + ' ' + currency;
+        }
+      }).join(' + ');
+    }
+
     function renderSections() {
       el('sections').innerHTML = buckets().map(function (bucket) {
         var open = !!app.expanded[bucket.key];
         // The archive's count is unknown until it has been fetched, and an
         // unknown count must not read as zero.
         var count = bucket.lazy && !app.archiveLoaded ? '' : String(bucket.rows.length);
+        var total = count && bucket.rows.length ? bucketTotal(bucket.rows) : '';
+        if (total) count += ' · ' + total;
 
         return '<section class="acc' + (open ? ' open' : '') +
           (bucket.tone ? ' ' + bucket.tone : '') +
@@ -1679,16 +1714,22 @@
         ? '' : String(amount) + (currency ? ' ' + currency : '');
 
       // The muted line: when it happened, and which patient / reason / tipo.
-      var sub = [dayLabelOrRaw(row.cells['Date'])];
-      if (app.meta.category) {
+      // A section that reads in column order (Health, following the Allianz
+      // app) lists those in the body instead, in their place in the order.
+      var sub = app.meta.ordered ? [] : [dayLabelOrRaw(row.cells['Date'])];
+      if (app.meta.category && !app.meta.ordered) {
         var category = row.cells[app.meta.category.header];
         if (category) sub.push(category);
       }
       if (row.archived && row.archivedAt) sub.push('archived ' + dayLabel(row.archivedAt));
 
-      // Everything the headline did not already say.
-      var skip = { 'Counterparty': 1, 'Amount': 1, 'Currency': 1, 'Date': 1, 'Notes': 1 };
-      if (app.meta.category) skip[app.meta.category.header] = 1;
+      // Everything the headline did not already say - or, in column order,
+      // everything but the name and the notes, so the list can be read straight
+      // down while keying a claim in.
+      var skip = app.meta.ordered
+        ? { 'Counterparty': 1, 'Notes': 1 }
+        : { 'Counterparty': 1, 'Amount': 1, 'Currency': 1, 'Date': 1, 'Notes': 1 };
+      if (app.meta.category && !app.meta.ordered) skip[app.meta.category.header] = 1;
 
       var pairs = app.meta.columns.filter(function (column) {
         if (skip[column.header]) return false;
@@ -1742,7 +1783,8 @@
       return '<div class="entry" data-row="' + row.row + '">' +
         '<div class="top"><span class="name">' + escapeHtml(counterparty) + '</span>' +
         (money ? '<span class="amount">' + escapeHtml(money) + '</span>' : '') + '</div>' +
-        '<div class="sub">' + escapeHtml(sub.filter(Boolean).join(' · ')) + '</div>' +
+        (sub.filter(Boolean).length
+          ? '<div class="sub">' + escapeHtml(sub.filter(Boolean).join(' · ')) + '</div>' : '') +
         (pairs.length ? '<dl>' + pairs.join('') + '</dl>' : '') +
         actions +
         '</div>';
@@ -2083,6 +2125,11 @@
       el('formFields').innerHTML = fields.map(function (field) {
         return fieldHtml(field, row);
       }).join('');
+      // Which fields have been changed by hand, so a follow rule stops
+      // overwriting them. Editing starts with every field "touched": a blank on
+      // an existing row is a choice, and the server applies no defaults there.
+      app.form.touched = {};
+      if (!row) applyFollows();
       el('formOverlay').className = 'open';
 
       // The values already in use, so an expense reason is a pick rather than a
@@ -2214,11 +2261,12 @@
         }
 
       } else if (field.type === 'choice') {
+        var chosen = row ? String(existing) : (field.defaultValue || '');
         input = '<select id="' + id + '" data-header="' + escapeHtml(field.header) + '">' +
           '<option value=""></option>' +
           (field.options || []).map(function (option) {
             return '<option value="' + escapeHtml(option) + '"' +
-              (String(existing) === option ? ' selected' : '') + '>' +
+              (chosen === option ? ' selected' : '') + '>' +
               escapeHtml(option) + '</option>';
           }).join('') + '</select>';
 
@@ -2328,6 +2376,7 @@
           // Setting .value in script fires neither input nor change, so a
           // required field the registry just filled would otherwise stay marked
           // as missing - the note accusing you of a blank the page filled in.
+          if (filled.length) applyFollows();
           if (filled.length || corrected) refreshMissingNote();
         } else {
           hint.className = 'hint suggest';
@@ -2351,6 +2400,35 @@
 
     function formFields() {
       return (app.form && app.form.row) ? app.meta.edit : app.meta.form;
+    }
+
+    /*
+     * Fields with a `follows` rule take their value from another field until
+     * you change them yourself: Invoice date copies Treatment date, and
+     * Awaiting Document answers from Treatment Type. New entries only - the
+     * server applies the same rule to anything left blank when it saves.
+     */
+    function applyFollows() {
+      if (!app.form || app.form.row) return;
+      formFields().forEach(function (field) {
+        if (!field.follows || app.form.touched[field.header]) return;
+        var input = fieldInput(field.header);
+        var source = fieldInput(field.follows.header);
+        if (!input || !source) return;
+        var value = source.value;
+        if (field.follows.values) {
+          value = Object.prototype.hasOwnProperty.call(field.follows.values, value)
+            ? field.follows.values[value] : (field.follows.otherwise || '');
+        }
+        input.value = value;
+      });
+    }
+
+    /** Note a hand edit, then let anything following the changed field catch up. */
+    function formFieldChanged(target) {
+      if (!app.form || !target.dataset || !target.dataset.header) return;
+      app.form.touched[target.dataset.header] = true;
+      applyFollows();
     }
 
     /**
@@ -2648,6 +2726,7 @@
       if (event.target.dataset && event.target.dataset.role === 'counterparty') {
         counterpartySuggest(event.target.value);
       }
+      if (el('formFields').contains(event.target)) formFieldChanged(event.target);
       // Every keystroke, not just the counterparty box: this is what clears the
       // warning the moment the last required field is filled in.
       refreshMissingNote();
@@ -2710,7 +2789,10 @@
       }
       // Dropdowns and the file inputs fire change rather than input, so a
       // required choice picked from a list has to clear the warning too.
-      if (app.form && el('formFields').contains(target)) return refreshMissingNote();
+      if (app.form && el('formFields').contains(target)) {
+        formFieldChanged(target);
+        return refreshMissingNote();
+      }
       if (target.id === 'viewSelect') return select(target.value);
       if (target.id === 'categoryFilter') {
         app.filters.category = target.value;

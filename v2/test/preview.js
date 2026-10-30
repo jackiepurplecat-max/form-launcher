@@ -92,7 +92,7 @@ const seed = [];
 
 seed.push(G.createEntry('health', {
   'Date': '2026-07-28', 'Counterparty': 'Clínica Dentária de São João', 'Amount': 240.5,
-  'Currency': 'EUR', 'Patient': 'Auryn', 'Type': 'Dentist', 'Invoice Date': '2026-07-28',
+  'Currency': 'EUR', 'Patient': 'Auryn', 'Treatment Type': 'Dental Expenses', 'Invoice Date': '2026-07-28',
   'Notes': 'Two fillings and the follow-up X-ray, claimed under the annual dental limit',
   'Receipt Medium': 'Paper',
   'Justification URL': 'https://drive.google.com/file/d/' + 'j'.repeat(28) + '/view',
@@ -103,14 +103,14 @@ G.setStatus('health', seed[0].row, 'Claimed', '2026-08-01');
 // One document of two. The gap this preview exists to show.
 seed.push(G.createEntry('health', {
   'Date': '2026-08-03', 'Counterparty': 'Farmácia Central', 'Amount': 18.4,
-  'Currency': 'EUR', 'Patient': 'Kit', 'Type': 'Prescription', 'Invoice Date': '2026-08-03',
+  'Currency': 'EUR', 'Patient': 'Kit', 'Treatment Type': 'Medication and Medical Aids', 'Invoice Date': '2026-08-03',
   'Receipt Medium': 'Email',
   'Justification URL': 'https://drive.google.com/file/d/' + 'p'.repeat(28) + '/view'
 }, 'siri'));
 
 seed.push(G.createEntry('health', {
   'Date': '2026-08-11', 'Counterparty': 'Dr. Marta Oliveira', 'Amount': 75,
-  'Currency': 'EUR', 'Patient': 'Jackie', 'Type': 'Doctor', 'Invoice Date': '2026-08-10',
+  'Currency': 'EUR', 'Patient': 'Jackie', 'Treatment Type': 'Doctor Visit', 'Invoice Date': '2026-08-10',
   'Notes': 'Annual check', 'Receipt Medium': 'Paper'
 }, 'form'));
 G.setStatus('health', seed[2].row, 'Claimed', '2026-08-12');
@@ -119,7 +119,7 @@ G.setStatus('health', seed[2].row, 'Settled', '2026-08-14');
 // Archived, so the fourth accordion is not empty.
 const gone = G.createEntry('health', {
   'Date': '2026-05-02', 'Counterparty': 'Optica Lisboa', 'Amount': 129,
-  'Currency': 'EUR', 'Patient': 'Phoenix', 'Type': 'Optician', 'Invoice Date': '2026-05-02',
+  'Currency': 'EUR', 'Patient': 'Phoenix', 'Treatment Type': 'Optical', 'Invoice Date': '2026-05-02',
   'Receipt Medium': 'Paper'
 }, 'form');
 G.archiveEntry('health', gone.row, 'deleted');

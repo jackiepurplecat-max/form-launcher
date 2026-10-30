@@ -203,3 +203,5 @@ The five default labels, recorded as a `Status:` line in each ticket. See `docs/
 Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root, created as terms and decisions
 are settled. Decisions made before 24 Oct 2026 live in `REBUILD-PLAN.md`, which stays as the
 historical record — new decisions go in `docs/adr/`. See `docs/agents/domain.md`.
+Exception: a decision that only governs one piece of code may live as a comment beside that
+code instead (e.g. "Health mirrors Allianz" above `SECTIONS` in `v2/Config.js`).

@@ -210,12 +210,12 @@ const just = mocks.DriveApp._addFile('presc.pdf');
 const paid = mocks.DriveApp._addFile('receipt.jpg');
 const health = G.createEntry('health', {
   'Date': '2026-01-05', 'Counterparty': 'White Clinic', 'Patient': 'Phoenix',
-  'Amount': 70, 'Currency': 'EUR', 'Invoice Date': '2026-01-06', 'Type': 'Dentist',
+  'Amount': 70, 'Currency': 'EUR', 'Invoice Date': '2026-01-06', 'Treatment Type': 'Dental Expenses',
   'Justification URL': just.id, 'Receipt URL': paid.id
 }, 'form');
 check('health ok', health.ok === true, health);
-check('justification named', just.getName() === '260105_WhiteClinic_70-00_justification.pdf', just.getName());
-check('receipt named', paid.getName() === '260105_WhiteClinic_70-00_receipt.jpg', paid.getName());
+check('justification named', just.getName() === 'P_260105_WhiteClinic_70-00_justification.pdf', just.getName());
+check('receipt named', paid.getName() === 'P_260105_WhiteClinic_70-00_receipt.jpg', paid.getName());
 G.setStatus('health', health.row, 'Claimed', '2026-01-30');
 check('both files get the suffix', just.getName().includes('_Claimed_30-01-2026') && paid.getName().includes('_Claimed_30-01-2026'), [just.getName(), paid.getName()]);
 check('both moved', just.parent.getName() === 'Claimed' && paid.parent.getName() === 'Claimed');
@@ -226,7 +226,7 @@ G.createEntry('health', {
   'Date': '2026-01-07', 'Counterparty': 'Farmácia Sá', 'Patient': 'Phoenix', 'Amount': 12.5,
   'Currency': 'EUR', 'Invoice Date': '2026-01-07', 'Receipt URL': acc.id
 }, 'form');
-check('accents flattened in filename', acc.getName() === '260107_FarmaciaSa_12-50_justification.pdf' || acc.getName() === '260107_FarmaciaSa_12-50_receipt.pdf', acc.getName());
+check('accents flattened in filename', acc.getName() === 'P_260107_FarmaciaSa_12-50_receipt.pdf', acc.getName());
 check('"wite clinic" holds below threshold or autofills high', (() => { const m = G.findSupplier('wite clinic'); return m && m.confidence >= 0.85; })(), G.findSupplier('wite clinic'));
 G.addSupplierAlias('White Clinic', 'wite clinic');
 check('alias now resolves 0.95', G.findSupplier('wite clinic').reason === 'alias');
@@ -284,12 +284,12 @@ section('"more info needed" mail — separate address, only when incomplete');
 const mailBefore = mocks.MailApp.sent.length;
 
 const partial = G.createEntry('health', {
-  'Date': '2026-06-01', 'Counterparty': 'White Clinic', 'Patient': 'Phoenix', 'Amount': 40, 'Currency': 'EUR'
+  'Date': '2026-06-01', 'Counterparty': 'White Clinic', 'Amount': 40, 'Currency': 'EUR'
 }, 'siri');
 check('incomplete entry is ok:false', partial.ok === false, partial.error);
 check('more-info mail sent', partial.completionRequest && partial.completionRequest.ok === true, partial.completionRequest);
 check('sent to the completion address', mocks.MailApp.sent[mailBefore].to === 'me@example.test', mocks.MailApp.sent[mailBefore].to);
-check('lists the missing field', /Invoice date/.test(mocks.MailApp.sent[mailBefore].body), mocks.MailApp.sent[mailBefore].body);
+check('lists the missing field', /Patient/.test(mocks.MailApp.sent[mailBefore].body), mocks.MailApp.sent[mailBefore].body);
 check('lists the awaited documents', /Proof of payment/.test(mocks.MailApp.sent[mailBefore].body));
 check('includes a row deep-link', /spreadsheets\/d\/TESTSHEETID.*range=A/.test(mocks.MailApp.sent[mailBefore].body));
 check('keeps what was captured', /White Clinic/.test(mocks.MailApp.sent[mailBefore].body));
@@ -1209,7 +1209,9 @@ const formPartial = G.uiCreateEntry('health', {
 check('the row exists', formPartial.row >= 2, formPartial.row);
 check('but ok is false', formPartial.ok === false, formPartial.ok);
 check('and it names what is missing',
-  /Patient/.test(formPartial.error || '') && /Invoice date/.test(formPartial.error || ''), formPartial.error);
+  /Patient/.test(formPartial.error || ''), formPartial.error);
+check('but not the invoice date, which copied the treatment date',
+  !/Invoice date/.test(formPartial.error || ''), formPartial.error);
 check('receipt recorded as awaited', formPartial.entry.receiptState === 'awaiting', formPartial.entry.receiptState);
 
 /* ------------------------------- registry -------------------------------- */
@@ -1751,12 +1753,12 @@ check('restoring it brings back the corrected name, not the old one',
 section('renaming onto an existing supplier MERGES rather than duplicating');
 const mergeSrc = G.uiCreateEntry('health', {
   values: { 'Date': '2026-03-06', 'Counterparty': 'Whte Clinic', 'Patient': 'Jane',
-            'Invoice Date': '2026-03-06', 'Amount': 60, 'Type': 'Dentist' }
+            'Invoice Date': '2026-03-06', 'Amount': 60, 'Treatment Type': 'Dental Expenses' }
 });
 const whiteBefore = supplierNamed('White Clinic');
 const srcBefore = supplierNamed('Whte Clinic');
 const merged = G.uiUpdateSupplier(supplierRow('Whte Clinic'), {
-  name: 'white clinic', type: 'Dentist', nif: '', aliases: 'whte', was: 'Whte Clinic'
+  name: 'white clinic', type: 'Dental Expenses', nif: '', aliases: 'whte', was: 'Whte Clinic'
 });
 check('reported as a merge', merged.ok === true && merged.merged &&
   merged.merged.into === 'White Clinic', merged);
@@ -1774,7 +1776,7 @@ check('aliases were unioned, keeping the target\'s',
   supplierNamed('White Clinic').aliases.indexOf('whte') !== -1,
   supplierNamed('White Clinic').aliases);
 check('the source\'s Type filled the target\'s empty one',
-  supplierNamed('White Clinic').type === 'Dentist', supplierNamed('White Clinic').type);
+  supplierNamed('White Clinic').type === 'Dental Expenses', supplierNamed('White Clinic').type);
 
 section('a merge target may be matched by one of its ALIASES');
 G.uiCreateEntry('health', {
@@ -1792,10 +1794,10 @@ check('rather than becoming a name that collides with an alias',
 section('a merge applies the clear-on-conflict rule to Type');
 G.uiCreateEntry('health', {
   values: { 'Date': '2026-03-08', 'Counterparty': 'Conflicto', 'Patient': 'Ada',
-            'Invoice Date': '2026-03-08', 'Amount': 30, 'Type': 'Optician' }
+            'Invoice Date': '2026-03-08', 'Amount': 30, 'Treatment Type': 'Optical' }
 });
 const conflicted = G.uiUpdateSupplier(supplierRow('Conflicto'), {
-  name: 'White Clinic', type: 'Optician', nif: '', aliases: '', was: 'Conflicto'
+  name: 'White Clinic', type: 'Optical', nif: '', aliases: '', was: 'Conflicto'
 });
 check('the disagreement is reported', conflicted.typeCleared === true, conflicted);
 check('and the stored default is cleared rather than guessed',
@@ -3081,6 +3083,153 @@ check('a deferred line is still To Do, not lost',
   cappedDecl.lines.length + cappedDecl.skipped.length ===
     declRules.lines.length + declRules.skipped.length,
   [cappedDecl.lines.length, cappedDecl.skipped.length]);
+
+/* ------------------- Health mirrors the Allianz app ---------------------- */
+const healthSheet = () => mocks._ss.getSheetByName('Health');
+const healthCell = (row, header) => G.readCell(healthSheet(), G.resolveColumns(healthSheet()), row, header);
+
+section('Health — a new claim fills what Allianz will ask for');
+const visitReceipt = mocks.DriveApp._addFile('visit.pdf');
+const visit = G.createEntry('health', {
+  'Date': '2026-10-02', 'Counterparty': 'Clinica Nova', 'Patient': 'Kit', 'Amount': 55,
+  'Currency': 'EUR', 'Treatment Type': 'Doctor Visit', 'Receipt URL': visitReceipt.id
+}, 'form');
+check('country of treatment starts as Portugal', healthCell(visit.row, 'Country of Treatment') === 'Portugal',
+  healthCell(visit.row, 'Country of Treatment'));
+check('invoice date copies the treatment date', healthCell(visit.row, 'Invoice Date') === '2026-10-02',
+  healthCell(visit.row, 'Invoice Date'));
+check('a doctor visit is not awaiting another document', healthCell(visit.row, 'Awaiting Document') === 'No',
+  healthCell(visit.row, 'Awaiting Document'));
+check('so its one receipt makes it complete', visit.receiptState === 'attached', visit.receiptState);
+check('and no reminder mail goes out', visit.completionRequest === null, visit.completionRequest);
+check('the filename starts with the patient\'s initial',
+  visitReceipt.getName() === 'K_261002_ClinicaNova_55-00_receipt.pdf', visitReceipt.getName());
+check('a supplied invoice date is kept, not overwritten', (() => {
+  const own = G.createEntry('health', {
+    'Date': '2026-10-03', 'Counterparty': 'Clinica Nova', 'Patient': 'Ada', 'Amount': 5,
+    'Invoice Date': '2026-10-09', 'Treatment Type': 'Doctor Visit'
+  }, 'form');
+  return healthCell(own.row, 'Invoice Date') === '2026-10-09';
+})());
+
+section('Health — which claims wait for a second document');
+const medsReceipt = mocks.DriveApp._addFile('meds.pdf');
+const meds = G.createEntry('health', {
+  'Date': '2026-10-04', 'Counterparty': 'Farmacia Central', 'Patient': 'Jane', 'Amount': 12,
+  'Treatment Type': 'Medication and Medical Aids', 'Receipt URL': medsReceipt.id
+}, 'form');
+check('medication waits for its prescription', healthCell(meds.row, 'Awaiting Document') === 'Yes');
+check('so one receipt leaves it awaiting', meds.receiptState === 'awaiting', meds.receiptState);
+check('optical waits too', G.followedValue(G.getSection('health').extraFields
+  .find(f => f.header === 'Awaiting Document').follows, 'Optical') === 'Yes');
+check('no treatment type at all waits, rather than guessing it is done', (() => {
+  const bare = G.createEntry('health', {
+    'Date': '2026-10-04', 'Counterparty': 'Farmacia Central', 'Patient': 'Jane', 'Amount': 3,
+    'Receipt URL': mocks.DriveApp._addFile('bare.pdf').id
+  }, 'form');
+  return bare.receiptState === 'awaiting';
+})());
+const dentalBill = mocks.DriveApp._addFile('dental-invoice.pdf');
+const dental = G.createEntry('health', {
+  'Date': '2026-10-05', 'Counterparty': 'White Clinic', 'Patient': 'Phoenix', 'Amount': 80,
+  'Treatment Type': 'Dental Expenses', 'Justification URL': dentalBill.id
+}, 'form');
+check('a dentist\'s invoice alone waits for the receipt', dental.receiptState === 'awaiting');
+const dentalEdit = G.uiUpdateEntry('health', dental.row, { values: { 'Awaiting Document': 'No' } });
+check('answering "no" by hand completes it (a combined invoice-receipt)',
+  healthCell(dental.row, 'Receipt State') === 'attached', [dentalEdit.ok, healthCell(dental.row, 'Receipt State')]);
+G.writeCell(healthSheet(), G.resolveColumns(healthSheet()), meds.row, 'Justification URL',
+  mocks.DriveApp._addFile('presc2.pdf').id);
+check('both documents complete a claim whatever the answer says',
+  G.receiptStateFor(G.getSection('health'), healthSheet(), G.resolveColumns(healthSheet()), meds.row) === 'attached');
+check('a blank answer falls back to the treatment type', (() => {
+  const cols = G.resolveColumns(healthSheet());
+  G.writeCell(healthSheet(), cols, visit.row, 'Awaiting Document', '');
+  G.writeCell(healthSheet(), cols, visit.row, 'Justification URL', '');
+  return G.receiptStateFor(G.getSection('health'), healthSheet(), cols, visit.row) === 'attached';
+})());
+check('sections without the field still need every slot', !G.getSection('iva').awaitingDocumentField);
+
+section('Health — the registry remembers the country');
+G.recordSupplier('Clinica Madrid', { type: 'Doctor Visit', country: 'Spain' });
+check('learned', G.findSupplier('Clinica Madrid').country === 'Spain', G.findSupplier('Clinica Madrid'));
+check('and prefilled on lookup',
+  G.lookupCounterparty('health', 'clinica madrid').prefill['Country of Treatment'] === 'Spain',
+  G.lookupCounterparty('health', 'clinica madrid').prefill);
+check('Work, which has no country, is not offered one',
+  !('Country of Treatment' in G.lookupCounterparty('work', 'clinica madrid').prefill));
+G.recordSupplier('Clinica Madrid', { country: 'Portugal' });
+check('the latest country wins, since the first may only have been the default',
+  G.findSupplier('Clinica Madrid').country === 'Portugal');
+
+section('Health — the form follows the Allianz app');
+const healthForm = G.uiFormFields(G.getSection('health'));
+check('fields are asked in Allianz\'s order', JSON.stringify(healthForm.slice(0, 8).map(f => f.header)) ===
+  JSON.stringify(['Patient', 'Country of Treatment', 'Counterparty', 'Currency', 'Invoice Date', 'Date',
+    'Treatment Type', 'Amount']), healthForm.map(f => f.header));
+check('the date is called the treatment date', healthForm.find(f => f.header === 'Date').label === 'Treatment date');
+check('Notes comes last', healthForm[healthForm.length - 1].header === 'Notes', healthForm.map(f => f.header));
+check('the follow rules reach the page', !!healthForm.find(f => f.header === 'Invoice Date').follows &&
+  healthForm.find(f => f.header === 'Country of Treatment').defaultValue === 'Portugal');
+check('the card is told to read in that order', G.uiSectionMeta('health').ordered === true &&
+  G.uiSectionMeta('health').columns[0].header === 'Patient', G.uiSectionMeta('health').columns.map(c => c.header));
+check('Work keeps its own order and its plain "Date"', G.uiFormFields(G.getSection('work'))[0].label === 'Date' &&
+  G.uiSectionMeta('work').ordered === false);
+check('Treatment Type uses Allianz\'s wording', healthForm.find(f => f.header === 'Treatment Type').options
+  .indexOf('Dental Expenses') !== -1);
+
+section('upgradeSection() — existing Health rows, files and registry');
+// Put one row back the way the old config left it: the column called Type with
+// an old value, no country, and an old-style filename.
+(() => {
+  const sh = healthSheet();
+  const cols = G.resolveColumns(sh);
+  sh.getRange(1, cols['Treatment Type']).setValue('Type');
+  G.clearColumnCache();
+  const c2 = G.resolveColumns(sh);
+  G.writeCell(sh, c2, dental.row, 'Type', 'Dentist');
+  G.writeCell(sh, c2, dental.row, 'Country of Treatment', '');
+  dentalBill.setName('261005_WhiteClinic_80-00_justification.pdf');
+})();
+G.recordSupplier('Old Optician', { type: 'Optician' });
+const sheetBefore = dump('Health');
+const upPreview = G.upgradeSection('health', false);
+check('the upPreview changes nothing', dump('Health') === sheetBefore);
+check('and leaves the filename alone', dentalBill.getName() === '261005_WhiteClinic_80-00_justification.pdf');
+check('it reports the column rename', upPreview.headers.some(h => /Type -> Treatment Type/.test(h)), upPreview.headers);
+check('the value to convert', upPreview.valuesConverted >= 1, upPreview.valuesConverted);
+check('the country to fill', upPreview.defaultsFilled >= 1, upPreview.defaultsFilled);
+check('the file, old name to new', upPreview.files.some(f =>
+  f.from === '261005_WhiteClinic_80-00_justification.pdf' &&
+  f.to === 'P_261005_WhiteClinic_80-00_justification.pdf'), upPreview.files);
+check('and the registry type', upPreview.registry.some(r => /Old Optician: Optician -> Optical/.test(r)), upPreview.registry);
+check('but never a Work type', !upPreview.registry.some(r => /Taxi/.test(r)), upPreview.registry);
+
+const applied = G.upgradeSection('health', true);
+check('applying succeeds', applied.ok === true, applied);
+check('the column is renamed in place, not duplicated',
+  !G.resolveColumns(healthSheet())['Type'] && !!G.resolveColumns(healthSheet())['Treatment Type']);
+check('the old value is converted', healthCell(dental.row, 'Treatment Type') === 'Dental Expenses',
+  healthCell(dental.row, 'Treatment Type'));
+check('the country is filled', healthCell(dental.row, 'Country of Treatment') === 'Portugal');
+check('the file is renamed', dentalBill.getName() === 'P_261005_WhiteClinic_80-00_justification.pdf', dentalBill.getName());
+check('the registry type is converted', supplierNamed('Old Optician').type === 'Optical', supplierNamed('Old Optician'));
+const again = G.upgradeSection('health', false);
+check('a second run finds nothing left to do', again.valuesConverted === 0 && again.defaultsFilled === 0 &&
+  again.files.length === 0 && again.registry.length === 0 && again.headers.length === 0, again);
+
+section('bootstrap() renames a former header rather than adding a second column');
+(() => {
+  const sh = healthSheet();
+  sh.getRange(1, G.resolveColumns(sh)['Treatment Type']).setValue('Type');
+  G.clearColumnCache();
+})();
+const widthBefore = healthSheet().getLastColumn();
+G.bootstrap();
+check('renamed in place', !!G.resolveColumns(healthSheet())['Treatment Type'] &&
+  !G.resolveColumns(healthSheet())['Type']);
+check('no column added', healthSheet().getLastColumn() === widthBefore,
+  [widthBefore, healthSheet().getLastColumn()]);
 
 console.log(`\n================  ${pass} passed, ${fail} failed  ================`);
 process.exit(fail ? 1 : 0);

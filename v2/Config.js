@@ -93,15 +93,23 @@ const RECEIPT_MEDIUM_FIELD = {
 };
 
 /**
+ * Countries offered for Health's Country of Treatment. Portugal is the default
+ * and nearly always right; the rest cover treatment abroad, Other the remainder.
+ */
+const COUNTRIES = [
+  'Portugal', 'Spain', 'France', 'United Kingdom', 'Ireland', 'Netherlands',
+  'Germany', 'Italy', 'Switzerland', 'United States', 'Other'
+];
+
+/**
  * WHY extraFields EXIST
  *
- * The point of these forms is that a claim can be submitted without reopening
- * the receipt. Fields like Número and Emitente NIF are retyped into Finanças,
- * and Health needs both the treatment date and the invoice date. Capturing
- * them once at entry is the entire value of the system.
- *
- * So completeness beats minimalism here. Do not trim these back to a tidy
- * shared core - a dropped field becomes a receipt you have to go and find.
+ * The point of these forms is that a claim can be keyed in without reopening
+ * the receipt. So a section collects exactly what its claim form asks for:
+ * IVA mirrors what Finanças asks, Health mirrors what the Allianz MyHealth app
+ * asks, in Allianz's own wording and order (fieldOrder). Not more - every field
+ * is retyped by hand - and not less, or it becomes a receipt you have to go and
+ * find. Decided 30 Oct 2026; it replaced an older "collect everything" rule.
  */
 
 /**
@@ -133,10 +141,25 @@ const RECEIPT_MEDIUM_FIELD = {
  *   Section-specific columns beyond the shared core. Declared with type and
  *   label so the form, the table and the edit dialog can all render them
  *   without special-casing. See the note above on why these matter.
+ *     defaultValue  what a new entry starts with when nothing is supplied
+ *     follows       { header } copies that field's value into a blank one;
+ *                   { header, values, otherwise } looks it up instead. Applied
+ *                   when an entry is created, and live in the form until the
+ *                   field is edited by hand.
+ *     formerly      { header, values } - the column's old name and old values,
+ *                   converted once by upgradeSection().
  *
  * fileColumns
  *   Each uploaded document, with the filename suffix it contributes.
- *   Health has two because a claim needs proof of need AND proof of payment.
+ *
+ * Optional, where a section needs them:
+ *   dateLabel            what COMMON.date is called in the UI (default 'Date')
+ *   fieldOrder           headers in the order the form and the card show them
+ *   filenameInitialFrom  header whose first letter starts every filename
+ *   awaitingDocumentField  Yes/No column deciding completeness when only some
+ *                        fileColumns are filled. Without one, all must be.
+ *   registryCountryField header the registry remembers per counterparty, as it
+ *                        does registryTypeField
  */
 const SECTIONS = {
   work: {
@@ -333,30 +356,78 @@ const SECTIONS = {
       header: 'Patient', label: 'Patient', managed: true,
       optionsProperty: 'HEALTH_PATIENTS'
     },
-    // White Clinic is usually Dentist, so remember it
-    registryTypeField: 'Type',
+    // White Clinic is always Dental Expenses, and always in Portugal
+    registryTypeField: 'Treatment Type',
+    registryCountryField: 'Country of Treatment',
+    // COMMON.date holds the treatment date - the event itself, consistent with
+    // the other sections - so here it is labelled as such.
+    dateLabel: 'Treatment date',
+    // The order the Allianz app asks for things, so the form and the card can be
+    // read top to bottom while keying a claim in. Anything not listed follows.
+    fieldOrder: [
+      'Patient', 'Country of Treatment', COMMON.counterparty, COMMON.currency,
+      'Invoice Date', COMMON.date, 'Treatment Type', COMMON.amount,
+      'Justification URL', COMMON.receiptUrl, 'Awaiting Document',
+      RECEIPT_MEDIUM_FIELD.header, COMMON.notes
+    ],
+    // Filenames start with the patient's initial, so the Inbox groups by person
+    // when picking a file in the Allianz app. The family's initials are distinct.
+    filenameInitialFrom: 'Patient',
     states: [
       { name: 'To Do' },
       { name: 'Claimed', dateColumn: 'Claimed Date', fileSuffix: 'Claimed', folder: 'Claimed' },
       { name: 'Settled', dateColumn: 'Settled Date', fileSuffix: 'Settled', folder: 'Settled' }
     ],
-    // A health claim needs two documents: proof that the expense was necessary,
-    // and proof that it was paid. v1 called the first one "Details", which hid
-    // what it was for.
+    // Up to two documents: proof of what the treatment was, and proof that it
+    // was paid. Not every claim has both - a doctor's receipt usually says what
+    // the visit was, and a combined invoice-receipt goes in Proof of payment -
+    // so which documents a claim needs is answered by Awaiting Document below,
+    // not by counting filled slots.
     fileColumns: [
       { header: 'Justification URL', label: 'Prescription / Invoice', suffix: 'justification' },
       { header: COMMON.receiptUrl, label: 'Proof of payment', suffix: 'receipt' }
     ],
-    // COMMON.date holds the treatment date - the event itself, consistent with
-    // the other sections. The invoice date is also required by the claim.
+    // With both slots filled nothing more can come; with none, something must.
+    // In between, this column decides.
+    awaitingDocumentField: 'Awaiting Document',
     extraFields: [
-      { header: 'Invoice Date', label: 'Invoice date', type: 'date', required: true },
-      // Deliberately NOT the insurer's list, which is huge and multi-level.
-      // This is a short one for your own tracking; the insurer's value is
-      // chosen at submission time, not here.
       {
-        header: 'Type', label: 'Type', type: 'choice', required: false,
-        options: ['Doctor', 'Dentist', 'Optician', 'Prescription', 'Exam/Test']
+        header: 'Country of Treatment', label: 'Country of treatment', type: 'choice',
+        required: false, options: COUNTRIES, defaultValue: 'Portugal'
+      },
+      // Usually the treatment date, so it starts as a copy of it
+      {
+        header: 'Invoice Date', label: 'Invoice date', type: 'date', required: true,
+        follows: { header: COMMON.date }
+      },
+      // Allianz's first-level list, word for word. Its second level is chosen
+      // in the app at claim time and not recorded here.
+      {
+        header: 'Treatment Type', label: 'Treatment type', type: 'choice', required: false,
+        options: [
+          'Doctor Visit', 'Medication and Medical Aids', 'Dental Expenses',
+          'Optical', 'Tests/Scans', 'Alternative treatment'
+        ],
+        // Was "Type", with a short list of our own. upgradeSection() renames the
+        // column and converts the old values, here and in the registry.
+        formerly: {
+          header: 'Type',
+          values: {
+            'Doctor': 'Doctor Visit', 'Dentist': 'Dental Expenses', 'Optician': 'Optical',
+            'Prescription': 'Medication and Medical Aids', 'Exam/Test': 'Tests/Scans'
+          }
+        }
+      },
+      // A visit's receipt is usually the whole claim; a prescription or an exam
+      // needs the receipt as well, and a dentist may send them separately.
+      {
+        header: 'Awaiting Document', label: 'Waiting for another document?', type: 'choice',
+        required: false, options: ['Yes', 'No'],
+        follows: {
+          header: 'Treatment Type',
+          values: { 'Doctor Visit': 'No', 'Alternative treatment': 'No' },
+          otherwise: 'Yes'
+        }
       },
       RECEIPT_MEDIUM_FIELD
     ],
@@ -596,4 +667,39 @@ function sectionReceiptMedium(section) {
 /** Display label for the Counterparty column in a given section. */
 function counterpartyLabel(section) {
   return section.counterpartyLabel || 'Counterparty';
+}
+
+/** What the shared Date column is called in this section's UI. */
+function dateLabel(section) {
+  return section.dateLabel || 'Date';
+}
+
+/**
+ * Sort a list of { header } objects into the section's fieldOrder. Headers not
+ * in fieldOrder keep their relative order and follow the listed ones. A
+ * section without fieldOrder gets its list back unchanged.
+ */
+function orderFields(section, list) {
+  const order = section.fieldOrder;
+  if (!order) return list;
+  const rank = item => {
+    const at = order.indexOf(item.header);
+    return at === -1 ? order.length : at;
+  };
+  return list
+    .map((item, index) => ({ item: item, index: index }))
+    .sort((a, b) => rank(a.item) - rank(b.item) || a.index - b.index)
+    .map(pair => pair.item);
+}
+
+/**
+ * The value a `follows` rule gives a field, from the value of the field it
+ * follows. '' when there is nothing to follow.
+ */
+function followedValue(follows, sourceValue) {
+  if (!follows.values) return sourceValue;
+  const key = (sourceValue === null || sourceValue === undefined) ? '' : String(sourceValue);
+  return Object.prototype.hasOwnProperty.call(follows.values, key)
+    ? follows.values[key]
+    : (follows.otherwise || '');
 }
