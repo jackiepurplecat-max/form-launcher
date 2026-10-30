@@ -3,7 +3,13 @@
  attachment-rules work is now committed and pushed
 
 **30 Oct: Health now mirrors the Allianz MyHealth app. Built and tested locally
-(830 passing), NOT yet committed, pushed or deployed.** Agreed in a grilling
+(830 passing), committed (77b0e87), pushed, upgrade applied, deployed at
+version 32.** Still to do: the phone check below.
+
+**Trap hit:** `applyHealthUpgrade()` changes the SHARED sheet, so the pinned
+`/exec` (old code) broke with *column "Type" not found* until the deploy. Any
+future upgrade that renames a column: deploy first, or upgrade and deploy
+back to back. Agreed in a grilling
 session; the terms are in `GLOSSARY.md`, the rule in the comment above
 `SECTIONS` in `v2/Config.js`.
 
