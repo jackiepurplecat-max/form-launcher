@@ -574,6 +574,9 @@ function checkScriptProperties() {
  *   - Receipt State is recomputed, since the rule for it may have changed
  *   - every document is renamed from the row's current values
  * and in the registry, the Type values a `formerly` rule retires.
+ *
+ * Applying breaks the pinned /exec until the next deploy: follow the upgrade
+ * order in CLAUDE.md and run `npm run v2:deploy` straight after.
  */
 function upgradeSection(sectionKey, apply) {
   const section = getSection(sectionKey);

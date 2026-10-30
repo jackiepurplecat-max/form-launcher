@@ -29,6 +29,7 @@
     "v2:whoami": "cd v2 && clasp --user v2 show-authorized-user",
     "v2:push:force": "cd v2 && clasp --user v2 push --force",
     "v2:verify": "node v2/test/verify-push.js",
+    "v2:deploy": "node v2/test/deploy.js",
     "v2:iva:roundtrip": "node v2/test/iva-roundtrip.js",
     "v2:preview": "node v2/test/preview.js",
     "v2:siri:manifest": "node v2-siri/build-manifest.js",

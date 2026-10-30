@@ -372,7 +372,9 @@ bound to the new spreadsheet, and `v2/.clasp.json` points at it — gitignored, 
 the script ID stays local. Push with `npm run v2:push`, which is isolated from
 the root project in both directions by the two `.claspignore` files. The
 Apps Script API must be enabled once on the account before any push works — see
-build order step 3.
+build order step 3. The pinned `/exec` deployment's ID is in `.env` as
+`V2_DEPLOYMENT_ID`, read by `npm run v2:deploy` (main project only — the Siri
+ID never goes in `.env` under that key or into the repo).
 
 **The two accounts no longer share a login.** `clasp login` writes one global
 `~/.clasprc.json`, so a single default credential meant whichever account you

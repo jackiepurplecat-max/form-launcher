@@ -41,8 +41,17 @@ npm run v2:check       # syntax only
 npm run v2:push        # then ALWAYS verify — see below
 npm run v2:verify      # pulls and diffs: does the server actually hold this?
 npm run v2:push:force  # only when verify reports a mismatch
+npm run v2:deploy      # move /exec onto it — the only way to deploy
 npm run v2:whoami      # confirm you are on the v2 account
 ```
+
+**Upgrades — every one, in this order, back to back:** commit →
+`npm run v2:push` → `npm run v2:verify` → run `apply…Upgrade()` in the editor →
+`npm run v2:deploy` **immediately**. An upgrade renames columns in the shared
+sheet while `/exec` still runs the old code, so the page is broken until the
+deploy; a minute or two of that is accepted. If the upgrade stops with errors,
+deploy anyway (it renames headers first, so the old code is already broken),
+then fix the cause and re-run it — it skips what is already done.
 
 `npm run v2:test` runs the real `v2/` source against stand-ins for Apps Script's
 services (`v2/test/mocks.js`). Run it **after** changes too, not just before —
@@ -86,9 +95,11 @@ the only file in the repo with that exception.
 
 **Pushing is not deploying.** A push updates HEAD, which is what `…/dev` serves;
 `…/exec` serves a pinned version until you cut a new one with
-`clasp --user v2 deploy -i <deploymentId>`. Omitting `-i` creates a *second*
-deployment on a different URL and leaves the old one live — which is how you end
-up debugging a page that no longer exists.
+`npm run v2:deploy`. It reads `V2_DEPLOYMENT_ID` from `.env` and refuses on
+uncommitted `v2/` changes or a failed verify. Never deploy with bare
+`clasp deploy`: omitting `-i` creates a *second* deployment on a different URL
+and leaves the old one live — which is how you end up debugging a page that no
+longer exists.
 
 **Assume several Google accounts are signed in, on every device including the
 phone.** When the wrong one answers, the failure **reads as a missing file rather

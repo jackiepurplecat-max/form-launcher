@@ -16,15 +16,14 @@ Baseline before changing anything: `npm run v2:test`, `npm run v2:verify`,
 
 ## What's next
 
-1. `.scratch/dev-routine/issues/01-upgrade-order.md` — fixed order for upgrades.
-2. `.scratch/dev-routine/issues/02-mac-chrome-profile.md` — the owner creates
+1. `.scratch/dev-routine/issues/02-mac-chrome-profile.md` — the owner creates
    the Chrome profile; the ticket covers the rest.
-3. **Cutover — on hold.** The owner is checking v1 for claims still in progress
+2. **Cutover — on hold.** The owner is checking v1 for claims still in progress
    before deciding whether it's worth a "Retire v1" ticket. Steps are in
    `REBUILD-PLAN.md` → *Cutover*. Don't start it until they say.
-4. `.scratch/field-validation/issues/01-intake-validation.md` — step 13.
+3. `.scratch/field-validation/issues/01-intake-validation.md` — step 13.
 
 ## Traps
 
-- An upgrade that renames a column breaks the pinned `/exec` until the next
-  deploy: run the upgrade and the deploy back to back (ticket 01 fixes this).
+- Deploy only with `npm run v2:deploy` (new); upgrades follow the order in
+  `CLAUDE.md`. First real run of `v2:deploy` is still to come.
