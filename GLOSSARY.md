@@ -62,3 +62,10 @@ _Avoid_: Receipt (when the invoice is meant)
 A Health Claim that is still waiting for another document to arrive. Set by you,
 not inferred from which slots are filled.
 _Avoid_: Incomplete, missing file
+
+### IVA
+
+**Número**:
+The invoice number as Finanças will accept it, which can differ from the number
+printed on the paper: only unaccented letters, digits and `/ \ _ . -`.
+_Avoid_: Invoice number (when the printed one is meant), reference
