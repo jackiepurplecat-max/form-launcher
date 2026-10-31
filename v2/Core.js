@@ -191,6 +191,141 @@ function safeCellValue(value) {
   return `'${value}`;
 }
 
+/* ============================ Field validation ============================ */
+
+/**
+ * The value rules a field can declare, by name (VALIDATION-PLAN.md).
+ *
+ * Each takes a non-blank value and returns `{ value }` when it passes, or
+ * `{ problem }` naming what is wrong in words that follow "<label> ".
+ */
+const FIELD_RULES = {
+  money: value => {
+    const text = value.toString().trim();
+    if (/^-\d+([.,]\d+)?$/.test(text)) return { problem: 'cannot be negative' };
+    if (!/^\d+([.,]\d+)?$/.test(text)) return { problem: 'must be a number' };
+    // Refused rather than rounded: no invoice has three decimals, so it is a
+    // typo, and rounding it would change a figure claimed from Finanças.
+    if (/[.,]\d{3,}$/.test(text)) return { problem: 'can have at most 2 decimal places' };
+    // A comma is the Portuguese decimal point. Stored as a number, not as the
+    // text typed, so the sheet can add it up.
+    return { value: Number(text.replace(',', '.')) };
+  },
+
+  nif: value => {
+    const text = value.toString().trim();
+    if (!/^\d{9}$/.test(text)) return { problem: 'must be 9 digits' };
+    return isValidNif(text) ? { value: text } : { problem: 'is not a valid NIF (check digit)' };
+  },
+
+  // Finanças' own rule, which its published schema does not state: DRORIVA's
+  // Quadro02Validator checks numeroFatura against [/\\a-zA-Z0-9\_\.\-]+. So the
+  // value is CLEANED to fit, even though it then no longer matches the paper -
+  // and the change is reported, because a silent one would leave the user
+  // believing the paper's number is what was saved.
+  numero: value => {
+    const typed = value.toString().trim();
+    const cleaned = typed
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')   // Ç -> C, É -> E
+      .replace(/[^A-Za-z0-9\/\\_.\-]/g, '');
+    // Someone typed something; turning it into a blank would make a mistake
+    // look like "not filled in yet".
+    if (!cleaned) return { problem: 'has none of the characters Finanças accepts (letters, digits, / \\ _ . -)' };
+    if (cleaned === typed) return { value: cleaned };
+    return { value: cleaned, explain: 'Finanças accepts only letters, digits and / \\ _ . -' };
+  }
+};
+
+/**
+ * A Portuguese NIF's ninth digit is computed from the first eight (mod 11).
+ * Nine digits alone catches a dropped character; this also catches two digits
+ * swapped, which is the mistake people make and the one that looks plausible.
+ */
+function isValidNif(nineDigits) {
+  let sum = 0;
+  for (let i = 0; i < 8; i++) sum += Number(nineDigits[i]) * (9 - i);
+  const remainder = sum % 11;
+  const check = remainder < 2 ? 0 : 11 - remainder;
+  return Number(nineDigits[8]) === check;
+}
+
+/** Every field of a section that declares a rule: [{ header, label, rule }]. */
+function fieldRules(section) {
+  const rules = Object.keys(COMMON_VALIDATE).map(header => ({
+    header: header,
+    label: header === COMMON.amount ? amountLabel(section) : header,
+    rule: COMMON_VALIDATE[header]
+  }));
+  (section.extraFields || []).filter(field => field.validate).forEach(field => {
+    rules.push({ header: field.header, label: field.label, rule: field.validate });
+  });
+  return rules;
+}
+
+/**
+ * Check supplied values against the section's rules.
+ *
+ * BLANK IS ALWAYS LEGAL: only supplied, non-empty values are checked. A partial
+ * entry is the safety net, and a validator that refused blanks would break
+ * Siri, the completion mail and scan-later in one go.
+ *
+ * Returns `{ values, problems, changes }`: `values` is `fields` with each value
+ * in its checked form, `problems` lists `{ header, message }` for every value
+ * refused, and `changes` lists `{ header, from, to, message }` for every value
+ * a rule CLEANED rather than refused. A cleaned value is a different act from a
+ * refused one and must reach the caller - see VALIDATION-PLAN.md.
+ *
+ * `others`, optional, holds values already stored. They are never checked
+ * themselves - only used to complete a `lessThan` pair whose other side is in
+ * `fields` - so an edit is judged on what it changes.
+ */
+function checkFieldValues(section, fields, others) {
+  const values = Object.assign({}, fields);
+  const problems = [];
+  const changes = [];
+
+  fieldRules(section).forEach(entry => {
+    const value = values[entry.header];
+    if (value === null || value === undefined || value.toString().trim() === '') return;
+    const outcome = FIELD_RULES[entry.rule](value);
+    if (outcome.problem) {
+      problems.push({ header: entry.header, message: `${entry.label} ${outcome.problem}` });
+    } else {
+      values[entry.header] = outcome.value;
+      if (outcome.explain) {
+        changes.push({
+          header: entry.header, from: value, to: outcome.value,
+          message: `${entry.label} saved as ${outcome.value} — ${outcome.explain}`
+        });
+      }
+    }
+  });
+
+  // Pairs, compared only once both sides are present and each passed its own
+  // rule - a refused or missing value has nothing to say about the other.
+  (section.lessThan || []).forEach(pair => {
+    if (!(pair.header in values) && !(pair.than in values)) return;
+    const refused = problems.some(p => p.header === pair.header || p.header === pair.than);
+    const side = header => (header in values ? values[header] : (others || {})[header]);
+    const small = side(pair.header);
+    const large = side(pair.than);
+    if (refused || typeof small !== 'number' || typeof large !== 'number') return;
+    if (small < large) return;
+    problems.push({
+      header: pair.header,
+      message: `${ruleLabel(section, pair.header)} must be less than ${ruleLabel(section, pair.than)}`
+    });
+  });
+
+  return { values: values, problems: problems, changes: changes };
+}
+
+/** The label a rule's message uses for a header: what the form calls it. */
+function ruleLabel(section, header) {
+  const entry = fieldRules(section).filter(e => e.header === header)[0];
+  return entry ? entry.label : header;
+}
+
 function readCell(sheet, cols, row, header) {
   return sheet.getRange(row, columnIndex(cols, sheet.getName(), header)).getValue();
 }

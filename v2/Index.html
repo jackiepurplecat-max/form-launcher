@@ -2715,14 +2715,20 @@
           // to it — otherwise saving shows you nothing and reads as a failure.
           // An edit leaves the row where it was.
           reloadEntries(editingRow ? null : app.meta.states[0].name);
+          // A value the server CLEANED (Número) no longer matches what was
+          // typed, so it is always said, whichever message it rides on.
+          var changed = (result.changes || []).map(function (c) { return c.message; }).join('\n');
+          var also = changed ? '\n' + changed : '';
           if (result.fileErrors && result.fileErrors.length) {
             toast('Saved, but a document could not be filed:\n' +
               result.fileErrors.map(function (f) {
                 return f.column + ': ' + (f.error || 'unknown error');
-              }).join('\n'), 'warn');
+              }).join('\n') + also, 'warn');
           } else if (result.ok === false) {
             toast('Saved, but incomplete — ' + (result.error || 'missing fields') +
-              (editingRow ? '' : '\nA completion request has been emailed.'), 'warn');
+              (editingRow ? '' : '\nA completion request has been emailed.') + also, 'warn');
+          } else if (changed) {
+            toast((editingRow ? 'Updated' : 'Saved') + also, 'warn');
           } else {
             toast(editingRow ? 'Updated' : 'Saved');
           }

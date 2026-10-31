@@ -1,6 +1,8 @@
-# Validation — decided, not built
+# Validation — built, not yet deployed
 
-Rules for field values at intake (build step 13). **None of this is implemented.**
+Rules for field values at intake (build step 13). **Built 31 Oct 2026** on the
+server (`FIELD_RULES` in `v2/Core.js`, declared in `v2/Config.js`), with harness
+coverage; the in-page check while typing is a separate ticket.
 `REBUILD-PLAN.md` stays the source of truth for architecture; this is a single
 feature spec that will fold into it once built. Decisions settled 31 Oct 2026.
 

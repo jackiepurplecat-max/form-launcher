@@ -46,6 +46,16 @@ const COMMON = {
  */
 const CLAIM_EMAILED_COLUMN = 'Claim Emailed';
 
+/**
+ * Value rules for the COMMON columns, by header. A section's own fields carry
+ * theirs as a `validate` key beside `type`; Amount is in every section, so its
+ * rule lives here once. The rules themselves are in FIELD_RULES (Core.js) and
+ * the reasons for each in VALIDATION-PLAN.md.
+ */
+const COMMON_VALIDATE = {
+  [COMMON.amount]: 'money'
+};
+
 /** Valid values for the "Receipt State" column. */
 const RECEIPT_STATE = {
   attached: 'attached',
@@ -275,11 +285,14 @@ const SECTIONS = {
     // than from the receipt. COMMON.amount holds Valor Total; the VAT figure is
     // its own field.
     extraFields: [
-      { header: 'Número', label: 'Número', type: 'text', required: true },
-      { header: 'Emitente NIF', label: 'Emitente NIF', type: 'text', required: true },
-      { header: 'IVA Amount', label: 'Valor do IVA', type: 'number', required: true },
+      { header: 'Número', label: 'Número', type: 'text', required: true, validate: 'numero' },
+      { header: 'Emitente NIF', label: 'Emitente NIF', type: 'text', required: true, validate: 'nif' },
+      { header: 'IVA Amount', label: 'Valor do IVA', type: 'number', required: true, validate: 'money' },
       RECEIPT_MEDIUM_FIELD
     ],
+    // The VAT is part of Valor Total, so it must be strictly below it - the
+    // owner's rule, applied by the export too (ivaLineProblems).
+    lessThan: [{ header: 'IVA Amount', than: COMMON.amount }],
     // Fixed for every claim, so they are shown for reference rather than asked
     // per row. Values come from Script Properties, not from this file.
     reference: [

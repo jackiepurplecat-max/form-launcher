@@ -285,6 +285,28 @@ function uiUpdateEntry(sectionKey, sheetRow, payload) {
 
   validateSubmitted(section, submitted, uiEditFields(section));
 
+  // Value rules apply to what CHANGED. The dialog sends every field it shows,
+  // so an old row whose NIF predates the rules would otherwise refuse every
+  // unrelated edit - and history is never rewritten to make it pass.
+  const changed = {};
+  const inRow = {};
+  Object.keys(submitted).forEach(header => {
+    const before = readCell(sheet, cols, row, header);
+    inRow[header] = before;
+    const now = submitted[header] === null || submitted[header] === undefined ? '' : submitted[header];
+    if (String(before).trim() !== String(now).trim()) changed[header] = submitted[header];
+  });
+  (section.lessThan || []).forEach(pair => {
+    [pair.header, pair.than].forEach(header => {
+      if (!(header in inRow)) inRow[header] = readCell(sheet, cols, row, header);
+    });
+  });
+  const checked = checkFieldValues(section, changed, inRow);
+  if (checked.problems.length) {
+    throw new Error(checked.problems.map(p => p.message).join('; '));
+  }
+  const toWrite = Object.assign({}, submitted, checked.values);
+
   // Uploads land BEFORE anything is written, for the same reason they do when
   // creating: a failed upload then changes nothing at all, rather than leaving
   // the field edits applied and the document missing. If writing the row then
@@ -293,8 +315,8 @@ function uiUpdateEntry(sectionKey, sheetRow, payload) {
 
   const replaced = [];
   try {
-    Object.keys(submitted).forEach(header => {
-      const value = submitted[header];
+    Object.keys(toWrite).forEach(header => {
+      const value = toWrite[header];
       writeCell(sheet, cols, row, header,
         value === null || value === undefined ? '' : value);
     });
@@ -344,6 +366,7 @@ function uiUpdateEntry(sectionKey, sheetRow, payload) {
     row: row,
     warnings: warnings,
     fileErrors: fileErrors,
+    changes: checked.changes,
     claim: claim,
     entry: uiEntry(sectionKey, row)
   };

@@ -61,7 +61,9 @@ function smokeTest() {
       if (!field.required) return;
       fields[field.header] = field.type === 'date' ? stamp
         : field.type === 'number' ? 1
-          : 'Smoke';
+          // A made-up NIF that passes the check digit; 'Smoke' would be refused.
+          : field.validate === 'nif' ? '123456789'
+            : 'Smoke';
     });
 
     // Any section that mails on creation is left WITHOUT its document on

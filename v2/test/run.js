@@ -273,7 +273,7 @@ check('ok true once required set', props.ok === true, props.missingRequired);
 section('IVA email refuses a dead file link');
 const deadIva = G.createEntry('iva', {
   'Date': '2026-05-01', 'Counterparty': 'Worten', 'Amount': 50, 'Currency': 'EUR',
-  'Número': 'FT 9', 'Emitente NIF': '500000001', 'IVA Amount': 9.35,
+  'Número': 'FT 9', 'Emitente NIF': '500000018', 'IVA Amount': 9.35,
   'Receipt URL': 'https://drive.google.com/file/d/' + 'q'.repeat(30) + '/view'
 }, 'form');
 check('not sent, and reported as failed', deadIva.email.ok === false, deadIva.email);
@@ -385,7 +385,7 @@ delete mocks._props.WEB_APP_URL;
 
 const ivaNoReceipt = G.createEntry('iva', {
   'Date': '2026-06-03', 'Counterparty': 'Worten', 'Amount': 20, 'Currency': 'EUR',
-  'Número': 'FT 12', 'Emitente NIF': '500000001', 'IVA Amount': 3.74
+  'Número': 'FT 12', 'Emitente NIF': '500000018', 'IVA Amount': 3.74
 }, 'form');
 check('IVA with every field but no receipt still asks for it', ivaNoReceipt.completionRequest.ok === true, ivaNoReceipt.completionRequest);
 check('and the claim itself deferred', ivaNoReceipt.email.deferred === true, ivaNoReceipt.email);
@@ -416,7 +416,8 @@ mailSections.forEach(key => {
   base['Currency'] = 'EUR';
   if (sec.category) base[sec.category.header] = 'Sym';
   sec.extraFields.filter(f => f.required).forEach(f => {
-    base[f.header] = f.type === 'date' ? '2026-07-01' : f.type === 'number' ? 1 : 'Sym';
+    base[f.header] = f.type === 'date' ? '2026-07-01' : f.type === 'number' ? 1
+      : f.validate === 'nif' ? '123456789' : 'Sym';
   });
 
   // 1. complete but NO receipt -> deferred, nothing sent
@@ -457,7 +458,7 @@ mailSections.forEach(key => {
   const fields = { 'Date': '2026-08-01', 'Counterparty': 'Late Receipt Co', 'Amount': 55, 'Currency': 'EUR' };
   if (sec.category) fields[sec.category.header] = 'Late';
   sec.extraFields.filter(f => f.required).forEach(f => {
-    fields[f.header] = f.type === 'date' ? '2026-08-01' : f.type === 'number' ? 1 : 'Late';
+    fields[f.header] = f.type === 'date' ? '2026-08-01' : f.type === 'number' ? 1 : f.validate === 'nif' ? '123456789' : 'Late';
   });
 
   const n0 = mocks.MailApp.sent.filter(m => m.to === addr).length;
@@ -529,7 +530,7 @@ check('cleanup trashed the files', cleaned.files > 0, cleaned.files);
 check('cleanup had no warnings', cleaned.warnings.length === 0, cleaned.warnings);
 check('cleanup removed the registry entry', cleaned.registry === 'Smoke Test Ltd', cleaned.registry);
 check('smoke supplier no longer matches', G.findSupplier('Smoke Test Ltd') === null, G.findSupplier('Smoke Test Ltd'));
-check('real suppliers survived cleanup', G.findSupplier('FNAC').nif === '500000001' || G.findSupplier('FNAC').nif === '500000000', G.findSupplier('FNAC'));
+check('real suppliers survived cleanup', G.findSupplier('FNAC').nif === '500000018' || G.findSupplier('FNAC').nif === '500000000', G.findSupplier('FNAC'));
 ['work', 'iva', 'health', 'income'].forEach(k => {
   const sh = mocks._ss.getSheetByName(G.getSection(k).sheet);
   check(`${k}: back to pre-smoke row count`, sh.getLastRow() === rowsPreSmoke[k], { before: rowsPreSmoke[k], after: sh.getLastRow() });
@@ -670,8 +671,8 @@ check('UI_ALLOWED_EMAILS is a declared property, not an unknown one',
 
 /* ------------------------------ uiBootstrap ------------------------------- */
 section('uiBootstrap() — one round trip describes all four sections');
-mocks._props.REF_JALLC_NIF = '600000000';
-mocks._props.REF_MY_NIF = '200000000';
+mocks._props.REF_JALLC_NIF = '600000001';
+mocks._props.REF_MY_NIF = '200000004';
 mocks._props.REF_IVA_TIPO = 'Despesas gerais familiares';
 
 const boot = G.uiBootstrap();
@@ -1108,7 +1109,7 @@ section('an upload with no extension gets one from its type');
 const noExt = G.uiCreateEntry('iva', {
   values: {
     'Date': '2026-09-02', 'Counterparty': 'Worten', 'Número': 'A1',
-    'Emitente NIF': '500000001', 'IVA Amount': 2, 'Amount': 10
+    'Emitente NIF': '500000018', 'IVA Amount': 2, 'Amount': 10
   },
   files: [{ header: 'Receipt URL', name: 'scan', mimeType: 'application/pdf', data: b64 }]
 });
@@ -1218,7 +1219,7 @@ check('receipt recorded as awaited', formPartial.entry.receiptState === 'awaitin
 section('the form fills one answer from another — what a Google Form cannot do');
 const strong = G.uiLookupCounterparty('iva', 'Worten');
 check('a confident match prefills the NIF',
-  strong.autofill === true && strong.prefill['Emitente NIF'] === '500000001', strong);
+  strong.autofill === true && strong.prefill['Emitente NIF'] === '500000018', strong);
 const weak = G.uiLookupCounterparty('iva', 'fnak');
 check('a weak match holds rather than guessing',
   weak && weak.autofill === false && Object.keys(weak.prefill).length === 0, weak);
@@ -1808,17 +1809,17 @@ check('and the stored default is cleared rather than guessed',
 section('a merge keeps the established NIF and reports the one it displaced');
 G.uiCreateEntry('iva', {
   values: { 'Date': '2026-03-09', 'Counterparty': 'Fnacc', 'Número': '1',
-            'Emitente NIF': '999999999', 'IVA Amount': 1, 'Amount': 10 },
+            'Emitente NIF': '999999990', 'IVA Amount': 1, 'Amount': 10 },
   files: [{ header: 'Receipt URL', name: 'f.pdf', mimeType: 'application/pdf', data: b64 }]
 });
 const nifMerge = G.uiUpdateSupplier(supplierRow('Fnacc'), {
-  name: 'FNAC', type: '', nif: '999999999', aliases: '', was: 'Fnacc'
+  name: 'FNAC', type: '', nif: '999999990', aliases: '', was: 'Fnacc'
 });
 check('the established NIF survives', supplierNamed('FNAC').nif === '500000000',
   supplierNamed('FNAC').nif);
 check('and the displaced one is reported, not silently dropped',
   nifMerge.nifKept && nifMerge.nifKept.kept === '500000000' &&
-  nifMerge.nifKept.discarded === '999999999', nifMerge.nifKept);
+  nifMerge.nifKept.discarded === '999999990', nifMerge.nifKept);
 check('named, so the warning can send you to a specific supplier',
   nifMerge.nifKept.into === 'FNAC', nifMerge.nifKept);
 check('nothing was adopted', nifMerge.nifAdopted === null, nifMerge.nifAdopted);
@@ -1829,15 +1830,15 @@ check('nothing was adopted', nifMerge.nifAdopted === null, nifMerge.nifAdopted);
 section('the preview warns about the NIF before anything is merged');
 G.uiCreateEntry('iva', {
   values: { 'Date': '2026-03-13', 'Counterparty': 'Wortenn', 'Número': '2',
-            'Emitente NIF': '111111111', 'IVA Amount': 1, 'Amount': 10 }
+            'Emitente NIF': '111111110', 'IVA Amount': 1, 'Amount': 10 }
 });
-const nifPreview = G.uiSupplierPreview(supplierRow('Wortenn'), 'Worten', '111111111');
+const nifPreview = G.uiSupplierPreview(supplierRow('Wortenn'), 'Worten', '111111110');
 check('the conflict is reported up front',
-  nifPreview.nifKept && nifPreview.nifKept.kept === '500000001' &&
-  nifPreview.nifKept.discarded === '111111111', nifPreview.nifKept);
+  nifPreview.nifKept && nifPreview.nifKept.kept === '500000018' &&
+  nifPreview.nifKept.discarded === '111111110', nifPreview.nifKept);
 check('and it agrees with what the merge then does',
   G.uiUpdateSupplier(supplierRow('Wortenn'), {
-    name: 'Worten', type: '', nif: '111111111', aliases: '', was: 'Wortenn'
+    name: 'Worten', type: '', nif: '111111110', aliases: '', was: 'Wortenn'
   }).nifKept.kept === nifPreview.nifKept.kept);
 
 // The quieter half: the core has NO NIF, so it inherits the typo's. If that
@@ -1851,17 +1852,17 @@ G.uiCreateEntry('health', {
   values: { 'Date': '2026-03-14', 'Counterparty': 'Adoptor Co', 'Patient': 'Jane',
             'Invoice Date': '2026-03-14', 'Amount': 15 }
 });
-const adoptPreview = G.uiSupplierPreview(supplierRow('Adoptor Co'), 'Adopter Co', '222222222');
+const adoptPreview = G.uiSupplierPreview(supplierRow('Adoptor Co'), 'Adopter Co', '222222220');
 check('the preview says the core will inherit it',
-  adoptPreview.nifAdopted && adoptPreview.nifAdopted.value === '222222222' &&
+  adoptPreview.nifAdopted && adoptPreview.nifAdopted.value === '222222220' &&
   adoptPreview.nifAdopted.into === 'Adopter Co', adoptPreview.nifAdopted);
 const adopted = G.uiUpdateSupplier(supplierRow('Adoptor Co'), {
-  name: 'Adopter Co', type: '', nif: '222222222', aliases: '', was: 'Adoptor Co'
+  name: 'Adopter Co', type: '', nif: '222222220', aliases: '', was: 'Adoptor Co'
 });
 check('the merge reports it too', adopted.nifAdopted &&
-  adopted.nifAdopted.value === '222222222', adopted.nifAdopted);
+  adopted.nifAdopted.value === '222222220', adopted.nifAdopted);
 check('and the core actually holds it now',
-  supplierNamed('Adopter Co').nif === '222222222', supplierNamed('Adopter Co').nif);
+  supplierNamed('Adopter Co').nif === '222222220', supplierNamed('Adopter Co').nif);
 
 // Agreeing NIFs are not news, and a warning on every merge is one you learn to
 // ignore - which would cost the two above their meaning.
@@ -1882,7 +1883,7 @@ check('and the NIF is untouched', supplierNamed('FNAC').nif === '500000000');
 section('the preview defaults to the stored NIF when the caller omits it');
 check('same verdict as passing it explicitly',
   JSON.stringify(G.uiSupplierPreview(supplierRow('Adopter Co'), 'FNAC').nifKept) ===
-  JSON.stringify(G.uiSupplierPreview(supplierRow('Adopter Co'), 'FNAC', '222222222').nifKept),
+  JSON.stringify(G.uiSupplierPreview(supplierRow('Adopter Co'), 'FNAC', '222222220').nifKept),
   G.uiSupplierPreview(supplierRow('Adopter Co'), 'FNAC').nifKept);
 // Decided 12 Aug 2026, not deferred: a submitted claim records what was
 // SUBMITTED, so rewriting it after the fact makes the row disagree with what
@@ -1890,7 +1891,7 @@ check('same verdict as passing it explicitly',
 check('a corrected NIF is never backdated onto past IVA entries',
   mocks._ss.getSheetByName('IVA')
     .getRange(G.uiListEntries('iva').rows.filter(r => r.cells['Número'] === '1')[0].row,
-      G.resolveColumns(mocks._ss.getSheetByName('IVA'))['Emitente NIF']).getValue() === '999999999');
+      G.resolveColumns(mocks._ss.getSheetByName('IVA'))['Emitente NIF']).getValue() === '999999990');
 
 section('a case-only rename still rebuilds the filenames');
 const caseOnly = G.uiCreateEntry('work', {
@@ -2806,8 +2807,8 @@ console.log('\n--- findDebris on an emptied sheet ---\n' + afterReset.summary);
  */
 section('IVA export — the declaration');
 
-mocks._props.REF_JALLC_NIF = '111111111';
-mocks._props.REF_MY_NIF = '222222222';
+mocks._props.REF_JALLC_NIF = '111111110';
+mocks._props.REF_MY_NIF = '222222220';
 
 const exFatura1 = mocks.DriveApp._addFile('a.pdf');
 const exFatura2 = mocks.DriveApp._addFile('b.pdf');
@@ -2815,7 +2816,7 @@ const exFatura3 = mocks.DriveApp._addFile('c.pdf');
 
 const exReady1 = G.createEntry('iva', {
   'Date': '2026-03-01', 'Counterparty': 'Worten', 'Amount': 280, 'Currency': 'EUR',
-  'Número': 'FAC33484', 'Emitente NIF': '333333333', 'IVA Amount': 32.22,
+  'Número': 'FAC33484', 'Emitente NIF': '333333330', 'IVA Amount': 32.22,
   'Tipo': '102 — Electrodomésticos', 'Receipt URL': exFatura1.id
 }, 'form');
 const exReady2 = G.createEntry('iva', {
@@ -2830,7 +2831,7 @@ check('two exportable rows created', exReady1.ok && exReady2.ok, [exReady1.error
 // would take and then reject.
 const exNoTipo = G.createEntry('iva', {
   'Date': '2026-03-03', 'Counterparty': 'Leroy Merlin', 'Amount': 50, 'Currency': 'EUR',
-  'Número': 'FT 11', 'Emitente NIF': '501111111', 'IVA Amount': 9.35,
+  'Número': 'FT 11', 'Emitente NIF': '501111115', 'IVA Amount': 9.35,
   'Receipt URL': exFatura3.id
 }, 'form');
 check('the no-Tipo row is a valid entry, not a broken one', exNoTipo.ok === true, exNoTipo.error);
@@ -2838,7 +2839,7 @@ check('the no-Tipo row is a valid entry, not a broken one', exNoTipo.ok === true
 // Awaiting its Fatura.
 const exNoDoc = G.createEntry('iva', {
   'Date': '2026-03-04', 'Counterparty': 'Continente', 'Amount': 20, 'Currency': 'EUR',
-  'Número': 'FT 12', 'Emitente NIF': '502222222', 'IVA Amount': 3.74,
+  'Número': 'FT 12', 'Emitente NIF': '502222220', 'IVA Amount': 3.74,
   'Tipo': '107 — Outros bens não especificados'
 }, 'form');
 
@@ -2847,7 +2848,7 @@ const decl = G.buildIvaDeclaration({ now: new Date(Date.UTC(2026, 7, 13, 20, 33,
 check('ok', decl.ok === true, decl.message);
 check('two lines exported', decl.lines.length === 2, decl.lines);
 check('and they are the two complete ones',
-  decl.lines.map(l => l.numeroFatura).join(',') === 'FAC33484,FT 9/2026', decl.lines);
+  decl.lines.map(l => l.numeroFatura).join(',') === 'FAC33484,FT9/2026', decl.lines);
 
 const reasonFor = row => (decl.skipped.find(s => s.row === row) || {}).reasons || [];
 check('the no-Tipo row is left out', reasonFor(exNoTipo.row).length === 1, decl.skipped);
@@ -2875,7 +2876,7 @@ check('trap 4 — lines are numbered from 1',
 check('trap 5 — TipoEntidade is the letter d, not REF_IVA_TIPO display text',
   decl.xml.indexOf('<TipoEntidade >d</TipoEntidade>') !== -1);
 check('the stray space before > is reproduced',
-  decl.xml.indexOf('<NifEntidade >111111111</NifEntidade>') !== -1);
+  decl.xml.indexOf('<NifEntidade >111111110</NifEntidade>') !== -1);
 check('and the two spaces on Ficheiro', decl.xml.indexOf('<Ficheiro  attachmentDate=') !== -1);
 
 check('CodigoBem comes off the option label',
@@ -2909,12 +2910,12 @@ G.setStatus('iva', exReady1.row, 'Claimed', '2026-03-10');
 const declAfter = G.buildIvaDeclaration({ now: new Date(Date.UTC(2026, 7, 13, 20, 33, 31)) });
 check('a row moved to Claimed is not exported again', declAfter.lines.length === 1, declAfter.lines);
 check('and the one left is the other one',
-  declAfter.lines[0].numeroFatura === 'FT 9/2026', declAfter.lines);
+  declAfter.lines[0].numeroFatura === 'FT9/2026', declAfter.lines);
 check('the totals follow the surviving line', declAfter.somaValorFatura === '12.30', declAfter.somaValorFatura);
 
 /* Validation, from AT's own types rather than from taste. */
 const problems = line => G.ivaLineProblems(Object.assign({
-  numeroFatura: 'FT 1', dataFatura: '2026-03-01', nifFatura: '500000000',
+  numeroFatura: 'FT1', dataFatura: '2026-03-01', nifFatura: '500000000',
   valorIVA: 1, valorTotalFatura: 10, codigoBem: '101', ficheiro: true
 }, line)).join(' | ');
 check('an eight-digit NIF is refused (xs:long, nine digits)',
@@ -2922,7 +2923,14 @@ check('an eight-digit NIF is refused (xs:long, nine digits)',
 check('a non-numeric NIF is refused', /nine digits/.test(problems({ nifFatura: 'PT50000000' })));
 check('a negative amount is refused (minInclusive=0)',
   /negative/.test(problems({ valorTotalFatura: -10 })), problems({ valorTotalFatura: -10 }));
-check('IVA above the total is refused', /more than the Amount/.test(problems({ valorIVA: 20 })));
+check('IVA above the total is refused', /less than the Amount/.test(problems({ valorIVA: 20 })));
+check('IVA equal to the total is refused — strictly less, as at intake',
+  /less than the Amount/.test(problems({ valorIVA: 10 })), problems({ valorIVA: 10 }));
+check('a Número with a space is named, not quietly cleaned',
+  /Número/.test(problems({ numeroFatura: 'FT 1' })), problems({ numeroFatura: 'FT 1' }));
+check('a Número with an accent is named too', /Número/.test(problems({ numeroFatura: 'FAÇ1' })));
+check('every character Finanças accepts passes', problems({ numeroFatura: 'A/B\\C_1.2-3' }) === '',
+  problems({ numeroFatura: 'A/B\\C_1.2-3' }));
 check('a blank date is refused', /Date/.test(problems({ dataFatura: '' })));
 check('a good line has no problems', problems({}) === '', problems({}));
 check('a Tipo that is not one of the eight yields no code',
@@ -3027,14 +3035,14 @@ const exFaturaBig = mocks.DriveApp._addFile('big.pdf');
 exFaturaBig._bytes = 'x'.repeat(300 * 1024);
 const exBig = G.createEntry('iva', {
   'Date': '2026-03-05', 'Counterparty': 'Fnac', 'Amount': 90, 'Currency': 'EUR',
-  'Número': 'FT 20', 'Emitente NIF': '503333333', 'IVA Amount': 16.83,
+  'Número': 'FT 20', 'Emitente NIF': '503333336', 'IVA Amount': 16.83,
   'Tipo': '102 — Electrodomésticos', 'Receipt URL': exFaturaBig.id
 }, 'form');
 
 const exFaturaJpg = mocks.DriveApp._addFile('shot.jpg');
 const exJpg = G.createEntry('iva', {
   'Date': '2026-03-06', 'Counterparty': 'Ikea', 'Amount': 40, 'Currency': 'EUR',
-  'Número': 'FT 21', 'Emitente NIF': '504444444', 'IVA Amount': 7.48,
+  'Número': 'FT 21', 'Emitente NIF': '504444441', 'IVA Amount': 7.48,
   'Tipo': '103 — Móveis', 'Receipt URL': exFaturaJpg.id
 }, 'form');
 
@@ -3042,7 +3050,7 @@ const exJpg = G.createEntry('iva', {
 const exFaturaGood = mocks.DriveApp._addFile('good.pdf');
 const exGood = G.createEntry('iva', {
   'Date': '2026-03-07', 'Counterparty': 'Radio Popular', 'Amount': 60, 'Currency': 'EUR',
-  'Número': 'FT 22', 'Emitente NIF': '505555555', 'IVA Amount': 11.22,
+  'Número': 'FT 22', 'Emitente NIF': '505555557', 'IVA Amount': 11.22,
   'Tipo': '102 — Electrodomésticos', 'Receipt URL': exFaturaGood.id
 }, 'form');
 
@@ -3058,7 +3066,7 @@ check('a JPEG fatura is left out of the declaration',
  * stop the batch, or one bad scan quietly holds back every invoice behind it
  * and the declaration still reads as complete. */
 check('a good row after a rejected one still exports',
-  declRules.lines.some(l => l.numeroFatura === 'FT 22'), declRules.lines);
+  declRules.lines.some(l => l.numeroFatura === 'FT22'), declRules.lines);
 check('neither rejected row is called "batch full"',
   !/batch full/.test(ruleReason(exBig.row) + ruleReason(exJpg.row)),
   [ruleReason(exBig.row), ruleReason(exJpg.row)]);
@@ -3285,6 +3293,218 @@ check('renamed in place', !!G.resolveColumns(healthSheet())['Treatment Type'] &&
   !G.resolveColumns(healthSheet())['Type']);
 check('no column added', healthSheet().getLastColumn() === widthBefore,
   [widthBefore, healthSheet().getLastColumn()]);
+
+/* --------------------------- field validation ---------------------------- */
+/*
+ * Step 13 — VALIDATION-PLAN.md. Every rule is checked at createEntry(), the one
+ * place a row is born, and each needs its negative case (refused) as well as
+ * its positive one — and the blank case, which must always still go through.
+ */
+section('validation — createEntry() refuses a bad value and writes nothing');
+
+function refusal(fn) {
+  try { fn(); } catch (e) { return e.message; }
+  return null;
+}
+function workRows() { return mocks._ss.getSheetByName('Work').getLastRow(); }
+
+(() => {
+  const before = workRows();
+  const message = refusal(() => G.createEntry('work', { 'Counterparty': 'Café', 'Amount': 'abc' }, 'siri'));
+  check('a non-numeric Amount is refused, naming the field', /Amount/.test(message || ''), message);
+  check('and no row is written', workRows() === before, [before, workRows()]);
+})();
+
+function workCell(row, header) {
+  const sh = mocks._ss.getSheetByName('Work');
+  return sh.getRange(row, G.resolveColumns(sh)[header]).getValue();
+}
+
+section('validation — what an Amount may be');
+(() => {
+  const blank = G.createEntry('work', { 'Counterparty': 'Blank Amount Ltd' }, 'siri');
+  check('a blank Amount still goes through', !!blank.row && workCell(blank.row, 'Amount') === '',
+    workCell(blank.row, 'Amount'));
+
+  const comma = G.createEntry('work', { 'Counterparty': 'Comma Ltd', 'Amount': '12,50' }, 'siri');
+  check('a comma is read as the decimal point and saved as a number',
+    workCell(comma.row, 'Amount') === 12.5, workCell(comma.row, 'Amount'));
+  check('and is not reported as a change — the number is the same',
+    !(comma.changes || []).length, comma.changes);
+
+  const threePlaces = refusal(() => G.createEntry('work', { 'Counterparty': 'X', 'Amount': '12.345' }, 'siri'));
+  check('three decimal places are refused, not rounded',
+    /Amount/.test(threePlaces || '') && /2 decimal places/.test(threePlaces || ''), threePlaces);
+  const twoPlaces = G.createEntry('work', { 'Counterparty': 'Two Places Ltd', 'Amount': 12.34 }, 'siri');
+  check('two decimal places go through as typed', workCell(twoPlaces.row, 'Amount') === 12.34);
+
+  const negative = refusal(() => G.createEntry('work', { 'Counterparty': 'X', 'Amount': -5 }, 'siri'));
+  check('a negative Amount is refused', /Amount/.test(negative || '') && /negative/.test(negative || ''), negative);
+  const zero = G.createEntry('work', { 'Counterparty': 'Zero Ltd', 'Amount': 0 }, 'siri');
+  check('zero is not negative', workCell(zero.row, 'Amount') === 0, workCell(zero.row, 'Amount'));
+
+  const trailing = refusal(() => G.createEntry('work', { 'Counterparty': 'X', 'Amount': '12abc' }, 'siri'));
+  check('a number with letters after it is refused, not read as 12', /must be a number/.test(trailing || ''), trailing);
+})();
+
+function ivaCell(row, header) {
+  const sh = mocks._ss.getSheetByName('IVA');
+  return sh.getRange(row, G.resolveColumns(sh)[header]).getValue();
+}
+
+section('validation — IVA');
+(() => {
+  const badIva = refusal(() => G.createEntry('iva', { 'Counterparty': 'X', 'IVA Amount': 'abc' }, 'siri'));
+  check('IVA Amount must be a number too, named as the form names it',
+    /Valor do IVA must be a number/.test(badIva || ''), badIva);
+
+  const equal = refusal(() => G.createEntry('iva', { 'Counterparty': 'X', 'IVA Amount': 10, 'Amount': 10 }, 'siri'));
+  check('IVA equal to the Amount is refused — strictly less', /Valor do IVA must be less than/.test(equal || ''), equal);
+  const above = refusal(() => G.createEntry('iva', { 'Counterparty': 'X', 'IVA Amount': '12', 'Amount': '10' }, 'siri'));
+  check('IVA above the Amount is refused, compared as numbers', /less than/.test(above || ''), above);
+  const zeroZero = refusal(() => G.createEntry('iva', { 'Counterparty': 'X', 'IVA Amount': 0, 'Amount': 0 }, 'siri'));
+  check('a €0 invoice with €0 IVA is refused (accepted consequence)', /less than/.test(zeroZero || ''), zeroZero);
+  const ivaOnly = G.createEntry('iva', { 'Counterparty': 'Iva Only Lda', 'IVA Amount': 2 }, 'siri');
+  check('IVA with no Amount yet goes through — nothing to compare', ivaCell(ivaOnly.row, 'IVA Amount') === 2);
+
+  const transposed = refusal(() => G.createEntry('iva', { 'Counterparty': 'X', 'Emitente NIF': '123465789' }, 'siri'));
+  check('a NIF with two digits swapped is refused by its check digit',
+    /Emitente NIF/.test(transposed || '') && /check digit/.test(transposed || ''), transposed);
+  const short = refusal(() => G.createEntry('iva', { 'Counterparty': 'X', 'Emitente NIF': '12345678' }, 'siri'));
+  check('an eight-digit NIF is refused', /Emitente NIF must be 9 digits/.test(short || ''), short);
+  const lettered = refusal(() => G.createEntry('iva', { 'Counterparty': 'X', 'Emitente NIF': 'PT12345678' }, 'siri'));
+  check('a NIF with letters is refused', /Emitente NIF must be 9 digits/.test(lettered || ''), lettered);
+  const goodNif = G.createEntry('iva', { 'Counterparty': 'Good Nif Lda', 'Emitente NIF': '123456789' }, 'siri');
+  check('a valid NIF goes through', String(ivaCell(goodNif.row, 'Emitente NIF')) === '123456789',
+    ivaCell(goodNif.row, 'Emitente NIF'));
+  const zeroCheck = G.createEntry('iva', { 'Counterparty': 'Zero Check Lda', 'Emitente NIF': '500000000' }, 'siri');
+  check('a remainder of 0 or 1 means a check digit of 0', !!zeroCheck.row);
+})();
+
+section('validation — Número is cleaned to what Finanças accepts, and says so');
+(() => {
+  const spaced = G.createEntry('iva', { 'Counterparty': 'Spaced Lda', 'Número': 'FT 2024/123' }, 'siri');
+  check('spaces are removed — what is written', ivaCell(spaced.row, 'Número') === 'FT2024/123',
+    ivaCell(spaced.row, 'Número'));
+  const change = (spaced.changes || [])[0] || {};
+  check('and what is reported is the same value', change.header === 'Número' &&
+    change.from === 'FT 2024/123' && change.to === 'FT2024/123', spaced.changes);
+  check('with a message saying why', /Número saved as FT2024\/123/.test(change.message || ''), change.message);
+
+  const accented = G.createEntry('iva', { 'Counterparty': 'Accent Lda', 'Número': 'FAÇ-É1' }, 'siri');
+  check('accents are dropped, not the letter', ivaCell(accented.row, 'Número') === 'FAC-E1',
+    ivaCell(accented.row, 'Número'));
+
+  const symbols = G.createEntry('iva', { 'Counterparty': 'Symbol Lda', 'Número': 'Nº (A#1)' }, 'siri');
+  check('anything else outside the set is removed', ivaCell(symbols.row, 'Número') === 'NA1',
+    ivaCell(symbols.row, 'Número'));
+
+  const allowed = G.createEntry('iva', { 'Counterparty': 'Allowed Lda', 'Número': 'A/B\\C_1.2-3' }, 'siri');
+  check('every character Finanças accepts is kept', ivaCell(allowed.row, 'Número') === 'A/B\\C_1.2-3',
+    ivaCell(allowed.row, 'Número'));
+  check('and an unchanged Número reports no change', !(allowed.changes || []).length, allowed.changes);
+
+  const nothingLeft = refusal(() => G.createEntry('iva', { 'Counterparty': 'X', 'Número': '###' }, 'siri'));
+  check('a Número with nothing left after cleaning is refused, not blanked',
+    /Número/.test(nothingLeft || ''), nothingLeft);
+})();
+
+section('validation — Siri saves the entry and drops only the bad field');
+(() => {
+  // The Siri gate's own helpers are block-scoped further up; same key, same path.
+  mocks._props.SIRI_API_KEY = 'test-key-9f3c';
+  const SIRI_KEY = mocks._props.SIRI_API_KEY;
+  const siriPost = body =>
+    JSON.parse(G.siriHandlePost({ postData: { contents: JSON.stringify(body) } }).getContent());
+
+  const before = workRows();
+  const reply = siriPost({
+    key: SIRI_KEY, action: 'create', section: 'work',
+    fields: { Counterparty: 'Spoken Café', Amount: 'abc' }
+  });
+  check('the entry is still saved — refusing would lose what was said',
+    reply.ok === true && workRows() === before + 1, reply);
+  check('the rest of it is there', workCell(reply.row, 'Counterparty') === 'Spoken Café');
+  check('the bad field is left blank', workCell(reply.row, 'Amount') === '', workCell(reply.row, 'Amount'));
+  const dropped = (reply.dropped || [])[0] || {};
+  check('and the reply names the dropped field and why',
+    dropped.field === 'Amount' && /must be a number/.test(dropped.reason || ''), reply.dropped);
+  check('a blank field is missing, so the entry asks to be finished', reply.complete === false, reply);
+
+  const fine = siriPost({ key: SIRI_KEY, action: 'create', section: 'work',
+    fields: { Counterparty: 'Fine Café', Amount: '4,20' } });
+  check('a good entry drops nothing', fine.ok === true && Array.isArray(fine.dropped) && !fine.dropped.length, fine);
+  check('and its comma amount is saved as a number', workCell(fine.row, 'Amount') === 4.2);
+
+  // A NIF in the registry from before the rules existed arrives by prefill, not
+  // from the phone - and is dropped and named exactly as a spoken value is.
+  G.recordSupplier('Old Nif Lda', { nif: '123465789' });
+  const legacy = siriPost({ key: SIRI_KEY, action: 'create', section: 'iva',
+    fields: { Counterparty: 'Old Nif Lda', Amount: 10 } });
+  check('a bad registry NIF does not stop the entry', legacy.ok === true, legacy);
+  check('it is not copied onto the entry', String(ivaCell(legacy.row, 'Emitente NIF')) === '',
+    ivaCell(legacy.row, 'Emitente NIF'));
+  check('and the reply says so', (legacy.dropped || []).some(d => d.field === 'Emitente NIF'), legacy.dropped);
+  G.recordSupplier('Good Nif Lda', { nif: '123456789' });
+  const prefilled = siriPost({ key: SIRI_KEY, action: 'create', section: 'iva',
+    fields: { Counterparty: 'Good Nif Lda', Amount: 10 } });
+  check('whereas a good registry NIF is prefilled as before',
+    String(ivaCell(prefilled.row, 'Emitente NIF')) === '123456789', ivaCell(prefilled.row, 'Emitente NIF'));
+})();
+
+section('validation — editing checks only what changed');
+(() => {
+  const ivaSheet = mocks._ss.getSheetByName('IVA');
+  const made = G.createEntry('iva', {
+    'Date': '2026-10-01', 'Counterparty': 'Legacy Lda', 'Número': 'FT1',
+    'Emitente NIF': '123456789', 'IVA Amount': 2, 'Amount': 10
+  }, 'form');
+  // A row from before the rules: written past createEntry, as old rows were.
+  ivaSheet.getRange(made.row, G.resolveColumns(ivaSheet)['Emitente NIF']).setValue('12345678');
+
+  // The edit dialog sends every field it shows, changed or not.
+  const shown = {
+    'Date': '2026-10-01', 'Counterparty': 'Legacy Lda', 'Número': 'FT1',
+    'Emitente NIF': '12345678', 'IVA Amount': 2, 'Amount': 10, 'Notes': 'unrelated edit'
+  };
+  const unrelated = refusal(() => G.uiUpdateEntry('iva', made.row, { values: shown }));
+  check('an old bad value that was not touched does not block an unrelated edit', unrelated === null, unrelated);
+  check('the edit landed', ivaCell(made.row, 'Notes') === 'unrelated edit');
+  check('and the old value is not rewritten', String(ivaCell(made.row, 'Emitente NIF')) === '12345678');
+
+  const badAmount = refusal(() => G.uiUpdateEntry('iva', made.row,
+    { values: Object.assign({}, shown, { 'Amount': 'abc', 'Notes': 'should not land' }) }));
+  check('a changed value that breaks a rule is refused', /Amount must be a number/.test(badAmount || ''), badAmount);
+  check('and nothing from that edit is written', ivaCell(made.row, 'Notes') === 'unrelated edit',
+    ivaCell(made.row, 'Notes'));
+
+  const ivaUp = refusal(() => G.uiUpdateEntry('iva', made.row, { values: { 'IVA Amount': 10 } }));
+  check('IVA raised to the Amount already in the row is refused', /less than/.test(ivaUp || ''), ivaUp);
+
+  const numero = G.uiUpdateEntry('iva', made.row,
+    { values: Object.assign({}, shown, { 'Número': 'FT 2/2026' }) });
+  check('a changed Número is cleaned', ivaCell(made.row, 'Número') === 'FT2/2026', ivaCell(made.row, 'Número'));
+  check('and the change is reported', (numero.changes || []).some(c =>
+    c.header === 'Número' && c.to === 'FT2/2026'), numero.changes);
+})();
+
+section('validation — the supplier list refuses a NIF that fails its check digit');
+(() => {
+  G.recordSupplier('Registry Nif Lda', { nif: '123456789' });
+  const swapped = refusal(() => G.uiUpdateSupplier(supplierRow('Registry Nif Lda'), {
+    name: 'Registry Nif Lda', type: '', nif: '123465789', aliases: '', was: 'Registry Nif Lda'
+  }));
+  check('a swapped-digit NIF is refused', /NIF/.test(swapped || '') && /check digit/.test(swapped || ''), swapped);
+  check('and the stored NIF is unchanged', String(supplierNamed('Registry Nif Lda').nif) === '123456789',
+    supplierNamed('Registry Nif Lda').nif);
+
+  // A supplier saved before the rules: its old NIF must not block other edits.
+  G.recordSupplier('Old Registry Lda', { nif: '12345678' });
+  const aliasOnly = refusal(() => G.uiUpdateSupplier(supplierRow('Old Registry Lda'), {
+    name: 'Old Registry Lda', type: '', nif: '12345678', aliases: 'ORL', was: 'Old Registry Lda'
+  }));
+  check('an untouched old NIF does not block another edit', aliasOnly === null, aliasOnly);
+})();
 
 console.log(`\n================  ${pass} passed, ${fail} failed  ================`);
 process.exit(fail ? 1 : 0);

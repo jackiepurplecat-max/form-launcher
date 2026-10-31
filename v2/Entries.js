@@ -721,8 +721,7 @@ function createEntry(sectionKey, fields, source) {
   const sheet = getSheet(section);
   const cols = resolveColumns(sheet);
 
-  const supplied = fields || {};
-  const headers = Object.keys(supplied);
+  const headers = Object.keys(fields || {});
 
   // Every header checked BEFORE anything is written. Rejecting one part way
   // through the loop would leave a half-written row with no status and no
@@ -731,6 +730,14 @@ function createEntry(sectionKey, fields, source) {
   headers.forEach(header => {
     if (!cols[header]) throw new Error(`Unknown column "${header}" for ${sectionKey}`);
   });
+
+  // Values too, for the same reason and in the same place: this is the one door
+  // every intake path comes through, so no caller can skip it.
+  const checked = checkFieldValues(section, fields || {});
+  if (checked.problems.length) {
+    throw new Error(checked.problems.map(p => p.message).join('; '));
+  }
+  const supplied = checked.values;
 
   const width = sheet.getLastColumn();
 
@@ -757,6 +764,7 @@ function createEntry(sectionKey, fields, source) {
   });
 
   const result = initializeEntry(section, sheet, row, source || 'manual');
+  result.changes = checked.changes;
 
   if (result.warnings.length) {
     result.ok = false;

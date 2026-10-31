@@ -221,7 +221,17 @@ function siriCreate(request) {
 
   siriPrefillFromRegistry(section, fields);
 
-  const result = createEntry(request.section, fields, SIRI_SOURCE);
+  // A bad value is DROPPED here, not refused. The web form can refuse and leave
+  // the typing on screen; a refusal here would throw away everything that was
+  // said. Blank is legal, so the entry is saved and finished later like any
+  // partial one - and the reply names what was dropped, so it is never silent.
+  // This covers a registry-prefilled NIF too, which arrives the same way.
+  const checked = checkFieldValues(section, fields);
+  const dropped = checked.problems.map(p => ({ field: p.header, reason: p.message }));
+  const saved = checked.values;
+  dropped.forEach(d => { delete saved[d.field]; });
+
+  const result = createEntry(request.section, saved, SIRI_SOURCE);
 
   /*
    * WHAT "COMPLETE" HAS TO MEAN HERE. Not `result.ok`. createEntry reports
@@ -249,9 +259,11 @@ function siriCreate(request) {
     // Never assume the reminder went. Unset COMPLETION_EMAIL_RECIPIENT and it
     // silently does not, which is worth knowing on the phone rather than later.
     completionEmailed: !!(completion && completion.ok),
-    counterparty: fields[COMMON.counterparty] || '',
-    amount: fields[COMMON.amount],
-    date: fields[COMMON.date]
+    dropped: dropped,
+    changes: result.changes || [],
+    counterparty: saved[COMMON.counterparty] || '',
+    amount: saved[COMMON.amount],
+    date: saved[COMMON.date]
   };
 }
 

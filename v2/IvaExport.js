@@ -120,19 +120,31 @@ function ivaDeclarationXml(model) {
 /**
  * AT's own types, applied where they bite rather than at intake.
  *
- * VALIDATION-PLAN.md proposes the same rules for intake and that is step 13.
- * These are here as well, and not instead, because the export is the point at
+ * Intake applies the same rules (step 13, VALIDATION-PLAN.md). They are here
+ * as well, and not instead, because the export is the point at
  * which a bad value stops being an annoyance and becomes a rejected submission —
  * and because existing rows predate any intake rule. A row that fails is NAMED
  * AND LEFT OUT, never silently dropped and never quietly corrected.
  *
  *   Decimal_15  fractionDigits=2 minInclusive=0
  *   NifFatura   xs:long — nine digits, numeric
+ *   numeroFatura  DRORIVA's own validator, not the schema: [/\\a-zA-Z0-9\_\.\-]+
  */
 function ivaLineProblems(line) {
   const problems = [];
 
-  if (!line.numeroFatura) problems.push('no Número');
+  if (!line.numeroFatura) {
+    problems.push('no Número');
+  } else {
+    // DRORIVA refuses any other character (FIELD_RULES.numero). Named, never
+    // cleaned here: cleaning happens where the user sees it, so re-saving the
+    // Número in the row is the fix, and the sheet then holds what was sent.
+    const typed = line.numeroFatura.toString();
+    const outcome = FIELD_RULES.numero(typed);
+    if (outcome.problem || outcome.value !== typed) {
+      problems.push(`Número has characters Finanças refuses (${typed}) — re-save it in the row to clean it`);
+    }
+  }
 
   if (!isValidDateISO(line.dataFatura)) problems.push('no usable Date');
 
@@ -156,9 +168,10 @@ function ivaLineProblems(line) {
   if (iva !== null && iva < 0) problems.push('Valor do IVA is negative');
   if (total !== null && total < 0) problems.push('Amount is negative');
   // Not a schema rule, but a transposed pair is the mistake this catches and the
-  // app would take it: VAT above the invoice total is arithmetically impossible.
-  if (iva !== null && total !== null && iva > total) {
-    problems.push('Valor do IVA is more than the Amount');
+  // app would take it. Strictly less, matching intake (Config.js `lessThan`):
+  // the VAT is part of the total, so equal is refused as well as above.
+  if (iva !== null && total !== null && iva >= total) {
+    problems.push('Valor do IVA is not less than the Amount');
   }
 
   if (!line.codigoBem) {

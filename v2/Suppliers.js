@@ -450,6 +450,13 @@ function updateSupplier(sheetRow, payload, limit) {
 
   const type = (submitted.type || '').toString().trim();
   const nif = (submitted.nif || '').toString().trim();
+  // The same rule as an entry's Emitente NIF, because this one prefills them.
+  // Only when it CHANGED: a supplier saved before the rules must not refuse an
+  // unrelated edit, any more than an old entry row does.
+  if (nif && nif !== (source.nif || '').toString().trim()) {
+    const outcome = FIELD_RULES.nif(nif);
+    if (outcome.problem) throw new Error(`NIF ${outcome.problem}`);
+  }
   const country = submitted.country === undefined || submitted.country === null
     ? source.country
     : submitted.country.toString().trim();
