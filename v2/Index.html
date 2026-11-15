@@ -409,6 +409,7 @@
       font-size: .75rem; color: var(--muted); margin-top: .25rem;
     }
     #formCard .hint.suggest { color: var(--warn); }
+    #formCard .hint .replaces { color: var(--err); font-weight: 600; }
     #formCard .hint button { border: 0; background: none; color: var(--accent);
       padding: 0 .2rem; font-size: .75rem; text-decoration: underline; }
     #formCard .actions, #supplierCard .actions { margin-top: 1.1rem; }
@@ -2309,6 +2310,7 @@
 
       var input;
       var hint = '';
+      var warning = '';
       if (field.type === 'file') {
         // `accept` narrows the picker where the section says what it takes —
         // IVA's PDF-only. It is a hint and nothing more: it can be overridden in
@@ -2343,9 +2345,10 @@
           })[0];
           // Appended, not replaced: the section's rule still applies to the
           // replacement, and editing is where a bad scan gets swapped in.
-          hint = (attached
-            ? 'Attached already. Choosing a file replaces it, and the old one goes to Drive\'s trash.'
-            : 'Not attached yet.') + (hint ? ' ' + hint : '');
+          // The replace warning is red and the section's rule after it stays
+          // grey: plain hint styling let people overwrite a document unawares.
+          if (attached) warning = 'Attached already. Choosing a file replaces it, and the old one goes to Drive\'s trash.';
+          else hint = 'Not attached yet.' + (hint ? ' ' + hint : '');
         }
 
       } else if (field.type === 'choice') {
@@ -2380,7 +2383,9 @@
       }
 
       return '<div class="field" data-field="' + escapeHtml(field.header) + '">' + label + input +
-        '<div class="hint" id="hint_' + cssId(field.header) + '">' + escapeHtml(hint) +
+        '<div class="hint" id="hint_' + cssId(field.header) + '">' +
+        (warning ? '<span class="replaces">' + escapeHtml(warning) + '</span>' + (hint ? ' ' : '') : '') +
+        escapeHtml(hint) +
         '</div></div>';
     }
 
