@@ -1302,6 +1302,23 @@ check('an open category declares none, so the filter falls back to the data',
   G.uiSectionMeta('work').category.options.length === 0,
   G.uiSectionMeta('work').category);
 
+// IVA's heading totals add up the VAT being reclaimed, labelled so it is not
+// read as Valor Total; every other section sums Amount with no label. The sum
+// itself happens in the page, which the harness cannot see.
+check('IVA heading totals sum IVA Amount, labelled IVA',
+  G.uiSectionMeta('iva').headingTotal.header === 'IVA Amount' &&
+  G.uiSectionMeta('iva').headingTotal.label === 'IVA',
+  G.uiSectionMeta('iva').headingTotal);
+check('the other sections still total Amount, unlabelled',
+  ['work', 'health', 'income'].every(k =>
+    G.uiSectionMeta(k).headingTotal.header === 'Amount' &&
+    G.uiSectionMeta(k).headingTotal.label === ''),
+  ['work', 'health', 'income'].map(k => [k, G.uiSectionMeta(k).headingTotal]));
+check('every heading-total column is a real column of its section',
+  ['work', 'iva', 'health', 'income'].every(k => G.uiSectionMeta(k).columns
+    .some(c => c.header === G.uiSectionMeta(k).headingTotal.header)),
+  ['work', 'iva', 'health', 'income'].map(k => [k, G.uiSectionMeta(k).headingTotal.header]));
+
 // The page renders a dropdown; google.script.run does not have to go through
 // the page, so the list is only closed if the server closes it.
 let notAPatient = null;

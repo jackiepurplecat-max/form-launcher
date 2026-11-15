@@ -321,6 +321,12 @@ function uiSectionMeta(sectionKey) {
     // is submitted to a tax authority. A flag rather than the config, because
     // the page needs to know a button exists and nothing more.
     exportsDeclaration: !!section.declaration,
+    // Which column the heading totals add up, and what to call the figure -
+    // IVA sums the VAT; everything else the amount, with no label.
+    headingTotal: {
+      header: (section.headingTotal && section.headingTotal.header) || COMMON.amount,
+      label: (section.headingTotal && section.headingTotal.label) || ''
+    },
     reference: uiReference(section),
     // The form's shape rides along with everything else, so opening the form is
     // not another round trip. Its dynamic part - the values already in use in a

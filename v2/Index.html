@@ -1512,12 +1512,15 @@
      * What a heading's rows add up to, one figure per currency: euros and
      * pounds are never added together, because the sum would be no amount of
      * either. A blank or unreadable amount is left out rather than read as 0.
+     * The column summed, and the label in front, come from the section's
+     * headingTotal (IVA: the VAT, labelled "IVA"; the rest: Amount, no label).
      */
     function bucketTotal(rows) {
+      var spec = app.meta.headingTotal || { header: 'Amount', label: '' };
       var sums = {};
       var order = [];
       rows.forEach(function (row) {
-        var raw = row.cells['Amount'];
+        var raw = row.cells[spec.header];
         if (raw === '' || raw === null || raw === undefined) return;
         var amount = Number(String(raw).replace(',', '.'));
         if (isNaN(amount)) return;
@@ -1525,7 +1528,7 @@
         if (!(currency in sums)) { sums[currency] = 0; order.push(currency); }
         sums[currency] += amount;
       });
-      return order.map(function (currency) {
+      var figure = order.map(function (currency) {
         try {
           return new Intl.NumberFormat('en-GB', { style: 'currency', currency: currency })
             .format(sums[currency]);
@@ -1534,6 +1537,7 @@
           return sums[currency].toFixed(2) + ' ' + currency;
         }
       }).join(' + ');
+      return figure && spec.label ? spec.label + ' ' + figure : figure;
     }
 
     function renderSections() {

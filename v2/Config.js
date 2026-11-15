@@ -298,6 +298,11 @@ const SECTIONS = {
     // The VAT is part of Valor Total, so it must be strictly below it - the
     // owner's rule, applied by the export too (ivaLineProblems).
     lessThan: [{ header: 'IVA Amount', than: COMMON.amount }],
+    // What the heading totals on the page add up: the VAT being reclaimed, not
+    // the receipt totals. Labelled so the figure isn't read as Valor Total. The
+    // cards still show Valor Total (owner's choice, 15 Nov 2026). Any section
+    // without one sums COMMON.amount, unlabelled.
+    headingTotal: { header: 'IVA Amount', label: 'IVA' },
     // Fixed for every claim, so they are shown for reference rather than asked
     // per row. Values come from Script Properties, not from this file.
     reference: [
