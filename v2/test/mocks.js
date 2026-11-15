@@ -252,11 +252,12 @@ const PropertiesService = {
  */
 function _htmlOutput(content) {
   return {
-    _content: content, title: '', metaTags: [],
+    _content: content, title: '', metaTags: [], faviconUrl: '',
     getContent() { return this._content; },
     getTitle() { return this.title; },
     setTitle(t) { this.title = t; return this; },
     addMetaTag(name, value) { this.metaTags.push({ name, value }); return this; },
+    setFaviconUrl(url) { this.faviconUrl = url; return this; },
     setXFrameOptionsMode() { return this; }
   };
 }

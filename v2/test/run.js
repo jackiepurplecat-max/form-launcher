@@ -555,6 +555,7 @@ check('page calls the real server functions',
 check('page is titled', ownerPage.getTitle() === 'HelpfulForms', ownerPage.getTitle());
 check('viewport meta added for the phone',
   ownerPage.metaTags.some(t => t.name === 'viewport'), ownerPage.metaTags);
+check('page carries the favicon', /^https:\/\/.+\.png$/.test(ownerPage.faviconUrl), ownerPage.faviconUrl);
 // Nothing is interpolated into the HTML, so no sheet value or property can
 // arrive as markup - and no address can leak into a cached page.
 check('served page contains no configured address or key',
@@ -607,6 +608,7 @@ check('the returned-to address is the pinned /exec, never /dev',
 delete mocks._props['WEB_APP_URL'];
 check('the denial page is readable on a phone',
   strangerPage.metaTags.some(t => t.name === 'viewport'), strangerPage.metaTags);
+check('the denial page carries the favicon too', strangerPage.faviconUrl === ownerPage.faviconUrl, strangerPage.faviconUrl);
 
 // The visitor's address is interpolated, so it is the one value on this page
 // that could arrive as markup.

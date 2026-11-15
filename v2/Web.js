@@ -47,6 +47,16 @@ const UI_PAGE = 'Index';
 
 const UI_TITLE = 'HelpfulForms';
 
+/**
+ * The browser-tab / Dock-app icon.
+ *
+ * setFaviconUrl() only takes a public HTTPS address - an image cannot be pushed
+ * with the script - so it is served by GitHub Pages from favicon.png at the repo
+ * root. That is the one reason Pages is still on (docs/adr/0001-retire-v1.md):
+ * switching Pages off, renaming the repo or making it private drops the icon.
+ */
+const UI_FAVICON_URL = 'https://jackiepurplecat-max.github.io/form-launcher/favicon.png';
+
 /* ============================ Who is calling ============================== */
 
 /**
@@ -169,6 +179,7 @@ function doGet(e) {
     return HtmlService
       .createHtmlOutput(uiDeniedPageHtml(verdict))
       .setTitle(UI_TITLE)
+      .setFaviconUrl(UI_FAVICON_URL)
       // The success path has always carried this and the denial path never did,
       // so the one page you meet on a phone when something is wrong was also the
       // one rendered at desktop width.
@@ -177,6 +188,7 @@ function doGet(e) {
 
   return HtmlService.createHtmlOutputFromFile(UI_PAGE)
     .setTitle(UI_TITLE)
+    .setFaviconUrl(UI_FAVICON_URL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
