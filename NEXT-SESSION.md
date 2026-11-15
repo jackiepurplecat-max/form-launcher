@@ -8,22 +8,21 @@ Rewrite this from scratch at the end of every session: three parts, 40 lines max
 - `/exec` (the app): `https://script.google.com/macros/s/AKfycbxKHouifK8w8hbpMGZ_W0yklTKCdCgp-YHAk9uS7Omji_RH_fa4Za6DGYk1ZjOL5tuo/exec`
 - `/dev` (HEAD, owner only): `https://script.google.com/macros/s/AKfycbx7eadFkUKax9S5TqYzrI2gRvd3PGhhDPjQf1Tho-0/dev`
 - **v1 retired** (`docs/adr/0001-retire-v1.md`); Pages serves only the README and favicon.
-- Built this session: `.scratch/iva-total-shows-vat/` #01. IVA heading totals
+- Closed this session: `.scratch/iva-total-shows-vat/` #01. IVA heading totals
   sum Valor do IVA, shown as "IVA €12.34"; cards keep Valor Total; other
-  sections unchanged (`headingTotal` in `v2/Config.js`). Deployed, **not yet
-  confirmed by the owner in the app** (ticket is ready-for-human).
+  sections unchanged (`headingTotal` in `v2/Config.js`). Owner confirmed on
+  the phone.
 
 Baseline: `npm run v2:test` (905 pass), `v2:verify` (matched), `v2:siri:verify`.
 
 ## What's next
 
-1. **Owner:** check the IVA heading totals in the app, then close the ticket.
-2. **Owner:** Google-side v1 shutdown:
+1. **Owner:** Google-side v1 shutdown:
    `.scratch/retire-v1/issues/01-google-side-checklist.md`.
-3. Backlog (needs-triage): `.scratch/v1-branding/` (favicon + purple),
+2. Backlog (needs-triage): `.scratch/v1-branding/` (favicon + purple),
    `.scratch/desktop-cards/`, `.scratch/field-validation/issues/02-…`,
    `.scratch/generic-supplier-names/` ("Farmácia X" corrected to "Farmácia").
-4. Try step 13 on the phone and Mac (bad Amount refused; `FT 1` → `FT1`).
+3. Try step 13 on the phone and Mac (bad Amount refused; `FT 1` → `FT1`).
 
 ## Traps
 
