@@ -35,6 +35,4 @@ Baseline: `npm run v2:test` (902 pass), `v2:verify` (matched), `v2:siri:verify`.
 - **The NIF rule on the Providers screen applies to foreign suppliers too.**
   Undecided; likely fix is to skip it when Country isn't Portugal.
 - **Test fixtures need valid NIFs.** `123456789` and `500000000` pass.
-- **A leftover v1 `.clasp.json` sits at the repo root** (gitignored). Any
-  clasp command run from the root talks to v1. Run v2 commands from `v2/`.
 - On the Mac, open HelpfulForms links in the HelpfulForms Chrome profile.
