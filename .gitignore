@@ -1,14 +1,10 @@
 # Environment variables - contains secrets!
 .env
 
-# Template file with placeholder instructions - keep local only
+# v1 leftovers (v1 retired 15 Nov 2026) - may still exist locally; never commit
 index.template.html
-
-# Test files (not for production)
 test.html
 test-delete.html
-
-# Old form-launcher directory (if it still exists)
 form-launcher/
 
 # Node modules

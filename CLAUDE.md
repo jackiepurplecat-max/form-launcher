@@ -1,19 +1,11 @@
-# Two Systems: v1 (Frozen) & v2 (Active)
+# v2 is the only system — v1 is retired
 
-**Work in v2.** Most of what sits in this repo root is v1, which is frozen —
-`Code.js`, `index.html`, `README.md`, `appsscript.json`. Several things that are
-true of v1 are **deliberately false** of v2, so do not copy patterns out of the
-v1 files: they use column indices, `onFormSubmit` triggers, and headers typed
-into sheets, all of which v2 rejects. Do not change v1; its known bugs are
-accepted, not fixed.
-
-| | v1 (frozen) | v2 (active) |
-|---|---|---|
-| Code | `Code.js`, `index.html` | `v2/` |
-| Account | Original (default credential) | Separate — `V2_CLASP_ACCOUNT` in `.env` |
-| Push | `npm run clasp:push` | `npm run v2:push` (`--user v2` credential) |
-| Intake | Google Forms + `onFormSubmit` | `createEntry()` only — no Forms, no triggers |
-| UI | GitHub Pages + Sheets API | Apps Script web app (`v2/Web.js` + `v2/Index.html`) |
+v1 (Google Forms + `onFormSubmit` + a GitHub Pages page, on the original
+account) was **retired on 15 Nov 2026** and its files deleted; see
+`docs/adr/0001-retire-v1.md`. It survives only in git history. Don't restore
+patterns from it: it used column indices, triggers and headers typed into
+sheets, all of which v2 rejects. GitHub Pages stays on only to serve
+`favicon.png`.
 
 ---
 
@@ -70,10 +62,9 @@ npm run v2:login    # once — writes the named `v2` credential
 npm run v2:whoami   # confirm which account v2 is talking to
 ```
 
-Never run the bare `clasp:*` scripts while working in v2 — they use the default
-credential and target the frozen v1 project. In particular `npm run clasp:pull`
-overwrites the tracked root `Code.js` and `appsscript.json` from the v1 remote.
-The v2 equivalents are `v2:pull`, `v2:open`, `v2:status`.
+Never run bare `clasp` (without `--user v2`) — it uses the default credential,
+which may be the retired v1 account. Use the npm scripts: `v2:pull`, `v2:open`,
+`v2:status`.
 
 ### Critical v2 Rules
 
@@ -172,7 +163,7 @@ select among signed-in accounts. It does nothing on `/exec`.
 - **A dead file picker on iOS** is a suspended iframe — close the tab and reopen.
   Don't write defensive code for it without a reproduction.
 
-### True of v2, deliberately false of v1
+### Design rules
 
 - **Columns are resolved by header name, never by index.** No magic numbers.
 - **Headers are generated from `SECTIONS`** (`v2/Config.js`), so adding a field is
@@ -207,44 +198,10 @@ Handoffs go in `NEXT-SESSION.md` — overwrite it at the end of each session.
 
 ---
 
-## v1 — Reference Only
-
-v1 is frozen and being worked down to zero.
-
-- Google Apps Script–based expense tracking
-- Integrates Google Forms, Sheets, automated file management, email notifications
-- Workflow: Form submission → Sheet update → File rename → Email with attachment
-- UI: GitHub Pages displaying sheet data via Sheets API
-- Trigger: `handleTravel()` on form submission (Google Sheet edit)
-
-For v1 setup and configuration see `README.md`. For behaviour, read `Code.js` —
-note that it resolves columns by bare index, and the same index means different
-things in different sheets (`rowValues[8]` is the email-sent flag, a file URL,
-and an amount in three separate handlers), so read the surrounding comments
-rather than assuming.
-
-**`index.html` is generated.** `npm run build` injects `.env` values into
-`index.template.html` and **overwrites `index.html`**. Confusingly, `index.html`
-is the file tracked in git while `index.template.html` is gitignored — so editing
-`index.html` directly gets your work destroyed by the next build, and the real
-source is invisible to repo-wide greps. Edit the template.
-
-### v1 commands (default credential — v1 only)
-
-```bash
-npm install
-npm run clasp:login   # default credential — NOT the v2 account
-npm run clasp:pull    # overwrites root Code.js from the v1 remote
-npm run clasp:open
-```
-
----
-
 ## Environment Configuration
 
-Secrets live in `.env` at the repo root (gitignored) — see `README.md` for the
-full key table. v2 additionally needs `V2_CLASP_ACCOUNT`, plus the recipient and
-Siri keys documented in `REBUILD-PLAN.md`.
+Secrets live in `.env` at the repo root (gitignored) — `README.md` has the key
+table. The v1 keys still in a local `.env` are unused.
 
 Apps Script secrets live in Script Properties, set once via
 `setupScriptProperties()` — then clear `SCRIPT_PROPERTY_VALUES` so the secrets are

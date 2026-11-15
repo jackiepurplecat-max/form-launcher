@@ -1306,6 +1306,8 @@ and can wait.
 5. When the old backlog reaches zero: unpublish the old page, delete the old web
    app deployment, keep the old sheet and Drive as archive.
 
+**Done 15 Nov 2026** — v1 retired; repo side in `docs/adr/0001-retire-v1.md`.
+
 ## What stays frozen
 
 Once cutover happens, **stop changing the old system**. Every change there costs

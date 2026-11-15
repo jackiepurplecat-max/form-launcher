@@ -1,8 +1,8 @@
 /**
  * v2 — section configuration.
  *
- * NOT YET DEPLOYED. This is for the new Google account. The old account still
- * runs the frozen Code.js at the repository root and must not be changed.
+ * This is the only system: v1 (the old account's Code.js) was retired on
+ * 15 Nov 2026 — see docs/adr/0001-retire-v1.md.
  *
  * Everything that differs between Work, IVA, Health and Income lives in this
  * file. Core.js is identical for all four sections. If you find yourself

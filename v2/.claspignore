@@ -1,5 +1,4 @@
-# Pushed to the NEW account's project only. The root .claspignore covers the
-# old account and allows only the frozen Code.js, so the two cannot cross.
+# Pushed to the v2 account's project only (the v1 project was retired 15 Nov 2026).
 #
 # THIS IS A DENY-ALL WITH AN ALLOWLIST. A new file in v2/ that is not named
 # below is silently left behind, and `clasp push` still reports success - it
