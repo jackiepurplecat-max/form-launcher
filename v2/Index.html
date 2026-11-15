@@ -409,7 +409,7 @@
       font-size: .75rem; color: var(--muted); margin-top: .25rem;
     }
     #formCard .hint.suggest { color: var(--warn); }
-    #formCard .hint .replaces { color: var(--err); font-weight: 600; }
+    #formCard .hint .replaces { color: var(--err); }
     #formCard .hint button { border: 0; background: none; color: var(--accent);
       padding: 0 .2rem; font-size: .75rem; text-decoration: underline; }
     #formCard .actions, #supplierCard .actions { margin-top: 1.1rem; }
@@ -2345,10 +2345,13 @@
           })[0];
           // Appended, not replaced: the section's rule still applies to the
           // replacement, and editing is where a bad scan gets swapped in.
-          // The replace warning is red and the section's rule after it stays
-          // grey: plain hint styling let people overwrite a document unawares.
-          if (attached) warning = 'Attached already. Choosing a file replaces it, and the old one goes to Drive\'s trash.';
-          else hint = 'Not attached yet.' + (hint ? ' ' + hint : '');
+          // "Attached already." is red and the rest stays grey: in plain hint
+          // styling it was missed, and a document got overwritten unawares.
+          if (attached) {
+            warning = 'Attached already.';
+            hint = 'Choosing a file replaces it, and the old one goes to Drive\'s trash.' +
+              (hint ? ' ' + hint : '');
+          } else hint = 'Not attached yet.' + (hint ? ' ' + hint : '');
         }
 
       } else if (field.type === 'choice') {
