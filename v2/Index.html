@@ -2492,9 +2492,11 @@
 
     /*
      * Fields with a `follows` rule take their value from another field until
-     * you change them yourself: Invoice date copies Treatment date, and
-     * Awaiting Document answers from Treatment Type. New entries only - the
-     * server applies the same rule to anything left blank when it saves.
+     * you change them yourself: Health's Treatment date copies Invoice date,
+     * and Awaiting Document answers from Treatment Type. New entries only - the
+     * server applies the extra fields' rules to anything left blank when it
+     * saves. Setting .value in script fires no change event, so a rule never
+     * triggers another.
      */
     function applyFollows() {
       if (!app.form || app.form.row) return;

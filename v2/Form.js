@@ -73,7 +73,10 @@ const UPLOAD_EXTENSIONS = {
  */
 function uiFormFields(section) {
   const fields = [
-    { header: COMMON.date, label: dateLabel(section), type: 'date', required: true, role: null },
+    {
+      header: COMMON.date, label: dateLabel(section), type: 'date', required: true, role: null,
+      follows: section.dateFollows || null
+    },
     {
       header: COMMON.counterparty, label: counterpartyLabel(section),
       type: 'text', required: true, role: 'counterparty'
@@ -105,7 +108,8 @@ function uiFormFields(section) {
       options: field.options || null,
       role: null,
       defaultValue: field.defaultValue || '',
-      follows: field.follows || null
+      // A serverOnly rule fills a blank at creation and never runs on the page.
+      follows: (field.follows && !field.follows.serverOnly) ? field.follows : null
     });
   });
 

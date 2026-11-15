@@ -3210,9 +3210,15 @@ const healthForm = G.uiFormFields(G.getSection('health'));
 check('fields are asked in Allianz\'s order', JSON.stringify(healthForm.slice(0, 8).map(f => f.header)) ===
   JSON.stringify(['Patient', 'Country of Treatment', 'Counterparty', 'Currency', 'Invoice Date', 'Date',
     'Treatment Type', 'Amount']), healthForm.map(f => f.header));
+check('the treatment date follows the invoice date on the form',
+  (healthForm.find(f => f.header === 'Date').follows || {}).header === 'Invoice Date');
+check('but the invoice date does not follow the treatment date on the form',
+  healthForm.find(f => f.header === 'Invoice Date').follows === null);
+check('other sections\' dates follow nothing',
+  G.uiFormFields(G.getSection('work')).find(f => f.header === 'Date').follows === null);
 check('the date is called the treatment date', healthForm.find(f => f.header === 'Date').label === 'Treatment date');
 check('Notes comes last', healthForm[healthForm.length - 1].header === 'Notes', healthForm.map(f => f.header));
-check('the follow rules reach the page', !!healthForm.find(f => f.header === 'Invoice Date').follows &&
+check('the follow rules reach the page', !!healthForm.find(f => f.header === 'Awaiting Document').follows &&
   healthForm.find(f => f.header === 'Country of Treatment').defaultValue === 'Portugal');
 check('the card is told to read in that order', G.uiSectionMeta('health').ordered === true &&
   G.uiSectionMeta('health').columns[0].header === 'Patient', G.uiSectionMeta('health').columns.map(c => c.header));

@@ -155,7 +155,8 @@ const COUNTRIES = [
  *     follows       { header } copies that field's value into a blank one;
  *                   { header, values, otherwise } looks it up instead. Applied
  *                   when an entry is created, and live in the form until the
- *                   field is edited by hand.
+ *                   field is edited by hand - unless the rule says
+ *                   serverOnly: true, when it only fills a blank at creation.
  *     formerly      { header, values } - the column's old name and old values,
  *                   converted once by upgradeSection().
  *
@@ -164,6 +165,8 @@ const COUNTRIES = [
  *
  * Optional, where a section needs them:
  *   dateLabel            what COMMON.date is called in the UI (default 'Date')
+ *   dateFollows          a `follows` rule for COMMON.date, applied on the form
+ *                        only (the server has no rule for Date)
  *   fieldGroups          [{ heading?, headers }] - the order the form and the
  *                        card show fields in, and the headings between them
  *   amountLabel          what COMMON.amount is called in the UI (default 'Amount')
@@ -379,6 +382,11 @@ const SECTIONS = {
     // COMMON.date holds the treatment date - the event itself, consistent with
     // the other sections - so here it is labelled as such.
     dateLabel: 'Treatment date',
+    // The form asks for Invoice date first, so Treatment date copies it until
+    // you type a Treatment date yourself. One way only, by the owner's choice:
+    // a Treatment date typed first does not change Invoice date. Page only -
+    // the server needs no rule for Date, which every entry already has.
+    dateFollows: { header: 'Invoice Date' },
     // The Allianz app asks in two screens, so the form and the card show the
     // same two blocks, in its order and under its headings, to be read top to
     // bottom while keying a claim in. The last group has no heading: Allianz
@@ -428,10 +436,13 @@ const SECTIONS = {
         header: 'Country of Treatment', label: 'Country of treatment', type: 'choice',
         required: false, options: COUNTRIES, defaultValue: 'Portugal'
       },
-      // Usually the treatment date, so it starts as a copy of it
+      // A blank Invoice date is filled from the treatment date when the entry
+      // is saved, because Siri sends only the treatment date and this column is
+      // required. Server only: on the form, Treatment date follows Invoice date
+      // (dateFollows above) and not the other way round.
       {
         header: 'Invoice Date', label: 'Invoice date', type: 'date', required: true,
-        follows: { header: COMMON.date }
+        follows: { header: COMMON.date, serverOnly: true }
       },
       // Allianz's first-level list, word for word. Its second level is chosen
       // in the app at claim time and not recorded here.
