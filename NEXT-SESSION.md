@@ -4,23 +4,25 @@ Rewrite this from scratch at the end of every session: three parts, 40 lines max
 
 ## What's live
 
-- **Main app: version 41** (commit `4638756`). Siri: @2.
+- **Main app: version 42** (commit `63a0c5c`). Siri: @2.
 - `/exec` (the app): `https://script.google.com/macros/s/AKfycbxKHouifK8w8hbpMGZ_W0yklTKCdCgp-YHAk9uS7Omji_RH_fa4Za6DGYk1ZjOL5tuo/exec`
 - `/dev` (HEAD, owner only): `https://script.google.com/macros/s/AKfycbx7eadFkUKax9S5TqYzrI2gRvd3PGhhDPjQf1Tho-0/dev`
 - **v1 retired** (`docs/adr/0001-retire-v1.md`); Pages serves only the README and favicon.
-- Closed this session: `.scratch/list-sorting/` #01, sort bar on every
-  section. `Last Updated` column stamped by `touchEntry()`; upgrade run.
-  Owner confirmed on the phone.
+- This session: **favicon** on both v2 pages (`UI_FAVICON_URL`, `v2/Web.js`),
+  served from Pages; `favicon.png` shrunk to 256px/31 KB. Not yet seen by the
+  owner in the Chrome profile, nor on the phone.
 
-Baseline: `npm run v2:test` (947 pass), `v2:verify` (matched).
+Baseline: `npm run v2:test` (949 pass), `v2:verify` (matched).
 
 ## What's next
 
-1. **Owner:** Google-side v1 shutdown:
+1. **Owner:** check the favicon in the HelpfulForms Chrome profile (tab +
+   Dock app) and the phone. Then do the purple half of `.scratch/v1-branding/`.
+2. **Owner:** Google-side v1 shutdown:
    `.scratch/retire-v1/issues/01-google-side-checklist.md`.
-2. Backlog (needs-triage): `.scratch/v1-branding/`, `.scratch/desktop-cards/`,
+3. Backlog (needs-triage): `.scratch/v1-branding/`, `.scratch/desktop-cards/`,
    `.scratch/field-validation/issues/02-…`, `.scratch/generic-supplier-names/`.
-3. Try step 13 on the phone and Mac (bad Amount refused; `FT 1` → `FT1`).
+4. Try step 13 on the phone and Mac (bad Amount refused; `FT 1` → `FT1`).
 
 ## Traps
 
@@ -31,6 +33,6 @@ Baseline: `npm run v2:test` (947 pass), `v2:verify` (matched).
   in run.js — use `Object.prototype.toString`.
 - **Provider renames don't stamp Last Updated** on purpose (would lift up to 50 rows).
 - **`follows` with `serverOnly: true` never reaches the page.** Keep Invoice Date's rule.
-- **Don't turn GitHub Pages off.** It hosts the favicon v2 will use.
+- **Don't turn GitHub Pages off.** It hosts the favicon `/exec` uses; private repo or rename also breaks it.
 - **NIF rule on Providers applies to foreign suppliers too.** Undecided.
 - **Test fixtures need valid NIFs.** `123456789` and `500000000` pass.
