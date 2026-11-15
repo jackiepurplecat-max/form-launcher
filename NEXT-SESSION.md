@@ -14,8 +14,7 @@ Permanent traps live in `CLAUDE.md`; decisions in `docs/adr/` (older ones in `RE
   the row's `receiptState`, so a Health claim whole with one document no longer
   reads "awaiting". Owner confirmed it on the phone.
 
-Baseline: `npm run v2:test` (898 pass), `npm run v2:verify` (matched after the
-v35 push), `npm run v2:siri:verify`.
+Baseline: `npm run v2:test` (898 pass), `v2:verify` (matched), `v2:siri:verify`.
 
 ## What's next
 
@@ -26,7 +25,8 @@ v35 push), `npm run v2:siri:verify`.
    `.scratch/awaiting-follows-documents/` (both docs picked → Waiting = No).
 3. Backlog (needs-triage): `.scratch/v1-branding/` (favicon + purple),
    `.scratch/replace-attached-file/` (make "replace" obvious),
-   `.scratch/desktop-cards/`, `.scratch/field-validation/issues/02-…`.
+   `.scratch/desktop-cards/`, `.scratch/field-validation/issues/02-…`,
+   `.scratch/generic-supplier-names/` ("Farmácia X" corrected to "Farmácia").
 4. Try step 13 on the phone and Mac (bad Amount refused; `FT 1` → `FT1`).
 
 ## Traps
