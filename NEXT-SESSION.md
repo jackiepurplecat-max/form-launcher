@@ -19,14 +19,14 @@ v35 push), `npm run v2:siri:verify`.
 
 ## What's next
 
-1. **`git push`**: `main` is 1 commit ahead of GitHub (`399b0d3`). Plain push,
-   nothing else rides on it. Ask the owner first.
-2. **Owner:** Google-side v1 shutdown:
+1. **Owner:** Google-side v1 shutdown:
    `.scratch/retire-v1/issues/01-google-side-checklist.md`.
+2. Health form defaults (needs-triage, related, take together):
+   `.scratch/invoice-date-follows/` (Treatment date copies Invoice date),
+   `.scratch/awaiting-follows-documents/` (both docs picked → Waiting = No).
 3. Backlog (needs-triage): `.scratch/v1-branding/` (favicon + purple),
    `.scratch/replace-attached-file/` (make "replace" obvious),
-   `.scratch/desktop-cards/`, `.scratch/field-validation/issues/02-…`,
-   `.scratch/invoice-date-follows/` (Treatment date copies Invoice date).
+   `.scratch/desktop-cards/`, `.scratch/field-validation/issues/02-…`.
 4. Try step 13 on the phone and Mac (bad Amount refused; `FT 1` → `FT1`).
 
 ## Traps
