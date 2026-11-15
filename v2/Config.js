@@ -157,6 +157,8 @@ const COUNTRIES = [
  *                   when an entry is created, and live in the form until the
  *                   field is edited by hand - unless the rule says
  *                   serverOnly: true, when it only fills a blank at creation.
+ *                   whenAllDocuments: value overrides the rule on the form
+ *                   while every fileColumns slot has a document chosen.
  *     formerly      { header, values } - the column's old name and old values,
  *                   converted once by upgradeSection().
  *
@@ -464,13 +466,17 @@ const SECTIONS = {
       },
       // A visit's receipt is usually the whole claim; a prescription or an exam
       // needs the receipt as well, and a dentist may send them separately.
+      // With every document slot filled on the form (a scan picked or a file
+      // uploaded) nothing more can come, so the answer is No whatever the
+      // treatment type. Empty a slot again and Treatment Type decides again.
       {
         header: 'Awaiting Document', label: 'Waiting for another document?', type: 'choice',
         required: false, options: ['Yes', 'No'],
         follows: {
           header: 'Treatment Type',
           values: { 'Doctor Visit': 'No', 'Alternative treatment': 'No' },
-          otherwise: 'Yes'
+          otherwise: 'Yes',
+          whenAllDocuments: 'No'
         }
       },
       RECEIPT_MEDIUM_FIELD

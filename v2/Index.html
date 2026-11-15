@@ -2510,13 +2510,31 @@
           value = Object.prototype.hasOwnProperty.call(field.follows.values, value)
             ? field.follows.values[value] : (field.follows.otherwise || '');
         }
+        // Overrides the rule above while every document slot is filled
+        // (Health's Awaiting Document → No).
+        if (field.follows.whenAllDocuments && allDocumentsChosen()) {
+          value = field.follows.whenAllDocuments;
+        }
         input.value = value;
+      });
+    }
+
+    /** True when every document slot has a scan picked or a file chosen. */
+    function allDocumentsChosen() {
+      var slots = formFields().filter(function (field) { return field.type === 'file'; });
+      return slots.length > 0 && slots.every(function (field) {
+        var input = fieldInput(field.header);
+        var select = document.getElementById('pick_f_' + cssId(field.header));
+        return (input && input.files && input.files.length) || (select && select.value);
       });
     }
 
     /** Note a hand edit, then let anything following the changed field catch up. */
     function formFieldChanged(target) {
-      if (!app.form || !target.dataset || !target.dataset.header) return;
+      if (!app.form || !target.dataset) return;
+      // Picking a scan is not an edit of any field, but rules can depend on it.
+      if (target.dataset.pickHeader) return applyFollows();
+      if (!target.dataset.header) return;
       app.form.touched[target.dataset.header] = true;
       applyFollows();
     }

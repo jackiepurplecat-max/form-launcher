@@ -3157,6 +3157,9 @@ check('a blank answer falls back to the treatment type', (() => {
   return G.receiptStateFor(G.getSection('health'), healthSheet(), cols, visit.row) === 'attached';
 })());
 check('sections without the field still need every slot', !G.getSection('iva').awaitingDocumentField);
+check('the form gets the "every document chosen means No" rule',
+  (G.uiFormFields(G.getSection('health')).find(f => f.header === 'Awaiting Document').follows || {})
+    .whenAllDocuments === 'No');
 
 section('Health — the registry remembers the country');
 G.recordSupplier('Clinica Madrid', { type: 'Doctor Visit', country: 'Spain' });
