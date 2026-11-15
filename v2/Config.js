@@ -21,6 +21,11 @@
  */
 const COMMON = {
   timestamp: 'Timestamp',
+  // When anything last happened to the row: created, edited, a document
+  // attached, status or a state date changed, archived or restored. Written by
+  // touchEntry() (Core.js), and by archive/restore as they copy the row; the
+  // lists sort by it. Timestamp stays the creation time.
+  lastUpdated: 'Last Updated',
   source: 'Source',
 
   date: 'Date',

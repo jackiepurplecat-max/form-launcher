@@ -268,6 +268,77 @@ function uiColumns(section) {
 }
 
 /**
+ * The key "Last updated" goes by in the sort bar. Not a header, so it cannot
+ * collide with one: the column is never displayed, only sorted by.
+ */
+const SORT_UPDATED = '__updated';
+
+/** How a displayed column sorts, from its type - never from its name. */
+function sortKind(section, column) {
+  if (column.type === 'date') return 'date';
+  if (column.type === 'number') return 'number';
+  const money = fieldRules(section).some(rule => rule.header === column.header && rule.rule === 'money');
+  return money ? 'number' : 'text';
+}
+
+/**
+ * What a section's sort bar offers: Last updated, then every column the list
+ * shows in the order it shows them - the columns, then the state dates - then
+ * Status, which only orders the archive (each live list is one status already).
+ * Documents are left out: ordering by a link means nothing.
+ *
+ * Everything here follows from SECTIONS, so a field added there appears in the
+ * bar with no change to this function or the page.
+ */
+function uiSortOptions(section) {
+  const documents = section.fileColumns.map(fileCol => fileCol.header);
+  const options = [{ key: SORT_UPDATED, label: 'Last updated', kind: 'date' }];
+  uiColumns(section).forEach(column => {
+    if (documents.indexOf(column.header) !== -1) return;
+    options.push({ key: column.header, label: column.label, kind: sortKind(section, column) });
+  });
+  section.states.forEach(state => {
+    if (state.dateColumn) options.push({ key: state.dateColumn, label: state.dateColumn, kind: 'date' });
+  });
+  options.push({ key: COMMON.status, label: 'Status', kind: 'status' });
+
+  // One option per key: a column could otherwise arrive twice, say a state date
+  // a section also declared as a field.
+  const seen = {};
+  return options.filter(option => {
+    if (seen[option.key]) return false;
+    seen[option.key] = true;
+    return true;
+  });
+}
+
+/**
+ * A value as the page compares it, or null when blank - and blanks always go
+ * last, whichever way the list runs. Dates become milliseconds and amounts
+ * numbers here, so the page never sorts "dd/mm/yyyy" text or "9" above "10".
+ * Text stays text: the page compares it ignoring case and accents.
+ */
+function sortValue(kind, value, section) {
+  if (kind === 'date') {
+    const date = cellAsDate(value);
+    return date ? date.getTime() : null;
+  }
+  if (kind === 'status') {
+    const index = stateIndex(section, value);
+    return index === -1 ? null : index;
+  }
+  if (value === '' || value === null || value === undefined) return null;
+  if (kind === 'number') {
+    if (typeof value === 'number') return isFinite(value) ? value : null;
+    const text = value.toString().trim().replace(',', '.');
+    const n = Number(text);
+    return text !== '' && isFinite(n) ? n : null;
+  }
+  const text = value.toString().trim();
+  return text === '' ? null : text;
+}
+
+/**
  * The reference block — values that are the same on every row and so were never
  * really data. Blank properties are dropped rather than shown empty.
  */
@@ -297,6 +368,8 @@ function uiSectionMeta(sectionKey) {
         }
       : null,
     columns: uiColumns(section),
+    // The sort bar's options, in order - see uiSortOptions.
+    sort: uiSortOptions(section),
     // Set where the card should read in column order, top to bottom, rather
     // than with the date and category lifted into its subtitle - Health, so it
     // can be followed while keying a claim into the Allianz app.
@@ -490,6 +563,18 @@ function uiRow(section, sheetName, cols, rowValues, rowNumber, viewerEmail) {
 
   const stamp = raw(COMMON.timestamp);
 
+  // One comparable value per sort option. Last updated falls back to when the
+  // row was made, so a row the upgrade has not reached still sorts sensibly.
+  const sortKeys = {};
+  uiSortOptions(section).forEach(option => {
+    if (option.key === SORT_UPDATED) {
+      const updated = sortValue('date', cols[COMMON.lastUpdated] ? raw(COMMON.lastUpdated) : '', section);
+      sortKeys[option.key] = updated !== null ? updated : sortValue('date', stamp, section);
+      return;
+    }
+    sortKeys[option.key] = sortValue(option.kind, raw(option.key), section);
+  });
+
   return {
     row: rowNumber,
     // Not shown anywhere — this is how a completion link names its entry. Row
@@ -503,7 +588,8 @@ function uiRow(section, sheetName, cols, rowValues, rowNumber, viewerEmail) {
     files: files,
     receiptState: (raw(COMMON.receiptState) || '').toString(),
     claimEmailed: section.emailOnCreate ? !!raw(CLAIM_EMAILED_COLUMN) : null,
-    options: options
+    options: options,
+    sortKeys: sortKeys
   };
 }
 

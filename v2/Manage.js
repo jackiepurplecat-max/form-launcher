@@ -100,7 +100,11 @@ function archiveEntry(sectionKey, sheetRow, reason) {
     const index = archiveCols[header];
     if (index) values[index - 1] = safeCellValue(carried[header]);
   });
-  values[columnIndex(archiveCols, archive.getName(), ARCHIVE_COLUMNS.archivedAt) - 1] = new Date();
+  const now = new Date();
+  values[columnIndex(archiveCols, archive.getName(), ARCHIVE_COLUMNS.archivedAt) - 1] = now;
+  // Archiving is the latest thing to happen to the entry. Set in the copy,
+  // since the live row is about to go.
+  values[columnIndex(archiveCols, archive.getName(), COMMON.lastUpdated) - 1] = now;
   values[columnIndex(archiveCols, archive.getName(), ARCHIVE_COLUMNS.reason) - 1] = why;
 
   // The copy lands first. Everything after this can fail without losing data.
@@ -161,6 +165,9 @@ function restoreEntry(sectionKey, archiveSheetRow) {
     if (!archiveCols[header] || !cols[header]) return;
     values[cols[header] - 1] = safeCellValue(readCell(archive, archiveCols, row, header));
   });
+  // Restoring is the latest thing to happen to it. In the values written, not
+  // via touchEntry afterwards, so the row is never briefly back with its old one.
+  values[columnIndex(cols, sheet.getName(), COMMON.lastUpdated) - 1] = new Date();
 
   const liveRow = withLock(() => {
     const target = sheet.getLastRow() + 1;
@@ -315,6 +322,12 @@ function uiUpdateEntry(sectionKey, sheetRow, payload) {
 
   const replaced = [];
   try {
+    // Only when something actually changes. The dialog sends every field it
+    // shows, so Save with nothing altered is not an action on the entry and
+    // must not lift it to the top of "Last updated".
+    if (Object.keys(changed).length || stored.length) {
+      touchEntry(sheet, cols, row);
+    }
     Object.keys(toWrite).forEach(header => {
       const value = toWrite[header];
       writeCell(sheet, cols, row, header,

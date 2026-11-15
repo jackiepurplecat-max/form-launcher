@@ -204,6 +204,24 @@
     /* Providers has no category, so the row would otherwise be an empty gap. */
     #filters:empty { display: none; }
 
+    /*
+     * The sort bar: one per section, above all its lists, archive included.
+     * Every option inline on a desktop; on a phone that row is far too long, so
+     * it becomes a select plus a direction button - the same swap the view
+     * pills make. Both are always built; the breakpoint decides which shows.
+     */
+    #sortBar { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin-bottom: 1rem; }
+    #sortBar:empty { display: none; }
+    #sortBar .label { font-size: .8rem; color: var(--muted); }
+    #sortBar .pills { display: flex; flex-wrap: wrap; gap: .4rem; }
+    #sortBar .pills button {
+      border-radius: 999px; padding: .3rem .75rem; font-size: .85rem; color: var(--muted);
+    }
+    #sortBar .pills button[aria-pressed="true"] {
+      background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
+    }
+    #sortSelect, #sortDir { display: none; }
+
     #state { padding: 2rem 1rem; text-align: center; color: var(--muted); }
     #state.error { color: var(--err); background: var(--err-bg); border-radius: 12px; text-align: left; }
     #state.error strong { display: block; margin-bottom: .3rem; }
@@ -479,6 +497,9 @@
       main { padding: .8rem; }
       /* The filter takes the rest of its row rather than its natural width. */
       #filters select { flex: 1; }
+      #sortBar .pills { display: none; }
+      #sortSelect { display: block; flex: 1; min-width: 0; min-height: 44px; }
+      #sortDir { display: inline-block; min-width: 44px; min-height: 44px; font-size: 1.1rem; }
 
       /*
        * The width fix is not here - see input[type="date"] near the top, which
@@ -527,6 +548,7 @@
     </section>
 
     <div id="filters"></div>
+    <div id="sortBar"></div>
 
     <div id="state">Loading…</div>
     <div id="sections" class="hidden"></div>
@@ -649,6 +671,7 @@
       archiveLoaded: false,
       archiveLoading: false,
       filters: { category: '' },
+      sort: null,         // { key, dir } for this section - see loadSort
       dialog: null,       // what the open dialog will do when accepted
       form: null,         // non-null while the new-entry form is open
       confirm: null,      // what the open confirmation will do when accepted
@@ -857,6 +880,8 @@
       el('newBar').style.display = key === PROVIDERS ? 'none' : '';
       el('reference').style.display = 'none';
       el('filters').innerHTML = '';
+      el('sortBar').innerHTML = '';
+      app.sort = null;
       load();
     }
 
@@ -879,8 +904,10 @@
             app.rows.some(function (row) { return row.statusIndex === -1; })) {
           app.expanded[ODD_BUCKET] = true;
         }
+        app.sort = loadSort(key, app.meta.sort);
         renderReference();
         renderFilters();
+        renderSortBar();
         renderSections();
         openDeepLink();
         // Only if it is already open — see loadArchive.
@@ -946,6 +973,7 @@
         app.archiveLoaded = false;
         app.archiveRows = [];
         renderFilters();
+        renderSortBar();
         if (reveal) revealBucket(reveal);
         else renderSections();
         // Unconditionally, and after the reveal: restoring a row happens while
@@ -1449,6 +1477,122 @@
       el('categoryFilter').value = app.filters.category;
     }
 
+    /* -------------------------------- sort -------------------------------- */
+
+    /*
+     * The server decides what can be sorted by (meta.sort, from SECTIONS) and
+     * hands every row a comparable value per option (row.sortKeys: dates as
+     * milliseconds, amounts as numbers, status as its position, text as text,
+     * blanks as null). The page only compares, so switching is instant.
+     *
+     * The comparison is between the markers so the harness can run it.
+     */
+    /* sort-compare:begin */
+    // Must match SORT_UPDATED in Web.js; the harness checks they agree.
+    var SORT_UPDATED = '__updated';
+
+    /*
+     * Two sort values, 'desc' (newest / largest / Z-A first) or 'asc'. A blank
+     * goes last in both directions, so an entry missing the value never hides
+     * the ones that have it. Text ignores case and accents.
+     */
+    function compareSortValues(x, y, dir) {
+      var xBlank = x === null || x === undefined;
+      var yBlank = y === null || y === undefined;
+      if (xBlank || yBlank) return xBlank === yBlank ? 0 : (xBlank ? 1 : -1);
+      var order = typeof x === 'string' || typeof y === 'string'
+        ? String(x).localeCompare(String(y), undefined, { sensitivity: 'base', numeric: true })
+        : (x < y ? -1 : x > y ? 1 : 0);
+      return dir === 'asc' ? order : -order;
+    }
+
+    /* Ties keep Last updated newest first, then the later row, so the order is stable. */
+    function compareRows(a, b, key, dir) {
+      var ak = a.sortKeys || {};
+      var bk = b.sortKeys || {};
+      return compareSortValues(ak[key], bk[key], dir) ||
+        compareSortValues(ak[SORT_UPDATED], bk[SORT_UPDATED], 'desc') ||
+        (b.row - a.row);
+    }
+    /* sort-compare:end */
+
+    function sortRows(rows) {
+      if (!app.sort) return rows;
+      var key = app.sort.key;
+      var dir = app.sort.dir;
+      return rows.slice().sort(function (a, b) { return compareRows(a, b, key, dir); });
+    }
+
+    /* Text and status read best A-Z / first state first; dates and amounts newest / largest first. */
+    function defaultDir(option) {
+      return option.kind === 'text' || option.kind === 'status' ? 'asc' : 'desc';
+    }
+
+    function sortOption(key) {
+      return (app.meta.sort || []).filter(function (option) { return option.key === key; })[0] || null;
+    }
+
+    /*
+     * The choice is remembered per section, so it survives a refresh and the
+     * home-screen app being closed. Storage can be unavailable (some private
+     * modes throw), in which case the choice simply lasts until you leave.
+     */
+    function loadSort(sectionKey, options) {
+      var saved = null;
+      try { saved = JSON.parse(localStorage.getItem('sort:' + sectionKey) || 'null'); } catch (e) {}
+      var known = (options || []).some(function (option) { return saved && option.key === saved.key; });
+      if (known && (saved.dir === 'asc' || saved.dir === 'desc')) return { key: saved.key, dir: saved.dir };
+      return { key: SORT_UPDATED, dir: 'desc' };
+    }
+
+    function saveSort() {
+      try { localStorage.setItem('sort:' + app.view, JSON.stringify(app.sort)); } catch (e) {}
+    }
+
+    /* Picking an option sorts by it; picking the one already active flips it. */
+    function chooseSort(key) {
+      var option = sortOption(key);
+      if (!option) return;
+      app.sort = app.sort && app.sort.key === key
+        ? { key: key, dir: app.sort.dir === 'asc' ? 'desc' : 'asc' }
+        : { key: key, dir: defaultDir(option) };
+      saveSort();
+      renderSortBar();
+      renderSections();
+    }
+
+    function flipSort() {
+      if (app.sort) chooseSort(app.sort.key);
+    }
+
+    function arrow(dir) { return dir === 'asc' ? '↑' : '↓'; }
+
+    function renderSortBar() {
+      var options = app.meta && app.meta.sort;
+      if (!options || !options.length || !app.sort) {
+        el('sortBar').innerHTML = '';
+        return;
+      }
+      var active = app.sort;
+      var dirWords = active.dir === 'asc'
+        ? 'oldest / smallest / A to Z first' : 'newest / largest / Z to A first';
+
+      el('sortBar').innerHTML =
+        '<span class="label">Sort</span>' +
+        '<span class="pills">' + options.map(function (option) {
+          var on = option.key === active.key;
+          return '<button type="button" data-sort="' + escapeHtml(option.key) + '"' +
+            ' aria-pressed="' + on + '"' + (on ? ' title="' + dirWords + ' - tap to flip"' : '') + '>' +
+            escapeHtml(option.label) + (on ? ' ' + arrow(active.dir) : '') + '</button>';
+        }).join('') + '</span>' +
+        '<select id="sortSelect" aria-label="Sort by">' + options.map(function (option) {
+          return '<option value="' + escapeHtml(option.key) + '"' +
+            (option.key === active.key ? ' selected' : '') + '>' + escapeHtml(option.label) + '</option>';
+        }).join('') + '</select>' +
+        '<button type="button" id="sortDir" aria-label="' + dirWords + ' - tap to flip">' +
+        arrow(active.dir) + '</button>';
+    }
+
     /* -------------------------------- table ------------------------------- */
 
     function visibleRows(rows) {
@@ -1469,7 +1613,7 @@
      * noise that trains you to ignore it.
      */
     function buckets() {
-      var live = visibleRows();
+      var live = sortRows(visibleRows());
 
       var list = app.meta.states.map(function (state) {
         return {
@@ -1487,7 +1631,7 @@
 
       list.push({
         key: ARCHIVE_BUCKET, label: 'Archive', tone: 'archive',
-        rows: visibleRows(app.archiveRows), lazy: true
+        rows: sortRows(visibleRows(app.archiveRows)), lazy: true
       });
 
       return list;
@@ -2792,6 +2936,8 @@
       if (target.id === 'newEntry') return openForm();
       if (target.id === 'ivaExport') return runIvaExport();
       if (target.dataset.toggle) return toggleBucket(target.dataset.toggle);
+      if (target.dataset.sort) return chooseSort(target.dataset.sort);
+      if (target.id === 'sortDir') return flipSort();
       if (target.dataset.advance) return changeStatus(target.dataset.advance, target.dataset.state);
       if (target.dataset.regress) return changeStatus(target.dataset.regress, target.dataset.state);
       if (target.dataset.supplier) return openSupplier(target.dataset.supplier);
@@ -2920,6 +3066,7 @@
         return refreshMissingNote();
       }
       if (target.id === 'viewSelect') return select(target.value);
+      if (target.id === 'sortSelect') return chooseSort(target.value);
       if (target.id === 'categoryFilter') {
         app.filters.category = target.value;
         return renderSections();

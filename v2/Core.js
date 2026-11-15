@@ -335,6 +335,23 @@ function writeCell(sheet, cols, row, header, value) {
     .setValue(safeCellValue(value));
 }
 
+/**
+ * Record that something just happened to a row: Last Updated becomes now.
+ *
+ * Every operation that changes an entry calls this - creating, editing,
+ * attaching, a status or state-date change, restoring (archiving stamps the
+ * archive copy itself). It is what "Last updated" sorts by, so an operation that
+ * forgets it leaves its row sinking down the list as if untouched. The harness
+ * checks each one.
+ *
+ * Called BEFORE the operation's other writes, so a sheet without the column
+ * (the upgrade not yet run) refuses the operation outright instead of half
+ * doing it and then failing.
+ */
+function touchEntry(sheet, cols, row) {
+  writeCell(sheet, cols, row, COMMON.lastUpdated, new Date());
+}
+
 /* ================================= States ================================= */
 
 function stateIndex(section, stateName) {
@@ -370,6 +387,25 @@ function isValidDateISO(value) {
   return date.getFullYear() === year &&
     date.getMonth() === month - 1 &&
     date.getDate() === day;
+}
+
+/**
+ * A cell as a Date, or null when it holds none. Sheets hands back a Date for a
+ * date cell and text for anything typed; yyyy-MM-dd is read as a local date so
+ * it lands on the day it names.
+ */
+function cellAsDate(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    return isNaN(value.getTime()) ? null : value;
+  }
+  const text = value.toString().trim();
+  if (isValidDateISO(text)) {
+    const parts = text.split('-').map(Number);
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+  }
+  const parsed = new Date(text);
+  return isNaN(parsed.getTime()) ? null : parsed;
 }
 
 /**
@@ -609,6 +645,8 @@ function setStatus(sectionKey, sheetRow, newState, dateISO) {
 
   const previous = (readCell(sheet, cols, row, COMMON.status) || '').toString().trim();
 
+  touchEntry(sheet, cols, row);
+
   // Clear dates belonging to states later than the target
   section.states.forEach((state, i) => {
     if (state.dateColumn && i > targetIndex) {
@@ -698,6 +736,7 @@ function setEntryDate(sectionKey, sheetRow, dateColumn, dateISO) {
     }
   }
 
+  touchEntry(sheet, cols, row);
   writeCell(sheet, cols, row, dateColumn, value);
   return { ok: true, section: sectionKey, row: row, column: dateColumn, date: value };
 }

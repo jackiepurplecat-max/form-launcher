@@ -42,6 +42,7 @@ const STAGING_FOLDER_NAME = 'Staging';
 function sectionHeaders(section) {
   const headers = [
     COMMON.timestamp,
+    COMMON.lastUpdated,
     COMMON.source,
     COMMON.date,
     COMMON.counterparty
@@ -716,4 +717,88 @@ function previewHealthUpgrade() {
 
 function applyHealthUpgrade() {
   return upgradeSection('health', true);
+}
+
+/* ======================== Last Updated (list sorting) ===================== */
+
+/**
+ * Add the Last Updated column to every section and archive, and fill it for
+ * the rows that predate it.
+ *
+ * The fill is a best guess, because nothing recorded edits or attachments
+ * before: the latest of Timestamp, the row's state dates and - in an archive -
+ * when it was archived. A cell that already holds a value is left alone, so
+ * re-running only fills what is still blank.
+ *
+ * Preview first (previewLastUpdatedUpgrade) - it changes nothing. Applying adds
+ * a column the old code never fills, so follow the upgrade order in CLAUDE.md
+ * and deploy straight after.
+ */
+function upgradeLastUpdated(apply) {
+  const doIt = apply === true;
+  const ss = getSpreadsheet();
+  const report = { applied: doIt, headers: [], filled: {}, noDate: {}, errors: [] };
+
+  Object.keys(SECTIONS).forEach(key => {
+    const section = SECTIONS[key];
+    const targets = [{ sheet: getSheet(section), headers: sectionHeaders(section), archived: false }];
+    const archive = ss.getSheetByName(archiveSheetName(section));
+    if (archive) targets.push({ sheet: archive, headers: archiveHeaders(section), archived: true });
+
+    targets.forEach(target => {
+      const sheet = target.sheet;
+      const name = sheet.getName();
+      try {
+        if (doIt) {
+          applyHeaders(sheet, target.headers).added
+            .forEach(header => report.headers.push(`${name}: added ${header}`));
+        } else if (!resolveColumns(sheet)[COMMON.lastUpdated]) {
+          report.headers.push(`${name}: would add ${COMMON.lastUpdated}`);
+        }
+        const cols = resolveColumns(sheet);
+        const lastRow = sheet.getLastRow();
+        report.filled[name] = 0;
+        report.noDate[name] = 0;
+        if (lastRow < 2) return;
+
+        const sources = [COMMON.timestamp]
+          .concat(section.states.map(state => state.dateColumn).filter(Boolean))
+          .concat(target.archived ? [ARCHIVE_COLUMNS.archivedAt] : [])
+          .filter(header => cols[header]);
+        const values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+        const at = cols[COMMON.lastUpdated];
+
+        const column = values.map(rowValues => {
+          const existing = at ? rowValues[at - 1] : '';
+          if (existing !== '' && existing !== null && existing !== undefined) return [existing];
+          let latest = null;
+          sources.forEach(header => {
+            const date = cellAsDate(rowValues[cols[header] - 1]);
+            if (date && (!latest || date > latest)) latest = date;
+          });
+          if (latest) report.filled[name]++;
+          else if (rowValues.some(v => v !== '' && v !== null && v !== undefined)) report.noDate[name]++;
+          return [safeCellValue(latest || '')];
+        });
+
+        if (doIt) sheet.getRange(2, at, column.length, 1).setValues(column);
+      } catch (error) {
+        report.errors.push(`${name}: ${error}`);
+      }
+    });
+  });
+
+  if (doIt) SpreadsheetApp.flush();
+  report.ok = report.errors.length === 0;
+  Logger.log(JSON.stringify(report, null, 2));
+  return report;
+}
+
+/** Run from the editor first. Changes nothing; reports what applying would do. */
+function previewLastUpdatedUpgrade() {
+  return upgradeLastUpdated(false);
+}
+
+function applyLastUpdatedUpgrade() {
+  return upgradeLastUpdated(true);
 }

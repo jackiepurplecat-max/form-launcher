@@ -535,8 +535,11 @@ check('real suppliers survived cleanup', G.findSupplier('FNAC').nif === '5000000
   const sh = mocks._ss.getSheetByName(G.getSection(k).sheet);
   check(`${k}: back to pre-smoke row count`, sh.getLastRow() === rowsPreSmoke[k], { before: rowsPreSmoke[k], after: sh.getLastRow() });
 });
-check('cleanup left the real rows alone', mocks._ss.getSheetByName('Work').getRange(2, 4).getValue() === 'Hospital da Luz',
-  mocks._ss.getSheetByName('Work').getRange(2, 4).getValue());
+const workCounterparty = () => {
+  const sh = mocks._ss.getSheetByName('Work');
+  return sh.getRange(2, G.resolveColumns(sh)['Counterparty']).getValue();
+};
+check('cleanup left the real rows alone', workCounterparty() === 'Hospital da Luz', workCounterparty());
 
 /* ========================= step 7: the web UI ============================= */
 /*
@@ -3530,6 +3533,165 @@ section('validation — the supplier list refuses a NIF that fails its check dig
     name: 'Old Registry Lda', type: '', nif: '12345678', aliases: 'ORL', was: 'Old Registry Lda'
   }));
   check('an untouched old NIF does not block another edit', aliasOnly === null, aliasOnly);
+})();
+
+/* ------------------------------ list sorting ----------------------------- */
+// SORT_UPDATED in Web.js; a const, so not reachable through G.
+const UPDATED = '__updated';
+const isDate = v => Object.prototype.toString.call(v) === '[object Date]';
+section('sorting — Last Updated is written by every operation that changes a row');
+(() => {
+  const OLD = new Date(2000, 0, 1);
+  const sheetOf = (key, archived) => mocks._ss.getSheetByName(
+    archived ? G.archiveSheetName(G.getSection(key)) : G.getSection(key).sheet);
+  const at = (key, row, archived) => {
+    const sh = sheetOf(key, archived);
+    return sh.getRange(row, G.resolveColumns(sh)['Last Updated']).getValue();
+  };
+  const age = (key, row, archived) => {
+    const sh = sheetOf(key, archived);
+    sh.getRange(row, G.resolveColumns(sh)['Last Updated']).setValue(OLD);
+  };
+  const fresh = (key, row, archived) => {
+    const v = at(key, row, archived);
+    return isDate(v) && v.getTime() > OLD.getTime();
+  };
+
+  check('every section and archive has the column',
+    ['work', 'iva', 'health', 'income'].every(k => G.sectionHeaders(G.getSection(k)).includes('Last Updated') &&
+      G.archiveHeaders(G.getSection(k)).includes('Last Updated')));
+
+  const made = G.uiCreateEntry('work', {
+    values: { 'Date': '2026-11-01', 'Counterparty': 'Sort Test Lda', 'Amount': 12, 'Currency': 'EUR' }
+  });
+  check('creating stamps it', fresh('work', made.row), at('work', made.row));
+
+  age('work', made.row);
+  G.uiSetStatus('work', made.row, 'Claimed', '2026-11-02');
+  check('a status change stamps it', fresh('work', made.row), at('work', made.row));
+
+  age('work', made.row);
+  G.uiSetEntryDate('work', made.row, 'Claimed Date', '2026-11-03');
+  check('correcting a state date stamps it', fresh('work', made.row), at('work', made.row));
+
+  age('work', made.row);
+  G.uiUpdateEntry('work', made.row, { values: { 'Notes': 'sorted' } });
+  check('an edit stamps it', fresh('work', made.row), at('work', made.row));
+
+  age('work', made.row);
+  G.uiUpdateEntry('work', made.row, { values: { 'Notes': 'sorted' } });
+  check('saving with nothing changed does not', at('work', made.row).getTime() === OLD.getTime(),
+    at('work', made.row));
+
+  age('work', made.row);
+  G.uiUpdateEntry('work', made.row, {
+    values: {}, files: [{ header: 'Receipt URL', name: 'sort.pdf', mimeType: 'application/pdf', data: b64 }]
+  });
+  check('attaching a document stamps it', fresh('work', made.row), at('work', made.row));
+
+  age('work', made.row);
+  const archivedResult = G.uiArchiveEntry('work', made.row);
+  check('archiving stamps the archive copy', fresh('work', archivedResult.archiveRow, true),
+    at('work', archivedResult.archiveRow, true));
+
+  age('work', archivedResult.archiveRow, true);
+  const restored = G.uiRestoreEntry('work', archivedResult.archiveRow);
+  check('restoring stamps it', fresh('work', restored.row), at('work', restored.row));
+  G.uiArchiveEntry('work', restored.row);
+})();
+
+section('sorting — the bar offers what the list shows, from SECTIONS');
+(() => {
+  const opts = k => G.uiSortOptions(G.getSection(k));
+  const keys = k => opts(k).map(o => o.key);
+  const kind = (k, key) => (opts(k).filter(o => o.key === key)[0] || {}).kind;
+
+  check('Last updated is first everywhere', ['work', 'iva', 'health', 'income'].every(k => keys(k)[0] === UPDATED));
+  check('documents are never offered', ['work', 'iva', 'health', 'income'].every(k =>
+    G.getSection(k).fileColumns.every(f => keys(k).indexOf(f.header) === -1)), keys('health'));
+  check('every displayed column is offered, in order', (() => {
+    const cols = G.uiColumns(G.getSection('health')).map(c => c.header);
+    return JSON.stringify(keys('health').slice(1, cols.length + 1)) === JSON.stringify(cols);
+  })(), keys('health'));
+  check('state dates follow the columns', keys('work').includes('Claimed Date') && keys('work').includes('Settled Date'));
+  check('Status is offered and sorts by state order', kind('work', 'Status') === 'status');
+  check('section labels are used', opts('health').some(o => o.key === 'Amount' && o.label === 'Treatment amount') &&
+    opts('iva').some(o => o.key === 'IVA Amount' && o.label === 'Valor do IVA'), opts('iva'));
+  check('dates sort as dates', kind('health', 'Date') === 'date' && kind('health', 'Invoice Date') === 'date' &&
+    kind('work', 'Claimed Date') === 'date');
+  check('amounts sort as numbers', kind('work', 'Amount') === 'number' && kind('iva', 'IVA Amount') === 'number');
+  check('everything else as text', kind('work', 'Counterparty') === 'text' && kind('work', 'Type') === 'text' &&
+    kind('work', 'Notes') === 'text');
+  check('no key is offered twice', ['work', 'iva', 'health', 'income'].every(k => new Set(keys(k)).size === keys(k).length));
+  check('the page is sent the options', G.uiSectionMeta('iva').sort.length === opts('iva').length);
+})();
+
+section('sorting — each row carries comparable values');
+(() => {
+  const S = G.getSection('work');
+  check('a date cell becomes milliseconds', G.sortValue('date', '2026-03-04', S) === new Date(2026, 2, 4).getTime());
+  check('a Date stays exact', G.sortValue('date', new Date(2026, 2, 4, 15, 30), S) === new Date(2026, 2, 4, 15, 30).getTime());
+  check('an unreadable date is blank', G.sortValue('date', 'soon', S) === null);
+  check('an amount typed with a comma is a number', G.sortValue('number', '9,50', S) === 9.5);
+  check('a blank amount is blank, not 0', G.sortValue('number', '', S) === null);
+  check('status is its position', G.sortValue('status', 'Settled', S) === 2 && G.sortValue('status', 'odd', S) === null);
+  check('blank text is blank', G.sortValue('text', '  ', S) === null);
+
+  const row = G.uiListEntries('work').rows[0];
+  check('rows carry a key for every option', G.uiSortOptions(S).every(o => o.key in row.sortKeys),
+    Object.keys(row.sortKeys));
+  check('and Last updated is set', typeof row.sortKeys[UPDATED] === 'number', row.sortKeys);
+  const arch = G.uiListArchive('work').rows[0];
+  check('archived rows carry them too', arch && typeof arch.sortKeys[UPDATED] === 'number');
+})();
+
+section('sorting — the page orders rows (comparator taken from Index.html)');
+(() => {
+  const html = fs.readFileSync(path.join(DIR, 'Index.html'), 'utf8');
+  const m = html.match(/\/\* sort-compare:begin \*\/([\s\S]*?)\/\* sort-compare:end \*\//);
+  check('the comparator block is there', !!m);
+  const page = vm.createContext({});
+  vm.runInContext(m[1] + '\n;this.SORT_UPDATED = SORT_UPDATED; this.compareRows = compareRows;', page);
+  check('page and server agree on the Last updated key', page.SORT_UPDATED === UPDATED);
+
+  const r = (row, key, updated) => ({ row: row, sortKeys: { k: key, [UPDATED]: updated } });
+  const order = (rows, dir) => rows.slice().sort((a, b) => page.compareRows(a, b, 'k', dir)).map(x => x.row);
+  const nums = [r(1, 5, 0), r(2, null, 0), r(3, 20, 0), r(4, 10, 0)];
+  check('numbers, largest first', order(nums, 'desc').join() === '3,4,1,2', order(nums, 'desc'));
+  check('numbers, smallest first — blank still last', order(nums, 'asc').join() === '1,4,3,2', order(nums, 'asc'));
+  const text = [r(1, 'beta', 0), r(2, 'Álvaro', 0), r(3, null, 0), r(4, 'alpha', 0), r(5, 'FT 10', 0), r(6, 'FT 9', 0)];
+  check('text A to Z ignores case and accents', order(text, 'asc').join() === '4,2,1,6,5,3', order(text, 'asc'));
+  check('text Z to A, blank still last', order(text, 'desc').join() === '5,6,1,2,4,3', order(text, 'desc'));
+  const ties = [r(1, 7, 100), r(2, 7, 300), r(3, 7, 200), r(4, 7, null)];
+  check('ties keep Last updated newest first', order(ties, 'asc').join() === '2,3,1,4', order(ties, 'asc'));
+  const statuses = [r(1, 2, 0), r(2, 0, 0), r(3, null, 0), r(4, 1, 0)];
+  check('status in the section\'s order', order(statuses, 'asc').join() === '2,4,1,3', order(statuses, 'asc'));
+})();
+
+section('sorting — the upgrade adds and backfills Last Updated');
+(() => {
+  const S = G.getSection('income');
+  const sh = mocks._ss.getSheetByName(S.sheet);
+  const cols = G.resolveColumns(sh);
+  const made = G.createEntry('income', {
+    'Date': '2026-01-10', 'Counterparty': 'Backfill Co', 'Amount': 100, 'Invoiced Date': '2026-01-10'
+  }, 'manual');
+  G.setStatus('income', made.row, 'Received', '2026-02-20');
+  sh.getRange(made.row, cols['Last Updated']).setValue('');
+  sh.getRange(made.row, cols['Timestamp']).setValue(new Date(2026, 0, 5));
+
+  const preview = G.previewLastUpdatedUpgrade();
+  check('preview changes nothing', sh.getRange(made.row, cols['Last Updated']).getValue() === '' && preview.ok,
+    preview);
+  const applied = G.applyLastUpdatedUpgrade();
+  const v = sh.getRange(made.row, cols['Last Updated']).getValue();
+  check('applied without errors', applied.ok, applied.errors);
+  check('backfilled with the latest of Timestamp and the state dates',
+    isDate(v) && v.getTime() === new Date(2026, 1, 20).getTime(), v);
+  const kept = G.uiEntry('income', made.row).sortKeys[UPDATED];
+  G.applyLastUpdatedUpgrade();
+  check('re-running leaves filled cells alone', G.uiEntry('income', made.row).sortKeys[UPDATED] === kept);
+  G.archiveEntry('income', made.row);
 })();
 
 console.log(`\n================  ${pass} passed, ${fail} failed  ================`);

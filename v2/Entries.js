@@ -618,6 +618,7 @@ function sendCompletionRequest(section, sheet, cols, row, missing, receiptState)
 function initializeEntry(section, sheet, row, source) {
   const cols = resolveColumns(sheet);
 
+  touchEntry(sheet, cols, row);
   if (!readCell(sheet, cols, row, COMMON.timestamp)) {
     writeCell(sheet, cols, row, COMMON.timestamp, new Date());
   }
