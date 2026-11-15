@@ -1692,11 +1692,19 @@
         return row.files.length ? row.files.map(link).join('') : '<span class="none">—</span>';
       }
 
-      return app.meta.files.map(function (slot) {
+      // A gap is only "awaiting" while the row says so. Health can be whole with
+      // one document (Awaiting Document = No), and the server has already
+      // decided that in receiptState - re-deciding it here from the slots alone
+      // is what kept a finished claim saying "awaiting" (edit-receipt-state #01).
+      var complete = row.receiptState === 'attached';
+
+      var html = app.meta.files.map(function (slot) {
         var file = present[slot.label];
-        return file ? link(file)
+        if (file) return link(file);
+        return complete ? ''
           : '<span class="missing">' + escapeHtml(slot.label) + ' — awaiting</span>';
       }).join('');
+      return html || '<span class="none">—</span>';
     }
 
     /* --------------------------- the table row ---------------------------- */
