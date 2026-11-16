@@ -69,3 +69,23 @@ _Avoid_: Incomplete, missing file
 The invoice number as Finanças will accept it, which can differ from the number
 printed on the paper: only unaccented letters, digits and `/ \ _ . -`.
 _Avoid_: Invoice number (when the printed one is meant), reference
+
+### Work
+
+**Expense Reason**:
+What a work expense is claimed under: a trip, an education allowance, or another
+claimable occasion. Many expenses share one Expense Reason.
+_Avoid_: Trip (when the reason is not a trip), category
+
+**Trip**:
+An Expense Reason planned ahead, with a destination, a start date and an end
+date. Its name is the start date and city, e.g. `261012 Brussels`. The only kind
+of Expense Reason created on its own.
+_Avoid_: Journey, travel
+
+**Planned Line**:
+A work expense created by a Trip before it happens, from a checklist of what that
+kind of trip usually costs. It holds the date, Type and a note, and is filled in
+when the receipt arrives. It stays untouched until it has a supplier, a receipt
+or an amount other than its starting one.
+_Avoid_: Placeholder, template line, draft
