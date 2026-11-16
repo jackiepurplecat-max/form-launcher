@@ -18,11 +18,11 @@ Baseline: `npm run v2:test` (949 pass), `v2:verify` (matched).
 
 1. **Build Trips**: `.scratch/trip-list/issues/01`–`08` (ready-for-agent;
    01 and 05 unblocked). Owner first sets Script Property `HOME_AIRPORT`.
-2. **Owner:** check the header logo (v44); Google-side v1 shutdown
-   (`.scratch/retire-v1/issues/01-…`).
-3. needs-info: `.scratch/auto-archive-old-claims/` (which status is
-   "submitted"?), `.scratch/siri-shortcuts-performance/`.
-4. Backlog: `batch-actions`, `desktop-cards`, `field-validation/02`, `generic-supplier-names`.
+2. **Owner:** check header logo (v44); v1 shutdown (`.scratch/retire-v1/`).
+3. Also ready-for-agent (triaged 16 Nov): `field-validation/02`,
+   `generic-supplier-names`, `desktop-cards`, then `batch-actions` (cards
+   first), `auto-archive-old-claims` (after Trips 01).
+4. needs-info: `.scratch/siri-shortcuts-performance/` (owner to describe faults).
 
 ## Traps
 
