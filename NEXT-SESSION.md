@@ -4,20 +4,20 @@ Rewrite this from scratch at the end of every session: three parts, 40 lines max
 
 ## What's live
 
-- **Main app: version 43** (commit `4076932`). Siri: @2.
+- **Main app: version 44** (commit `ec48784`). Siri: @2.
 - `/exec` (the app): `https://script.google.com/macros/s/AKfycbxKHouifK8w8hbpMGZ_W0yklTKCdCgp-YHAk9uS7Omji_RH_fa4Za6DGYk1ZjOL5tuo/exec`
 - `/dev` (HEAD, owner only): `https://script.google.com/macros/s/AKfycbx7eadFkUKax9S5TqYzrI2gRvd3PGhhDPjQf1Tho-0/dev`
 - **v1 retired** (`docs/adr/0001-retire-v1.md`); Pages serves only the README and favicon.
 - This session: **favicon** on both v2 pages (`UI_FAVICON_URL`, `v2/Web.js`),
-  served from Pages, shrunk to 256px (v42); **purple accent** `#6c3fcf` (v43).
-  Neither yet seen by the owner on the Mac or the phone.
+  served from Pages, shrunk to 256px (v42); **purple accent** `#6c3fcf` (v43,
+  owner confirmed on phone; `.scratch/v1-branding/` closed); **header logo** (v44,
+  not yet seen by the owner).
 
 Baseline: `npm run v2:test` (949 pass), `v2:verify` (matched).
 
 ## What's next
 
-1. **Owner:** check favicon + purple in the HelpfulForms Chrome profile and on
-   the phone; then close `.scratch/v1-branding/` #01.
+1. **Owner:** check the header logo on the phone and in the Chrome profile.
 2. **Owner:** Google-side v1 shutdown:
    `.scratch/retire-v1/issues/01-google-side-checklist.md`.
 3. Backlog (needs-triage): `.scratch/v1-branding/`, `.scratch/desktop-cards/`,
@@ -33,7 +33,8 @@ Baseline: `npm run v2:test` (949 pass), `v2:verify` (matched).
   in run.js — use `Object.prototype.toString`.
 - **Provider renames don't stamp Last Updated** on purpose (would lift up to 50 rows).
 - **`follows` with `serverOnly: true` never reaches the page.** Keep Invoice Date's rule.
-- **Don't turn GitHub Pages off.** It hosts the favicon `/exec` uses; private repo or rename also breaks it.
+- **Don't turn GitHub Pages off.** It hosts the favicon + header logo; private
+  repo or rename breaks both. URL is in `Web.js` AND `Index.html` (test checks).
 - **Home-screen icon / theme-color can't be set**: Google's wrapper page owns
   them. A Shortcuts icon opens plain Safari — back to the account-order trap.
 - **NIF rule on Providers applies to foreign suppliers too.** Undecided.
