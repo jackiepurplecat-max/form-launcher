@@ -555,6 +555,8 @@ check('page calls the real server functions',
 check('page is titled', ownerPage.getTitle() === 'HelpfulForms', ownerPage.getTitle());
 check('viewport meta added for the phone',
   ownerPage.metaTags.some(t => t.name === 'viewport'), ownerPage.metaTags);
+check('header logo is the same image as the favicon',
+  ownerPage.getContent().includes(`<img class="logo" src="${ownerPage.faviconUrl}"`), ownerPage.faviconUrl);
 check('page carries the favicon', /^https:\/\/.+\.png$/.test(ownerPage.faviconUrl), ownerPage.faviconUrl);
 // Nothing is interpolated into the HTML, so no sheet value or property can
 // arrive as markup - and no address can leak into a cached page.

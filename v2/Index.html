@@ -79,6 +79,8 @@
       position: sticky; top: 0; z-index: 5;
     }
     header h1 { font-size: 1.05rem; margin: 0; font-weight: 600; }
+    /* The header lines up on text baselines; an image has none, so centre it. */
+    header .logo { width: 1.6rem; height: 1.6rem; margin-right: -.4rem; flex: none; align-self: center; }
     /* Shrinks before Refresh does. Which account is answering matters here (see
        authuser in CLAUDE.md), so it is truncated rather than dropped. */
     header .who {
@@ -518,6 +520,10 @@
 
 <body>
   <header>
+    <!-- Same address as UI_FAVICON_URL in Web.js (the page is not templated, so
+         it is written twice); test/run.js fails if the two drift apart.
+         alt is empty because the title beside it already says the name. -->
+    <img class="logo" src="https://jackiepurplecat-max.github.io/form-launcher/favicon.png" alt="">
     <h1>HelpfulForms</h1>
     <span class="who" id="who"></span>
     <button id="refresh" type="button">Refresh</button>
