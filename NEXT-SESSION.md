@@ -33,8 +33,7 @@ Baseline: `npm run v2:test` (949 pass), `v2:verify` (matched).
   in run.js — use `Object.prototype.toString`.
 - **Provider renames don't stamp Last Updated** on purpose (would lift up to 50 rows).
 - **`follows` with `serverOnly: true` never reaches the page.** Keep Invoice Date's rule.
-- **Don't turn GitHub Pages off.** It hosts the favicon + header logo; private
-  repo or rename breaks both. URL is in `Web.js` AND `Index.html` (test checks).
+- **Don't turn GitHub Pages off** — it hosts favicon + logo (URL in Web.js and Index.html).
 - **Home-screen icon / theme-color can't be set**: Google's wrapper page owns
   them. A Shortcuts icon opens plain Safari — back to the account-order trap.
 - **NIF rule on Providers applies to foreign suppliers too.** Undecided.
